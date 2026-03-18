@@ -133,7 +133,7 @@ No explanation, no markdown, just the JSON."""
     return {}
 
 def run_clustering(df_clean, embedded_2d, min_cluster_size, min_samples,
-                   cluster_selection_epsilon, api_key=None):
+                   cluster_selection_epsilon):
     clusterer = hdbscan.HDBSCAN(
         min_cluster_size=min_cluster_size,
         min_samples=min_samples,
@@ -156,32 +156,12 @@ def run_clustering(df_clean, embedded_2d, min_cluster_size, min_samples,
         df_sel = df_clean.loc[mask]
         cluster_profiles[label] = (int(mask.sum()), build_cluster_profile(df_sel, dimensions))
 
-    # One LLM call for all cluster names
-    llm_names = {}
-    if api_key and cluster_profiles:
-        llm_names = name_all_clusters_with_llm(cluster_profiles, api_key)
-
-    # Assign names
+    # Assign placeholder numeric names — LLM naming is a separate step
     cluster_names = {-1: "Outliers"}
     for label in sorted(set(labels)):
         if label == -1:
             continue
-        if label in llm_names:
-            cluster_names[label] = llm_names[label]
-        else:
-            # Fallback: top Innovation Cluster value with size suffix to avoid duplicates
-            mask   = labels == label
-            df_sel = df_clean.loc[mask]
-            if "Innovation Cluster" in df_clean.columns:
-                top = df_sel["Innovation Cluster"].str.strip().value_counts()
-                name = top.index[0] if not top.empty else f"Cluster {label}"
-                # Deduplicate fallback names
-                base, i = name, 2
-                while cluster_names.get(label) is None and base in cluster_names.values():
-                    base = f"{name} ({i})"; i += 1
-                cluster_names[label] = base
-            else:
-                cluster_names[label] = f"Cluster {label}"
+        cluster_names[label] = f"Cluster {label}"
 
     df_clean = df_clean.copy()
     df_clean["Cluster"] = [cluster_names[l] for l in labels]
@@ -356,8 +336,7 @@ if start and df_input is not None:
         st.warning("Keine Cluster gefunden – Min. Cluster Größe oder Min. Samples reduzieren.")
 
     df_clean, n_clusters, n_outliers = run_clustering(
-        df_clean, embedded_2d, min_cluster_size, min_samples, cluster_epsilon,
-        api_key=api_key
+        df_clean, embedded_2d, min_cluster_size, min_samples, cluster_epsilon
     )
     st.success(f"✔ {n_clusters} Cluster · {n_outliers} Outlier ({n_outliers/total*100:.0f}%)")
 
@@ -372,11 +351,43 @@ if recluster and st.session_state.embedded_2d is not None:
         df_result, n_c, n_o = run_clustering(
             st.session_state.df_clean,
             st.session_state.embedded_2d,
-            min_cluster_size, min_samples, cluster_epsilon,
-            api_key=api_key
+            min_cluster_size, min_samples, cluster_epsilon
         )
     st.session_state.df_clean = df_result
     st.success(f"✔ {n_c} Cluster · {n_o} Outlier")
+
+# ============================================================
+# CLUSTER NAMING (separate step)
+# ============================================================
+if name_btn and st.session_state.df_clean is not None:
+    if not api_key:
+        st.error("Gemini API Key fehlt")
+    else:
+        df_to_name = st.session_state.df_clean
+        dimensions = [d for d in DIMENSIONS if d in df_to_name.columns]
+
+        # Build profiles
+        labels_arr = df_to_name["Cluster"].values
+        unique_clusters = [c for c in df_to_name["Cluster"].unique() if c != "Outliers"]
+        cluster_profiles = {}
+        for i, cname in enumerate(unique_clusters):
+            mask   = df_to_name["Cluster"] == cname
+            df_sel = df_to_name.loc[mask]
+            cluster_profiles[i] = (int(mask.sum()), build_cluster_profile(df_sel, dimensions))
+
+        with st.spinner(f"Benenne {len(cluster_profiles)} Cluster mit einem Gemini-Call…"):
+            llm_names = name_all_clusters_with_llm(cluster_profiles, api_key)
+
+        if llm_names:
+            # Map old placeholder names to new LLM names
+            name_map = {cname: llm_names.get(i, cname) for i, cname in enumerate(unique_clusters)}
+            name_map["Outliers"] = "Outliers"
+            df_to_name = df_to_name.copy()
+            df_to_name["Cluster"] = df_to_name["Cluster"].map(name_map)
+            st.session_state.df_clean = df_to_name
+            st.success(f"✔ {len(llm_names)} Cluster benannt")
+        else:
+            st.warning("Naming fehlgeschlagen – Cluster behalten numerische Namen")
 
 # ============================================================
 # RESULTS
