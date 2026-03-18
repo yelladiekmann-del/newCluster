@@ -82,9 +82,8 @@ def build_cluster_profile(df_sel, dimensions):
             continue
         top = df_sel[dim].str.strip().value_counts().head(2).index.tolist()
         if top:
-            lines.append(f"  {dim}: {' / '.join(top)}")
-    return "
-".join(lines)
+            lines.append("  " + dim + ": " + " / ".join(top))
+    return "\n".join(lines)
 
 def name_all_clusters_with_llm(cluster_profiles: dict, api_key: str) -> dict:
     """
@@ -92,29 +91,42 @@ def name_all_clusters_with_llm(cluster_profiles: dict, api_key: str) -> dict:
     distinctive names relative to each other — same abstraction level,
     no duplicates. Returns {label: name}.
     """
+    import json, re
     block = ""
     labels_ordered = sorted(cluster_profiles.keys())
     for label in labels_ordered:
         size, profile = cluster_profiles[label]
-        block += f"
-CLUSTER {label} ({size} companies):
-{profile}
-"
+        block += (            "\nCLUSTER " + str(label) + " (" + str(size) + " companies):\n" + profile + "\n"
+        )
+    prompt = (
+        "You are a market intelligence analyst naming clusters of companies.\n\n"
+        "Below are " + str(len(labels_ordered)) + " clusters with their dominant characteristics.\n"
+        "Assign each cluster a SHORT, DISTINCTIVE name (2-5 words) that:\n"
+        "- Captures what makes THIS cluster unique vs. the others\n"
+        "- Is at the same level of abstraction as all other names\n"
+        "- Reads like a market category (e.g. Embedded Lending Infrastructure, SMB Expense Automation)\n"
+        "- Has NO duplicates -- every name must be different\n\n"
+        + block +
+        "\nReturn ONLY a JSON object mapping cluster number to name, like:\n"
+        '{"0": "Name Here", "1": "Other Name", ...}\n'
+        "No explanation, no markdown, just the JSON."
+    )
 
-    prompt = f"""You are a market intelligence analyst naming clusters of companies.
+    try:
+        resp = requests.post(
+            "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=" + api_key,
+            json={"contents": [{"parts": [{"text": prompt}]}]},
+            timeout=30,
+        )
+        if resp.status_code == 200:
+            raw = resp.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
+            raw = re.sub(r"```json|```", "", raw).strip()
+            names = json.loads(raw)
+            return {int(k): v for k, v in names.items()}
+    except Exception as e:
+        st.warning("Cluster naming failed: " + str(e))
+    return {}
 
-Below are {len(labels_ordered)} clusters with their dominant characteristics.
-Assign each cluster a SHORT, DISTINCTIVE name (2-5 words) that:
-- Captures what makes THIS cluster unique vs. the others
-- Is at the same level of abstraction as all other names
-- Reads like a market category (e.g. "Embedded Lending Infrastructure", "SMB Expense Automation")
-- Has NO duplicates — every name must be different
-
-{block}
-
-Return ONLY a JSON object mapping cluster number to name, like:
-{{"0": "Name Here", "1": "Other Name", ...}}
-No explanation, no markdown, just the JSON."""
 
     try:
         resp = requests.post(
