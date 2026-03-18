@@ -155,7 +155,7 @@ def run_clustering(df_clean, embedded_2d, min_cluster_size, min_samples, cluster
 # ============================================================
 # UI
 # ============================================================
-st.title("◈ Company Clustering")
+st.title("◈ Company Clustering v1.4")
 st.caption("Gemini Embeddings · HDBSCAN · UMAP")
 st.divider()
 
