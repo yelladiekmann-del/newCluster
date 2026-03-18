@@ -5,6 +5,7 @@ import time
 import random
 import requests
 import io
+import json
 
 from sklearn.preprocessing import normalize
 import plotly.express as px
@@ -73,11 +74,70 @@ def get_embedding(text: str, api_key: str) -> np.ndarray:
 # ============================================================
 # RECLUSTER (skip embeddings + UMAP)
 # ============================================================
-def run_clustering(df_clean, embedded_2d, min_cluster_size, min_samples, cluster_epsilon):
+def build_cluster_profile(df_sel, dimensions):
+    """Top 2 values per dimension for a cluster."""
+    lines = []
+    for dim in dimensions:
+        if dim not in df_sel.columns:
+            continue
+        top = df_sel[dim].str.strip().value_counts().head(2).index.tolist()
+        if top:
+            lines.append(f"  {dim}: {' / '.join(top)}")
+    return "
+".join(lines)
+
+def name_all_clusters_with_llm(cluster_profiles: dict, api_key: str) -> dict:
+    """
+    Send ALL cluster profiles to Gemini in ONE call so it can assign
+    distinctive names relative to each other — same abstraction level,
+    no duplicates. Returns {label: name}.
+    """
+    block = ""
+    labels_ordered = sorted(cluster_profiles.keys())
+    for label in labels_ordered:
+        size, profile = cluster_profiles[label]
+        block += f"
+CLUSTER {label} ({size} companies):
+{profile}
+"
+
+    prompt = f"""You are a market intelligence analyst naming clusters of companies.
+
+Below are {len(labels_ordered)} clusters with their dominant characteristics.
+Assign each cluster a SHORT, DISTINCTIVE name (2-5 words) that:
+- Captures what makes THIS cluster unique vs. the others
+- Is at the same level of abstraction as all other names
+- Reads like a market category (e.g. "Embedded Lending Infrastructure", "SMB Expense Automation")
+- Has NO duplicates — every name must be different
+
+{block}
+
+Return ONLY a JSON object mapping cluster number to name, like:
+{{"0": "Name Here", "1": "Other Name", ...}}
+No explanation, no markdown, just the JSON."""
+
+    try:
+        resp = requests.post(
+            f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}",
+            json={"contents": [{"parts": [{"text": prompt}]}]},
+            timeout=30,
+        )
+        if resp.status_code == 200:
+            raw = resp.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
+            # Strip markdown code fences if present
+            raw = re.sub(r"^```json|^```|```$", "", raw.strip(), flags=re.MULTILINE).strip()
+            names = json.loads(raw)
+            return {int(k): v for k, v in names.items()}
+    except Exception as e:
+        st.warning(f"Cluster naming failed: {e}")
+    return {}
+
+def run_clustering(df_clean, embedded_2d, min_cluster_size, min_samples,
+                   cluster_selection_epsilon, api_key=None):
     clusterer = hdbscan.HDBSCAN(
         min_cluster_size=min_cluster_size,
         min_samples=min_samples,
-        cluster_selection_epsilon=cluster_epsilon,
+        cluster_selection_epsilon=cluster_selection_epsilon,
         cluster_selection_method="leaf",
         metric="euclidean",
     )
@@ -85,22 +145,50 @@ def run_clustering(df_clean, embedded_2d, min_cluster_size, min_samples, cluster
     n_clusters = len([l for l in set(labels) if l >= 0])
     n_outliers = int((labels == -1).sum())
 
-    cluster_names = {}
+    dimensions = [d for d in DIMENSIONS if d in df_clean.columns]
+
+    # Build profiles for all clusters
+    cluster_profiles = {}
     for label in sorted(set(labels)):
         if label == -1:
-            cluster_names[label] = "Outliers"; continue
-        mask = labels == label
-        if "Innovation Cluster" in df_clean.columns:
-            top = df_clean.loc[mask, "Innovation Cluster"].value_counts().idxmax()
-            cluster_names[label] = top or f"Cluster {label}"
+            continue
+        mask   = labels == label
+        df_sel = df_clean.loc[mask]
+        cluster_profiles[label] = (int(mask.sum()), build_cluster_profile(df_sel, dimensions))
+
+    # One LLM call for all cluster names
+    llm_names = {}
+    if api_key and cluster_profiles:
+        llm_names = name_all_clusters_with_llm(cluster_profiles, api_key)
+
+    # Assign names
+    cluster_names = {-1: "Outliers"}
+    for label in sorted(set(labels)):
+        if label == -1:
+            continue
+        if label in llm_names:
+            cluster_names[label] = llm_names[label]
         else:
-            cluster_names[label] = f"Cluster {label}"
+            # Fallback: top Innovation Cluster value with size suffix to avoid duplicates
+            mask   = labels == label
+            df_sel = df_clean.loc[mask]
+            if "Innovation Cluster" in df_clean.columns:
+                top = df_sel["Innovation Cluster"].str.strip().value_counts()
+                name = top.index[0] if not top.empty else f"Cluster {label}"
+                # Deduplicate fallback names
+                base, i = name, 2
+                while cluster_names.get(label) is None and base in cluster_names.values():
+                    base = f"{name} ({i})"; i += 1
+                cluster_names[label] = base
+            else:
+                cluster_names[label] = f"Cluster {label}"
 
     df_clean = df_clean.copy()
     df_clean["Cluster"] = [cluster_names[l] for l in labels]
     df_clean["_x"]      = embedded_2d[:, 0]
     df_clean["_y"]      = embedded_2d[:, 1]
     return df_clean, n_clusters, n_outliers
+
 # ============================================================
 # UI
 # ============================================================
@@ -268,7 +356,8 @@ if start and df_input is not None:
         st.warning("Keine Cluster gefunden – Min. Cluster Größe oder Min. Samples reduzieren.")
 
     df_clean, n_clusters, n_outliers = run_clustering(
-        df_clean, embedded_2d, min_cluster_size, min_samples, cluster_epsilon
+        df_clean, embedded_2d, min_cluster_size, min_samples, cluster_epsilon,
+        api_key=api_key
     )
     st.success(f"✔ {n_clusters} Cluster · {n_outliers} Outlier ({n_outliers/total*100:.0f}%)")
 
@@ -283,7 +372,8 @@ if recluster and st.session_state.embedded_2d is not None:
         df_result, n_c, n_o = run_clustering(
             st.session_state.df_clean,
             st.session_state.embedded_2d,
-            min_cluster_size, min_samples, cluster_epsilon
+            min_cluster_size, min_samples, cluster_epsilon,
+            api_key=api_key
         )
     st.session_state.df_clean = df_result
     st.success(f"✔ {n_c} Cluster · {n_o} Outlier")
