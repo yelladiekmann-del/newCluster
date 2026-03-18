@@ -4,6 +4,7 @@ import numpy as np
 import time
 import random
 import requests
+import io
 
 from sklearn.preprocessing import normalize
 import plotly.express as px
@@ -70,6 +71,37 @@ def get_embedding(text: str, api_key: str) -> np.ndarray:
     return np.zeros(768)
 
 # ============================================================
+# RECLUSTER (skip embeddings + UMAP)
+# ============================================================
+def run_clustering(df_clean, embedded_2d, min_cluster_size, min_samples, cluster_epsilon):
+    clusterer = hdbscan.HDBSCAN(
+        min_cluster_size=min_cluster_size,
+        min_samples=min_samples,
+        cluster_selection_epsilon=cluster_epsilon,
+        cluster_selection_method="leaf",
+        metric="euclidean",
+    )
+    labels     = clusterer.fit_predict(embedded_2d)
+    n_clusters = len([l for l in set(labels) if l >= 0])
+    n_outliers = int((labels == -1).sum())
+
+    cluster_names = {}
+    for label in sorted(set(labels)):
+        if label == -1:
+            cluster_names[label] = "Outliers"; continue
+        mask = labels == label
+        if "Innovation Cluster" in df_clean.columns:
+            top = df_clean.loc[mask, "Innovation Cluster"].value_counts().idxmax()
+            cluster_names[label] = top or f"Cluster {label}"
+        else:
+            cluster_names[label] = f"Cluster {label}"
+
+    df_clean = df_clean.copy()
+    df_clean["Cluster"] = [cluster_names[l] for l in labels]
+    df_clean["_x"]      = embedded_2d[:, 0]
+    df_clean["_y"]      = embedded_2d[:, 1]
+    return df_clean, n_clusters, n_outliers
+# ============================================================
 # UI
 # ============================================================
 st.title("◈ Company Clustering")
@@ -104,10 +136,23 @@ if uploaded:
             desc_col     = None if desc_sel.startswith("(keine") else desc_sel
 
         with st.expander("Vorschau"):
-            st.dataframe(df_input.head(5), use_container_width=True, hide_index=True)
+            st.dataframe(df_input.head(5), width='stretch', hide_index=True)
 
     except Exception as e:
         st.error(f"Datei konnte nicht geladen werden: {e}")
+
+# Embeddings upload (skip re-embedding)
+with st.expander("⚡ Gespeicherte Embeddings laden (optional – überspringt Embedding-Schritt)"):
+    embeddings_file = st.file_uploader("Embeddings .npz hochladen", type=["npz"], key="emb_upload")
+    if embeddings_file:
+        try:
+            npz = np.load(io.BytesIO(embeddings_file.read()))
+            st.session_state.embedded_2d   = npz["embedded_2d"]
+            st.session_state.feature_matrix = npz["feature_matrix"]
+            st.session_state.done = False  # reset results but keep embeddings
+            st.success(f"✔ Embeddings geladen – {st.session_state.embedded_2d.shape[0]} Unternehmen. Jetzt 'Nur neu clustern' klicken.")
+        except Exception as e:
+            st.error(f"Fehler beim Laden: {e}")
 
 st.divider()
 st.subheader("Clustering Parameter")
@@ -133,12 +178,12 @@ st.divider()
 col_a, col_b = st.columns([3, 1])
 with col_a:
     start = st.button(
-        "▶  Embeddings + Clustering starten", type="primary", use_container_width=True,
+        "▶  Embeddings + Clustering starten", type="primary", width='stretch',
         disabled=(df_input is None or not api_key)
     )
 with col_b:
     recluster = st.button(
-        "↺  Nur neu clustern", use_container_width=True,
+        "↺  Nur neu clustern", width='stretch',
         disabled=(st.session_state.embedded_2d is None),
         help="Überspringt Embeddings und UMAP – nur Clustering mit neuen Parametern."
     )
@@ -227,41 +272,11 @@ if start and df_input is not None:
     )
     st.success(f"✔ {n_clusters} Cluster · {n_outliers} Outlier ({n_outliers/total*100:.0f}%)")
 
-    st.session_state.df_clean      = df_clean
-    st.session_state.embedded_2d   = embedded_2d
-    st.session_state.done          = True
+    st.session_state.df_clean       = df_clean
+    st.session_state.embedded_2d    = embedded_2d
+    st.session_state.feature_matrix = feature_matrix
+    st.session_state.done           = True
 
-# ============================================================
-# RECLUSTER (skip embeddings + UMAP)
-# ============================================================
-def run_clustering(df_clean, embedded_2d, min_cluster_size, min_samples, cluster_epsilon):
-    clusterer = hdbscan.HDBSCAN(
-        min_cluster_size=min_cluster_size,
-        min_samples=min_samples,
-        cluster_selection_epsilon=cluster_epsilon,
-        cluster_selection_method="leaf",
-        metric="euclidean",
-    )
-    labels     = clusterer.fit_predict(embedded_2d)
-    n_clusters = len([l for l in set(labels) if l >= 0])
-    n_outliers = int((labels == -1).sum())
-
-    cluster_names = {}
-    for label in sorted(set(labels)):
-        if label == -1:
-            cluster_names[label] = "Outliers"; continue
-        mask = labels == label
-        if "Innovation Cluster" in df_clean.columns:
-            top = df_clean.loc[mask, "Innovation Cluster"].value_counts().idxmax()
-            cluster_names[label] = top or f"Cluster {label}"
-        else:
-            cluster_names[label] = f"Cluster {label}"
-
-    df_clean = df_clean.copy()
-    df_clean["Cluster"] = [cluster_names[l] for l in labels]
-    df_clean["_x"]      = embedded_2d[:, 0]
-    df_clean["_y"]      = embedded_2d[:, 1]
-    return df_clean, n_clusters, n_outliers
 
 if recluster and st.session_state.embedded_2d is not None:
     with st.spinner("Neu clustern…"):
@@ -301,14 +316,33 @@ if st.session_state.done and st.session_state.df_clean is not None:
         dragmode="lasso",   # lasso selection by default
     )
     fig.update_layout(newshape=dict(line_color="#00ff9d"))
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width='stretch')
     st.caption("Tipp: Lasso-Tool (oben rechts im Chart) zum Auswählen von Gruppen verwenden.")
 
     show_cols = [c for c in [company_col, "Cluster"] + DIMENSIONS if c in df.columns]
-    st.dataframe(df[show_cols], use_container_width=True, hide_index=True)
+    st.dataframe(df[show_cols], width='stretch', hide_index=True)
 
-    st.download_button(
-        "⬇  CSV exportieren",
-        df[show_cols].to_csv(index=False),
-        "cluster_results.csv", "text/csv",
-    )
+    col_dl1, col_dl2 = st.columns(2)
+    with col_dl1:
+        st.download_button(
+            "⬇  Ergebnisse als CSV",
+            df[show_cols].to_csv(index=False),
+            "cluster_results.csv", "text/csv",
+            width="stretch",
+        )
+    with col_dl2:
+        if st.session_state.embedded_2d is not None and st.session_state.feature_matrix is not None:
+            buf = io.BytesIO()
+            np.savez_compressed(
+                buf,
+                embedded_2d=st.session_state.embedded_2d,
+                feature_matrix=st.session_state.feature_matrix,
+            )
+            buf.seek(0)
+            st.download_button(
+                "⬇  Embeddings speichern (.npz)",
+                buf,
+                "embeddings.npz", "application/octet-stream",
+                width="stretch",
+                help="Lade diese Datei beim nächsten Mal hoch um den Embedding-Schritt zu überspringen.",
+            )
