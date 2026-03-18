@@ -179,7 +179,7 @@ if start and df_input is not None:
     # t-SNE
     with st.spinner("t-SNE Projektion…"):
         proj = TSNE(n_components=2, perplexity=min(total - 1, 30),
-                    random_state=42, n_iter=1000).fit_transform(feature_matrix)
+                    random_state=42, max_iter=1000).fit_transform(feature_matrix)
     df_clean["_x"] = proj[:, 0]
     df_clean["_y"] = proj[:, 1]
 
