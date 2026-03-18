@@ -212,7 +212,7 @@ with col_a:
 with col_b:
     recluster = st.button(
         "↺  Nur neu clustern", width="stretch",
-        disabled=(st.session_state.embedded_2d is None),
+        disabled=(st.session_state.embedded_2d is None or st.session_state.df_clean is None),
         help="Überspringt Embeddings und UMAP."
     )
 with col_c:
@@ -291,7 +291,9 @@ if start and df_input is not None:
 # ============================================================
 # RECLUSTER
 # ============================================================
-if recluster and st.session_state.embedded_2d is not None and st.session_state.df_clean is not None:
+if recluster and st.session_state.embedded_2d is not None:
+    if st.session_state.df_clean is None and df_input is not None:
+        st.session_state.df_clean = df_input.copy()
     with st.spinner("Neu clustern…"):
         df_result, n_c, n_o = run_clustering(
             st.session_state.df_clean,
@@ -372,10 +374,12 @@ if st.session_state.done and st.session_state.df_clean is not None:
     with col_dl2:
         if st.session_state.feature_matrix is not None:
             buf = io.BytesIO()
+            df_json = st.session_state.df_clean.to_json().encode()
             np.savez_compressed(
                 buf,
                 embedded_2d=st.session_state.embedded_2d,
                 feature_matrix=st.session_state.feature_matrix,
+                df_json=np.frombuffer(df_json, dtype=np.uint8),
             )
             buf.seek(0)
             st.download_button(
@@ -394,6 +398,9 @@ with st.expander("⚡ Gespeicherte Embeddings laden (überspringt Embedding-Schr
             st.session_state.embedded_2d    = npz["embedded_2d"]
             st.session_state.feature_matrix = npz["feature_matrix"]
             st.session_state.done = False
+            # Pre-populate df_clean from uploaded file so recluster works immediately
+            if df_input is not None:
+                st.session_state.df_clean = df_input.copy()
             st.success("✔ Embeddings geladen – " + str(st.session_state.embedded_2d.shape[0]) + " Unternehmen. Jetzt '↺ Nur neu clustern' klicken.")
         except Exception as e:
             st.error("Fehler: " + str(e))
