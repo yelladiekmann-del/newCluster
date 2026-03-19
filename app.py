@@ -653,6 +653,10 @@ with st.expander("⚡ Load saved embeddings (skips embedding step)"):
             st.session_state.done          = False
             if df_input is not None:
                 st.session_state.df_clean = df_input.copy()
+            elif "df_json" in npz:
+                st.session_state.df_clean = pd.read_json(
+                    io.StringIO(npz["df_json"].tobytes().decode())
+                )
             st.success(
                 f"✔ Embeddings loaded — {st.session_state.embedded_2d.shape[0]} companies. "
                 "Now click '↺ Re-cluster only'."
