@@ -4,9 +4,11 @@ import requests
 import json
 import re
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 _GEN_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
-_BATCH_SIZE = 10
+_BATCH_SIZE = 20
+_MAX_WORKERS = 5
 
 EXTRACTED_DIMENSIONS = [
     "Problem Solved",
@@ -213,31 +215,38 @@ def extract_dimensions(
         st.error("No descriptions found — make sure the selected description column contains text.")
         return df
 
-    results: dict[int, dict] = {}
-    n_batches = max(1, (len(companies) + _BATCH_SIZE - 1) // _BATCH_SIZE)
-    _eta_secs = n_batches * 5
+    batches = [
+        companies[b * _BATCH_SIZE: (b + 1) * _BATCH_SIZE]
+        for b in range(max(1, (len(companies) + _BATCH_SIZE - 1) // _BATCH_SIZE))
+    ]
+    n_batches = len(batches)
+    _eta_secs = max(5, (n_batches * 5) // _MAX_WORKERS)
     _eta_str = f"~{_eta_secs}s" if _eta_secs < 60 else f"~{_eta_secs // 60}m {_eta_secs % 60}s"
-    prog = st.progress(0, text=f"Extracting dimensions via Gemini… (est. {_eta_str})")
+    prog = st.progress(0, text=f"Extracting dimensions via Gemini… (est. {_eta_str}, {_MAX_WORKERS} parallel calls)")
     _extract_start = time.time()
 
-    for b in range(n_batches):
-        batch = companies[b * _BATCH_SIZE: (b + 1) * _BATCH_SIZE]
-        results.update(_extract_batch(batch, api_key))
-        _elapsed = time.time() - _extract_start
-        if b > 0:
-            _rate = _elapsed / (b + 1)
-            _remaining = int(_rate * (n_batches - b - 1))
-            _rem_str = f"~{_remaining}s" if _remaining < 60 else f"~{_remaining // 60}m {_remaining % 60}s"
-            prog.progress(
-                (b + 1) / n_batches,
-                text=f"Batch {b + 1} / {n_batches} — {len(results)} companies done · {_rem_str} remaining…",
-            )
-        else:
-            prog.progress(
-                (b + 1) / n_batches,
-                text=f"Batch {b + 1} / {n_batches} — {len(results)} companies done…",
-            )
-        time.sleep(0.1)
+    results: dict[int, dict] = {}
+    completed = 0
+
+    with ThreadPoolExecutor(max_workers=_MAX_WORKERS) as executor:
+        futures = {executor.submit(_extract_batch, batch, api_key): batch for batch in batches}
+        for future in as_completed(futures):
+            results.update(future.result())
+            completed += 1
+            _elapsed = time.time() - _extract_start
+            if completed > 1 and completed < n_batches:
+                _rate = _elapsed / completed
+                _remaining = int(_rate * (n_batches - completed))
+                _rem_str = f"~{_remaining}s" if _remaining < 60 else f"~{_remaining // 60}m {_remaining % 60}s"
+                prog.progress(
+                    completed / n_batches,
+                    text=f"{completed}/{n_batches} batches — {len(results)} companies done · {_rem_str} remaining…",
+                )
+            else:
+                prog.progress(
+                    completed / n_batches,
+                    text=f"{completed}/{n_batches} batches — {len(results)} companies done…",
+                )
 
     prog.empty()
 
