@@ -5,11 +5,15 @@ import requests
 import json
 import re
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 _OUTLIER_LABEL = "Outliers"
 _GEN_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
 _BATCH_SIZE = 20
 _DESC_COL = "Description"
+# Paid tier: gemini-2.5-flash is ~300–1000 RPM — 10 workers is safe.
+# Reduce if you consistently see 429 errors on a free-tier key.
+_MAX_WORKERS = 10
 
 
 # ============================================================
@@ -129,8 +133,8 @@ def _llm_reassign_batch(
     cluster_names: list[str],
     include_outliers: bool,
     api_key: str,
-) -> dict[int, str]:
-    """Call Gemini for one batch. Returns {row_index: cluster_name}."""
+) -> tuple[dict[int, str], str | None]:
+    """Call Gemini for one batch. Returns ({row_index: cluster_name}, error_msg | None)."""
     company_lines = "\n".join(
         f'  "{i}": {name} — {desc[:600]}'
         for i, (_, name, desc) in enumerate(batch)
@@ -165,8 +169,7 @@ def _llm_reassign_batch(
             timeout=60,
         )
         if resp.status_code != 200:
-            st.warning(f"LLM batch error {resp.status_code}: {resp.text[:200]}")
-            return {}
+            return {}, f"LLM batch error {resp.status_code}: {resp.text[:200]}"
         raw = resp.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
         raw = re.sub(r"```json|```", "", raw).strip()
         parsed = json.loads(raw)
@@ -180,14 +183,12 @@ def _llm_reassign_batch(
                 result[row_idx] = assigned if assigned in valid_set else (
                     _OUTLIER_LABEL if include_outliers else cluster_names[0]
                 )
-        return result
+        return result, None
 
     except json.JSONDecodeError as e:
-        st.warning(f"LLM returned invalid JSON: {e}")
-        return {}
+        return {}, f"LLM returned invalid JSON: {e}"
     except Exception as e:
-        st.warning(f"LLM reassignment batch failed: {e}")
-        return {}
+        return {}, f"LLM reassignment batch failed: {e}"
 
 
 def _llm_reassign_all(
@@ -216,26 +217,42 @@ def _llm_reassign_all(
 
     results: dict[int, str] = {}
     n_batches = max(1, (len(companies) + _BATCH_SIZE - 1) // _BATCH_SIZE)
-    _eta_secs = n_batches * 4
+    _rounds = max(1, (n_batches + _MAX_WORKERS - 1) // _MAX_WORKERS)
+    _eta_secs = _rounds * 4
     _eta_str = f"~{_eta_secs}s" if _eta_secs < 60 else f"~{_eta_secs // 60}m {_eta_secs % 60}s"
-    prog = st.progress(0, text=f"Reassigning companies via Gemini… (est. {_eta_str})")
+    prog = st.progress(0, text=f"Reassigning companies via Gemini… (est. {_eta_str}, {_MAX_WORKERS} parallel calls)")
     _reassign_start = time.time()
 
-    for b in range(n_batches):
-        batch = companies[b * _BATCH_SIZE: (b + 1) * _BATCH_SIZE]
-        batch_result = _llm_reassign_batch(batch, cluster_block, cluster_names, include_outliers, api_key)
-        results.update(batch_result)
-        _elapsed = time.time() - _reassign_start
-        if b > 0:
-            _rate = _elapsed / (b + 1)
-            _remaining = int(_rate * (n_batches - b - 1))
-            _rem_str = f"~{_remaining}s" if _remaining < 60 else f"~{_remaining // 60}m {_remaining % 60}s"
-            prog.progress((b + 1) / n_batches, text=f"Batch {b + 1} / {n_batches} — {_rem_str} remaining…")
-        else:
-            prog.progress((b + 1) / n_batches, text=f"Batch {b + 1} / {n_batches}…")
-        time.sleep(0.15)
+    batches = [companies[b * _BATCH_SIZE: (b + 1) * _BATCH_SIZE] for b in range(n_batches)]
+    error_msgs: list[str] = []
+    completed = 0
+
+    with ThreadPoolExecutor(max_workers=_MAX_WORKERS) as ex:
+        futures = {
+            ex.submit(_llm_reassign_batch, batch, cluster_block, cluster_names, include_outliers, api_key): batch
+            for batch in batches
+        }
+        for future in as_completed(futures):
+            batch_result, err = future.result()
+            results.update(batch_result)
+            if err:
+                error_msgs.append(err)
+            completed += 1
+            _elapsed = time.time() - _reassign_start
+            if completed > 1 and completed < n_batches:
+                _rate = _elapsed / completed
+                _remaining = int(_rate * (n_batches - completed))
+                _rem_str = f"~{_remaining}s" if _remaining < 60 else f"~{_remaining // 60}m {_remaining % 60}s"
+                prog.progress(
+                    completed / n_batches,
+                    text=f"{completed}/{n_batches} batches — {_rem_str} remaining…",
+                )
+            else:
+                prog.progress(completed / n_batches, text=f"{completed}/{n_batches} batches…")
 
     prog.empty()
+    for msg in error_msgs:
+        st.warning(msg)
     return results
 
 
