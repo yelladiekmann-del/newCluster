@@ -1,6 +1,8 @@
 import streamlit as st
 import pandas as pd
 import requests
+import json
+import re
 
 _OUTLIER_LABEL = "Outliers"
 _GEN_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
@@ -152,6 +154,25 @@ def _build_system_context(
 
 
 # ============================================================
+# ACTION PARSING
+# ============================================================
+
+def _extract_actions(response: str) -> tuple[str, list[dict] | None]:
+    """Strip <actions>...</actions> block from response and parse JSON."""
+    m = re.search(r'<actions>(.*?)</actions>', response, re.DOTALL)
+    if not m:
+        return response, None
+    clean = (response[:m.start()] + response[m.end():]).strip()
+    try:
+        actions = json.loads(m.group(1).strip())
+        if isinstance(actions, list):
+            return clean, actions
+    except Exception:
+        pass
+    return response, None
+
+
+# ============================================================
 # GEMINI CALL
 # ============================================================
 
@@ -183,6 +204,64 @@ def _call_gemini(user_message: str, system_context: str, history: list[dict], ap
 
 
 # ============================================================
+# ACTION EXECUTION
+# ============================================================
+
+def _execute_actions(
+    actions: list[dict],
+    df_clean: pd.DataFrame,
+    company_col: str,
+    dimensions: list[str],
+) -> None:
+    """Apply a list of actions to df_clean in session state."""
+    df = df_clean.copy()
+    descs = dict(st.session_state.get("cr_cluster_descriptions", {}))
+
+    for action in actions:
+        t = action.get("type")
+        if t == "delete":
+            cluster = action.get("cluster", "")
+            df.loc[df["Cluster"] == cluster, "Cluster"] = _OUTLIER_LABEL
+            descs.pop(cluster, None)
+
+        elif t == "merge":
+            sources = action.get("sources", [])
+            new_name = action.get("new_name", "")
+            if new_name:
+                for src in sources:
+                    df.loc[df["Cluster"] == src, "Cluster"] = new_name
+                    descs.pop(src, None)
+
+        elif t == "add":
+            new_name = action.get("name", "")
+            description = action.get("description", "")
+            companies = action.get("companies", [])
+            if new_name and companies:
+                lower_map = {str(v).lower(): idx for idx, v in df[company_col].items()}
+                for co in companies:
+                    row_idx = lower_map.get(co.lower())
+                    if row_idx is not None:
+                        df.at[row_idx, "Cluster"] = new_name
+                if description:
+                    descs[new_name] = description
+
+    st.session_state["df_clean"] = df
+    st.session_state["cr_cluster_descriptions"] = descs
+
+    # Rebuild chat context with updated df (reuse existing market context — no new search)
+    market_ctx = st.session_state.get("chat_market_context_raw", "")
+    st.session_state["chat_context"] = _build_system_context(
+        df, company_col, dimensions,
+        market_context=market_ctx,
+        cluster_descriptions=descs,
+    )
+    # Update hash so onboarding reset doesn't trigger
+    st.session_state["chat_context_hash"] = _build_context_hash(df)
+    # Clear pending actions
+    st.session_state["chat_pending_actions"] = None
+
+
+# ============================================================
 # PUBLIC ENTRY POINT
 # ============================================================
 
@@ -199,6 +278,8 @@ def render_cluster_chat(
     st.session_state.setdefault("chat_pending_msg", None)
     st.session_state.setdefault("chat_onboarded", False)
     st.session_state.setdefault("chat_analysis_context", "")
+    st.session_state.setdefault("chat_market_context_raw", "")
+    st.session_state.setdefault("chat_pending_actions", None)
 
     # Reset onboarding when clusters change
     current_hash = _build_context_hash(df_clean)
@@ -209,6 +290,7 @@ def render_cluster_chat(
         st.session_state["chat_context"] = ""
         st.session_state["chat_onboarded"] = False
         st.session_state["chat_analysis_context"] = ""
+        st.session_state["chat_pending_actions"] = None
         if was_populated:
             st.session_state["chat_reset_notice"] = True
 
@@ -237,6 +319,7 @@ def render_cluster_chat(
                 market_ctx = _fetch_market_context(
                     named_clusters, df_clean, company_col, api_key, user_context=ctx
                 )
+            st.session_state["chat_market_context_raw"] = market_ctx
             cluster_descs = st.session_state.get("cr_cluster_descriptions", {})
             st.session_state["chat_context"] = _build_system_context(
                 df_clean, company_col, dimensions,
@@ -288,15 +371,18 @@ def render_cluster_chat(
                 st.markdown(pending)
             with st.chat_message("assistant"):
                 with st.spinner("Thinking… (~5–15s)"):
-                    response = _call_gemini(
+                    raw_response = _call_gemini(
                         pending,
                         st.session_state["chat_context"],
                         st.session_state["chat_history"],
                         api_key,
                     )
-                st.markdown(response)
+                display_text, actions = _extract_actions(raw_response)
+                st.markdown(display_text)
             st.session_state["chat_history"].append({"role": "user", "content": pending})
-            st.session_state["chat_history"].append({"role": "assistant", "content": response})
+            st.session_state["chat_history"].append({"role": "assistant", "content": display_text})
+            if actions is not None:
+                st.session_state["chat_pending_actions"] = actions
             st.session_state["chat_pending_msg"] = None
 
     # Pre-written cluster review prompt
@@ -311,7 +397,19 @@ def render_cluster_chat(
         "**4. ADD** — Identify important market segments that are absent from the current clustering. "
         "For each new cluster to add, provide: a proposed name, a one-sentence description, "
         "and 3–5 example companies from the dataset that would belong there.\n\n"
-        "Ground all recommendations in the specific companies and cluster compositions you know."
+        "Ground all recommendations in the specific companies and cluster compositions you know.\n\n"
+        "After your prose recommendations, append a machine-readable action list using EXACTLY this format "
+        "(no explanation, no extra text around the tags):\n\n"
+        "<actions>\n"
+        "[\n"
+        "  {\"type\": \"delete\", \"cluster\": \"<exact cluster name>\"},\n"
+        "  {\"type\": \"merge\", \"sources\": [\"<cluster A>\", \"<cluster B>\"], \"new_name\": \"<merged name>\"},\n"
+        "  {\"type\": \"add\", \"name\": \"<new cluster name>\", \"description\": \"<one sentence>\", "
+        "\"companies\": [\"<company1>\", \"<company2>\", \"<company3>\"]}\n"
+        "]\n"
+        "</actions>\n\n"
+        "Only include delete, merge, and add actions — omit KEEP entries entirely. "
+        "Use exact cluster and company names as they appear in the data."
     )
     if st.button("📋 Request cluster review", disabled=not api_key):
         st.session_state["chat_pending_msg"] = _REVIEW_PROMPT
@@ -333,3 +431,45 @@ def render_cluster_chat(
     if submitted and user_input.strip():
         st.session_state["chat_pending_msg"] = user_input.strip()
         st.rerun()
+
+    # ── PENDING ACTIONS APPROVAL UI ─────────────────────────────
+    pending_actions = st.session_state.get("chat_pending_actions")
+    if pending_actions:
+        st.divider()
+        n_actions = len(pending_actions)
+        with st.expander(f"🤖 {n_actions} suggested action{'s' if n_actions != 1 else ''} — click to review", expanded=True):
+            for i, action in enumerate(pending_actions):
+                t = action.get("type")
+                if t == "delete":
+                    label = f"🗑 Delete: **{action.get('cluster', '')}**"
+                elif t == "merge":
+                    sources = action.get("sources", [])
+                    label = f"↔ Merge: **{' + '.join(sources)}** → **{action.get('new_name', '')}**"
+                elif t == "add":
+                    companies = action.get("companies", [])
+                    label = f"➕ Add: **{action.get('name', '')}** ({len(companies)} companies)"
+                else:
+                    continue
+
+                col_lbl, col_btn = st.columns([8, 2])
+                with col_lbl:
+                    st.markdown(label)
+                with col_btn:
+                    if st.button("Execute", key=f"action_exec_{i}"):
+                        _execute_actions([action], df_clean, company_col, dimensions)
+                        # Remove this action from pending list
+                        remaining = [a for j, a in enumerate(pending_actions) if j != i]
+                        st.session_state["chat_pending_actions"] = remaining if remaining else None
+                        st.rerun()
+
+            st.markdown("")
+            col_all, col_dismiss = st.columns([1, 1])
+            with col_all:
+                if st.button("✅ Execute all", type="primary", key="action_exec_all"):
+                    _execute_actions(pending_actions, df_clean, company_col, dimensions)
+                    st.session_state["chat_pending_actions"] = None
+                    st.rerun()
+            with col_dismiss:
+                if st.button("✕ Dismiss", key="action_dismiss"):
+                    st.session_state["chat_pending_actions"] = None
+                    st.rerun()
