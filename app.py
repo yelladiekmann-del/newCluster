@@ -55,7 +55,7 @@ GEN_URL     = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.
 
 _defaults = {
     "df_clean": None, "embedded_2d": None, "feature_matrix": None,
-    "done": False, "cluster_metrics": None,
+    "done": False, "cluster_metrics": None, "confirm_rerun_pending": False,
 }
 for k, v in _defaults.items():
     st.session_state.setdefault(k, v)
@@ -457,13 +457,6 @@ if has_csv:
         with scol:
             st.caption(f"{'✅' if done else '⬜'} {label}")
 
-# --- Confirmation guard for destructive re-run ---
-if _clustered:
-    st.warning("Running again will discard all current clustering results, names, and review edits.")
-    confirmed = st.checkbox("I understand — discard current results and re-run", key="confirm_rerun")
-else:
-    confirmed = True
-
 # --- Load-bearing expander (fixes Streamlit widget-tree sync) ---
 with st.expander("ℹ️ Session status", expanded=False):
     st.write({
@@ -475,24 +468,48 @@ with st.expander("ℹ️ Session status", expanded=False):
         "_reviewed":      _reviewed,
     })
 
-col_a, col_b, col_c = st.columns(3)
-with col_a:
-    start = st.button(
-        "▶  Run embeddings + clustering", type="primary", width='stretch',
-        disabled=not (has_api_key and has_csv and confirmed),
-    )
-with col_b:
-    recluster = st.button(
-        "↺  Re-cluster only", width='stretch',
-        disabled=not has_embeddings,
-        help="Skips embeddings. Re-runs UMAP + HDBSCAN with current parameters.",
-    )
-with col_c:
-    name_btn = st.button(
-        "🏷  Name clusters", width='stretch',
-        disabled=not (has_api_key and _clustered),
-        help="One Gemini call — names all clusters at once.",
-    )
+# --- Buttons row OR confirmation dialog ---
+if st.session_state.get("confirm_rerun_pending"):
+    st.warning("Running again will discard all current clustering results, names, and review edits.")
+    col_confirm, col_cancel = st.columns(2)
+    with col_confirm:
+        _confirmed = st.button("Confirm — discard and re-run", type="primary", width="stretch")
+    with col_cancel:
+        _cancelled = st.button("Cancel", width="stretch")
+
+    if _cancelled:
+        st.session_state["confirm_rerun_pending"] = False
+        st.rerun()
+
+    if _confirmed:
+        st.session_state["confirm_rerun_pending"] = False
+
+    start    = _confirmed
+    recluster = False
+    name_btn  = False
+else:
+    col_a, col_b, col_c = st.columns(3)
+    with col_a:
+        _run_clicked = st.button(
+            "▶  Run embeddings + clustering", type="primary", width='stretch',
+            disabled=not (has_api_key and has_csv),
+        )
+        if _run_clicked and _clustered:
+            st.session_state["confirm_rerun_pending"] = True
+            st.rerun()
+        start = _run_clicked and not _clustered
+    with col_b:
+        recluster = st.button(
+            "↺  Re-cluster only", width='stretch',
+            disabled=not has_embeddings,
+            help="Skips embeddings. Re-runs UMAP + HDBSCAN with current parameters.",
+        )
+    with col_c:
+        name_btn = st.button(
+            "🏷  Name clusters", width='stretch',
+            disabled=not (has_api_key and _clustered),
+            help="One Gemini call — names all clusters at once.",
+        )
 
 # ============================================================
 # PIPELINE — FULL RUN

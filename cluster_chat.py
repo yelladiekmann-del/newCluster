@@ -177,31 +177,30 @@ def render_cluster_chat(
         st.info("Chat history was reset because cluster assignments changed.")
         st.session_state["chat_reset_notice"] = False
 
-    # Render chat history in a bounded scrollable container
-    with st.container(height=450):
+    # Chat history + input inside a single bounded container (keeps input non-sticky)
+    with st.container(height=500):
         for msg in st.session_state["chat_history"]:
             with st.chat_message(msg["role"]):
                 st.markdown(msg["content"])
 
-    # Chat input
-    prompt = st.chat_input(
-        "Ask anything about the clusters or companies…",
-        disabled=not api_key,
-    )
+        prompt = st.chat_input(
+            "Ask anything about the clusters or companies…",
+            disabled=not api_key,
+        )
 
-    if prompt:
-        st.session_state["chat_history"].append({"role": "user", "content": prompt})
-        with st.chat_message("user"):
-            st.markdown(prompt)
+        if prompt:
+            st.session_state["chat_history"].append({"role": "user", "content": prompt})
+            with st.chat_message("user"):
+                st.markdown(prompt)
 
-        with st.chat_message("assistant"):
-            with st.spinner("Thinking…"):
-                response = _call_gemini(
-                    prompt,
-                    st.session_state["chat_context"],
-                    st.session_state["chat_history"][:-1],  # exclude the message we just added
-                    api_key,
-                )
-            st.markdown(response)
+            with st.chat_message("assistant"):
+                with st.spinner("Thinking…"):
+                    response = _call_gemini(
+                        prompt,
+                        st.session_state["chat_context"],
+                        st.session_state["chat_history"][:-1],  # exclude the message we just added
+                        api_key,
+                    )
+                st.markdown(response)
 
-        st.session_state["chat_history"].append({"role": "assistant", "content": response})
+            st.session_state["chat_history"].append({"role": "assistant", "content": response})

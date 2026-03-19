@@ -45,10 +45,17 @@ def _render_named_cluster(
     dimensions: list[str],
 ) -> None:
     n = len(df_cluster)
-    st.markdown(
-        f"### {cluster_name} &nbsp; <sup style='font-size:0.6em;color:gray'>{n} companies</sup>",
-        unsafe_allow_html=True,
-    )
+    col_hdr, col_del = st.columns([11, 1])
+    with col_hdr:
+        st.markdown(
+            f"### {cluster_name} &nbsp; <sup style='font-size:0.6em;color:gray'>{n} companies</sup>",
+            unsafe_allow_html=True,
+        )
+    with col_del:
+        if st.button("🗑", key=f"cr_del_{cluster_name}", help=f"Delete cluster \"{cluster_name}\""):
+            st.session_state["cr_delete_pending"] = cluster_name
+            st.session_state["cr_delete_target"] = _OUTLIER_LABEL
+            st.rerun()
 
     st.markdown(_build_auto_description(df_cluster, dimensions))
 
@@ -235,6 +242,9 @@ def render_cluster_review(
     st.session_state.setdefault("cr_name_edits", {})
     st.session_state.setdefault("cr_core_companies", {})
     st.session_state.setdefault("cr_rerun_report", None)
+    st.session_state.setdefault("cr_delete_pending", None)
+    st.session_state.setdefault("cr_delete_target", _OUTLIER_LABEL)
+    st.session_state.setdefault("cr_adding", False)
 
     st.subheader("Cluster Review & Edit")
     st.caption(
@@ -286,12 +296,84 @@ def render_cluster_review(
     )
     df_outliers = df_clean[df_clean["Cluster"] == _OUTLIER_LABEL]
 
+    # --- Delete confirmation ---
+    delete_pending = st.session_state.get("cr_delete_pending")
+    if delete_pending and delete_pending in named_clusters:
+        n_del = int((df_clean["Cluster"] == delete_pending).sum())
+        other_destinations = [_OUTLIER_LABEL] + [c for c in named_clusters if c != delete_pending]
+        st.warning(
+            f"Delete **{delete_pending}**? "
+            f"Its {n_del} {'company' if n_del == 1 else 'companies'} will be moved to the chosen cluster."
+        )
+        col_dest, col_confirm, col_cancel = st.columns([3, 2, 2])
+        with col_dest:
+            target = st.selectbox(
+                "Move companies to",
+                options=other_destinations,
+                key="cr_delete_target_select",
+                label_visibility="collapsed",
+            )
+        with col_confirm:
+            if st.button("Confirm delete", type="primary", key="cr_delete_confirm", width="stretch"):
+                df_clean.loc[df_clean["Cluster"] == delete_pending, "Cluster"] = target
+                st.session_state.df_clean = df_clean
+                st.session_state["cr_delete_pending"] = None
+                st.session_state["cr_name_edits"] = {}
+                st.rerun()
+        with col_cancel:
+            if st.button("Cancel", key="cr_delete_cancel", width="stretch"):
+                st.session_state["cr_delete_pending"] = None
+                st.rerun()
+        st.divider()
+
     for cluster_name in named_clusters:
         df_cluster = df_clean[df_clean["Cluster"] == cluster_name].reset_index(drop=True)
         _render_named_cluster(cluster_name, df_cluster, company_col, dimensions)
 
     if len(df_outliers) > 0:
         _render_outlier_cluster(df_outliers.reset_index(drop=True), company_col, dimensions)
+
+    # --- Add new cluster ---
+    if st.session_state.get("cr_adding"):
+        st.subheader("New cluster")
+        new_name = st.text_input(
+            "Cluster name",
+            key="cr_new_cluster_name",
+            placeholder="e.g. Enterprise SaaS",
+        )
+        all_companies = df_clean[company_col].dropna().tolist() if company_col in df_clean.columns else []
+        new_companies = st.multiselect(
+            "Assign companies",
+            options=all_companies,
+            key="cr_new_cluster_companies",
+            placeholder="Pick companies to include…",
+        )
+        col_create, col_cancel_add = st.columns(2)
+        with col_create:
+            if st.button("Create cluster", type="primary", key="cr_add_create", width="stretch"):
+                new_name_clean = (new_name or "").strip()
+                existing_names = set(df_clean["Cluster"].unique().tolist())
+                if not new_name_clean:
+                    st.error("Please enter a cluster name.")
+                elif new_name_clean in existing_names:
+                    st.error(f'"{new_name_clean}" already exists. Choose a different name.')
+                elif not new_companies:
+                    st.error("Select at least one company.")
+                else:
+                    df_clean.loc[df_clean[company_col].isin(new_companies), "Cluster"] = new_name_clean
+                    st.session_state.df_clean = df_clean
+                    st.session_state["cr_adding"] = False
+                    st.session_state["cr_name_edits"] = {}
+                    st.rerun()
+        with col_cancel_add:
+            if st.button("Cancel", key="cr_add_cancel", width="stretch"):
+                st.session_state["cr_adding"] = False
+                st.rerun()
+        st.divider()
+    else:
+        if st.button("➕ Add new cluster", key="cr_add_btn"):
+            st.session_state["cr_adding"] = True
+            st.rerun()
 
     include_outliers = st.toggle(
         "Include outliers in reassignment",
