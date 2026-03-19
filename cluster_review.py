@@ -128,16 +128,16 @@ def _build_cluster_block(cluster_names: list[str], df_clean: pd.DataFrame, dimen
 
 
 def _llm_reassign_batch(
-    batch: list[tuple[int, str, str]],   # (row_index, company_name, description)
+    batch: list[tuple[int, str, str, str]],   # (row_index, company_name, description, current_cluster)
     cluster_block: str,
     cluster_names: list[str],
     include_outliers: bool,
     api_key: str,
-) -> tuple[dict[int, str], str | None]:
-    """Call Gemini for one batch. Returns ({row_index: cluster_name}, error_msg | None)."""
+) -> tuple[dict[int, str], dict[int, str], str | None]:
+    """Call Gemini for one batch. Returns ({row_index: cluster_name}, {row_index: reason}, error_msg | None)."""
     company_lines = "\n".join(
-        f'  "{i}": {name} — {desc[:600]}'
-        for i, (_, name, desc) in enumerate(batch)
+        f'  "{i}": {name} (currently: "{cur}") — {desc[:600]}'
+        for i, (_, name, desc, cur) in enumerate(batch)
     )
 
     valid = list(cluster_names) + ([_OUTLIER_LABEL] if include_outliers else [])
@@ -159,7 +159,10 @@ def _llm_reassign_batch(
         'Return ONLY a JSON object where keys are the company numbers (as strings) '
         'and values are the exact segment name:\n'
         '{"0": "Segment Name", "1": "Other Segment", ...}\n'
-        "No explanation, no markdown, just the JSON."
+        'Additionally, if any assignment is non-obvious (e.g. moving away from the current segment), '
+        'add an optional "reasons" key with brief explanations (≤8 words each):\n'
+        '{"0": "Segment A", "1": "Segment B", "reasons": {"0": "KYC focus fits compliance cluster"}}\n'
+        'Omit "reasons" entirely if all assignments are clear. No markdown, just the JSON.'
     )
 
     try:
@@ -169,26 +172,38 @@ def _llm_reassign_batch(
             timeout=60,
         )
         if resp.status_code != 200:
-            return {}, f"LLM batch error {resp.status_code}: {resp.text[:200]}"
+            return {}, {}, f"LLM batch error {resp.status_code}: {resp.text[:200]}"
         raw = resp.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
         raw = re.sub(r"```json|```", "", raw).strip()
         parsed = json.loads(raw)
 
         valid_set = set(valid)
         result = {}
+        raw_reasons = parsed.get("reasons", {}) if isinstance(parsed, dict) else {}
         for pos_str, assigned in parsed.items():
-            pos = int(pos_str)
+            if pos_str == "reasons":
+                continue
+            try:
+                pos = int(pos_str)
+            except ValueError:
+                continue
             if 0 <= pos < len(batch):
                 row_idx = batch[pos][0]
                 result[row_idx] = assigned if assigned in valid_set else (
                     _OUTLIER_LABEL if include_outliers else cluster_names[0]
                 )
-        return result, None
+        # Map string position keys → row_idx
+        row_reasons = {
+            batch[int(k)][0]: str(v)
+            for k, v in raw_reasons.items()
+            if k.isdigit() and int(k) < len(batch)
+        }
+        return result, row_reasons, None
 
     except json.JSONDecodeError as e:
-        return {}, f"LLM returned invalid JSON: {e}"
+        return {}, {}, f"LLM returned invalid JSON: {e}"
     except Exception as e:
-        return {}, f"LLM reassignment batch failed: {e}"
+        return {}, {}, f"LLM reassignment batch failed: {e}"
 
 
 def _llm_reassign_all(
@@ -198,8 +213,8 @@ def _llm_reassign_all(
     cluster_names: list[str],
     include_outliers: bool,
     api_key: str,
-) -> dict[int, str]:
-    """Reassign all eligible companies via LLM. Returns {row_index: new_cluster_name}."""
+) -> tuple[dict[int, str], dict[int, str]]:
+    """Reassign all eligible companies via LLM. Returns ({row_index: new_cluster_name}, {row_index: reason})."""
     cluster_block = _build_cluster_block(cluster_names, df_clean, dimensions)
 
     if include_outliers:
@@ -213,7 +228,8 @@ def _llm_reassign_all(
         desc = str(row.get(_DESC_COL, "")).strip()
         if not desc:
             desc = " | ".join(str(row.get(d, "")) for d in dimensions if d in row.index)
-        companies.append((idx, name, desc))
+        current = str(row.get("Cluster", _OUTLIER_LABEL))
+        companies.append((idx, name, desc, current))
 
     results: dict[int, str] = {}
     n_batches = max(1, (len(companies) + _BATCH_SIZE - 1) // _BATCH_SIZE)
@@ -225,6 +241,7 @@ def _llm_reassign_all(
 
     batches = [companies[b * _BATCH_SIZE: (b + 1) * _BATCH_SIZE] for b in range(n_batches)]
     error_msgs: list[str] = []
+    all_reasons: dict[int, str] = {}
     completed = 0
 
     with ThreadPoolExecutor(max_workers=_MAX_WORKERS) as ex:
@@ -233,8 +250,9 @@ def _llm_reassign_all(
             for batch in batches
         }
         for future in as_completed(futures):
-            batch_result, err = future.result()
+            batch_result, batch_reasons, err = future.result()
             results.update(batch_result)
+            all_reasons.update(batch_reasons)
             if err:
                 error_msgs.append(err)
             completed += 1
@@ -253,7 +271,7 @@ def _llm_reassign_all(
     prog.empty()
     for msg in error_msgs:
         st.warning(msg)
-    return results
+    return results, all_reasons
 
 
 # ============================================================
@@ -309,7 +327,9 @@ def render_cluster_review(
             # Companies that switched
             if report["switches"]:
                 st.markdown(f"**Companies that switched ({len(report['switches'])}):**")
-                switch_df = _pd.DataFrame(report["switches"], columns=["Company", "From", "To"])
+                switch_df = _pd.DataFrame(report["switches"], columns=["Company", "From", "To", "Reason"])
+                if switch_df["Reason"].str.strip().eq("").all():
+                    switch_df = switch_df.drop(columns=["Reason"])
                 st.dataframe(switch_df, width="stretch", hide_index=True)
 
         if st.button("Dismiss report", key="cr_dismiss_report"):
@@ -434,7 +454,7 @@ def render_cluster_review(
         named_after_edit = [name_edits.get(n, n) for n in named_clusters]
         old_clusters = df_named["Cluster"].copy()
 
-        assignments = _llm_reassign_all(
+        assignments, all_reasons = _llm_reassign_all(
             df_named, company_col, dimensions, named_after_edit, include_outliers, api_key
         )
 
@@ -456,7 +476,8 @@ def render_cluster_review(
         switches = []
         for idx in df_out.index[switch_mask]:
             company_name = str(df_out.at[idx, company_col]) if company_col in df_out.columns else str(idx)
-            switches.append((company_name, old_clusters[idx], df_out.at[idx, "Cluster"]))
+            reason = all_reasons.get(idx, "")
+            switches.append((company_name, old_clusters[idx], df_out.at[idx, "Cluster"], reason))
 
         st.session_state["cr_rerun_report"] = {
             "n_switched": len(switches),

@@ -19,11 +19,57 @@ def _build_context_hash(df_clean: pd.DataFrame) -> str:
     return str(df_clean["Cluster"].value_counts().to_dict())
 
 
+def _fetch_market_context(
+    cluster_names: list[str],
+    df_clean: pd.DataFrame,
+    company_col: str,
+    api_key: str,
+) -> str:
+    """
+    Make one Gemini call with Google Search grounding to get a live market
+    landscape overview tailored to the actual cluster names and companies.
+    Cached per clustering session in session state.
+    """
+    # One sample company per cluster
+    samples = []
+    for name in cluster_names:
+        row = df_clean[df_clean["Cluster"] == name].iloc[0] if (df_clean["Cluster"] == name).any() else None
+        if row is not None:
+            samples.append(str(row.get(company_col, name)))
+
+    prompt = (
+        "You are a market research analyst. A startup/company portfolio has been organized into these market segments:\n\n"
+        f"Segments: {', '.join(cluster_names)}\n"
+        f"Sample companies: {', '.join(samples)}\n\n"
+        "Search the web and provide a focused market landscape overview (200–300 words):\n"
+        "1. What broader market domain does this portfolio represent?\n"
+        "2. What key segments are typically present in this space — including any that may be MISSING from the segments above?\n"
+        "3. Major incumbent players or solution categories buyers evaluate\n"
+        "4. Common buyer pain points and evaluation criteria\n\n"
+        "This context will be used to answer portfolio gap-analysis and market completeness questions."
+    )
+    try:
+        resp = requests.post(
+            f"{_GEN_URL}?key={api_key}",
+            json={
+                "contents": [{"parts": [{"text": prompt}]}],
+                "tools": [{"google_search": {}}],
+            },
+            timeout=60,
+        )
+        if resp.status_code == 200:
+            return resp.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
+    except Exception:
+        pass
+    return ""
+
+
 def _build_system_context(
     df_clean: pd.DataFrame,
     company_col: str,
     dimensions: list[str],
     cluster_metrics: dict,
+    market_context: str = "",
 ) -> str:
     n_total = len(df_clean)
     n_outliers = int((df_clean["Cluster"] == _OUTLIER_LABEL).sum())
@@ -92,6 +138,9 @@ def _build_system_context(
         for _, row in df_out.iterrows():
             lines.append(f"  - {str(row.get(company_col, 'Unknown'))}")
 
+    if market_context:
+        lines += ["", "=== LIVE MARKET INTELLIGENCE (web search) ===", market_context]
+
     return "\n".join(lines)
 
 
@@ -142,13 +191,21 @@ def render_cluster_chat(
     st.session_state.setdefault("chat_context_hash", "")
     st.session_state.setdefault("chat_reset_notice", False)
     st.session_state.setdefault("chat_pending_msg", None)
+    st.session_state.setdefault("chat_market_context", "")
 
     # Rebuild context if clusters have changed
     current_hash = _build_context_hash(df_clean)
     if current_hash != st.session_state["chat_context_hash"]:
         was_populated = bool(st.session_state["chat_history"])
+
+        named_clusters = [c for c in df_clean["Cluster"].unique() if c != _OUTLIER_LABEL]
+        with st.spinner("Researching market landscape… (~5s)"):
+            market_ctx = _fetch_market_context(named_clusters, df_clean, company_col, api_key)
+        st.session_state["chat_market_context"] = market_ctx
+
         st.session_state["chat_context"] = _build_system_context(
-            df_clean, company_col, dimensions, cluster_metrics
+            df_clean, company_col, dimensions, cluster_metrics,
+            market_context=market_ctx,
         )
         st.session_state["chat_context_hash"] = current_hash
         st.session_state["chat_history"] = []

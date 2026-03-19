@@ -66,7 +66,7 @@ _EMBED_WORKERS = 10
 _defaults = {
     "df_clean": None, "embedded_2d": None, "feature_matrix": None,
     "done": False, "cluster_metrics": None, "confirm_rerun_pending": False,
-    "df_enriched": None, "df_enriched_src": None,
+    "df_enriched": None, "df_enriched_src": None, "autotune_result": None,
 }
 for k, v in _defaults.items():
     st.session_state.setdefault(k, v)
@@ -308,6 +308,63 @@ def run_clustering(
 
 
 # ============================================================
+# AUTOTUNE — suggest optimal HDBSCAN params via grid search
+# ============================================================
+def find_optimal_params(feature_matrix: np.ndarray, umap_cluster_dims: int) -> dict:
+    """
+    Run UMAP once then sweep a small HDBSCAN grid, returning the combo with
+    the best silhouette score (Davies-Bouldin as tiebreaker).
+    """
+    n = len(feature_matrix)
+    actual_dims = min(umap_cluster_dims, n - 2, feature_matrix.shape[1])
+    reducer = umap.UMAP(
+        n_components=actual_dims,
+        n_neighbors=min(15, n - 1),
+        min_dist=0.0,
+        metric="cosine",
+        random_state=42,
+    )
+    embedded = reducer.fit_transform(feature_matrix)
+
+    sizes = [s for s in [3, 5, 7, 10, 15] if s <= max(2, n // 3)]
+    if not sizes:
+        sizes = [max(2, n // 5)]
+
+    best: dict | None = None
+    for mcs in sizes:
+        for ms in [1, 3, 5]:
+            if ms > mcs:
+                continue
+            try:
+                labels = hdbscan.HDBSCAN(
+                    min_cluster_size=mcs,
+                    min_samples=ms,
+                    cluster_selection_epsilon=0.0,
+                    cluster_selection_method="leaf",
+                    metric="euclidean",
+                ).fit_predict(embedded)
+                nc = len([l for l in set(labels) if l >= 0])
+                mask = labels != -1
+                if nc < 2 or mask.sum() < 2:
+                    continue
+                sil = float(silhouette_score(embedded[mask], labels[mask]))
+                db  = float(davies_bouldin_score(embedded[mask], labels[mask]))
+                if best is None or sil > best["silhouette"] or (
+                    abs(sil - best["silhouette"]) < 1e-4 and db < best["davies_bouldin"]
+                ):
+                    best = {
+                        "min_cluster_size": mcs, "min_samples": ms,
+                        "n_clusters": nc,
+                        "silhouette": round(sil, 3), "davies_bouldin": round(db, 3),
+                    }
+            except Exception:
+                continue
+
+    return best or {"min_cluster_size": 5, "min_samples": 3, "n_clusters": 0,
+                    "silhouette": 0.0, "davies_bouldin": 999.0}
+
+
+# ============================================================
 # HELPERS — UI
 # ============================================================
 def _fmt_secs(s: int) -> str:
@@ -491,10 +548,21 @@ elif has_embeddings and not _clustered:
 # --- Clustering parameters (only shown when CSV is loaded) ---
 if has_csv:
     st.subheader("Clustering parameters")
+
+    # Autotune banner (shown after a suggestion has been applied)
+    _at = st.session_state.get("autotune_result")
+    if _at and _at.get("n_clusters", 0) > 0:
+        st.success(
+            f"✨ Suggested: min\_cluster\_size={_at['min_cluster_size']}, "
+            f"min\_samples={_at['min_samples']} → "
+            f"{_at['n_clusters']} clusters · silhouette={_at['silhouette']:.3f}"
+        )
+
     col1, col2, col3, col4 = st.columns(4)
     with col1:
         min_cluster_size  = st.slider(
             "Min cluster size", 2, 30, 5,
+            key="min_cluster_size",
             help=(
                 "Minimum number of companies to form a cluster. "
                 "Lower → more, smaller clusters (risk: noise gets its own cluster). "
@@ -505,6 +573,7 @@ if has_csv:
     with col2:
         min_samples       = st.slider(
             "Min samples", 1, 20, 3,
+            key="min_samples",
             help=(
                 "Controls how conservative HDBSCAN is about calling a point a core point. "
                 "Higher → stricter core membership, more companies labelled as outliers, tighter clusters. "
@@ -515,6 +584,7 @@ if has_csv:
     with col3:
         cluster_epsilon   = st.slider(
             "Cluster epsilon", 0.0, 2.0, 0.0, step=0.1,
+            key="cluster_epsilon",
             help=(
                 "Merges clusters that are closer than this distance threshold (like a DBSCAN fallback). "
                 "0 = pure HDBSCAN hierarchy, no merging. "
@@ -527,6 +597,20 @@ if has_csv:
             "UMAP cluster dims", 5, 50, 15,
             help="Dimensions used for HDBSCAN (not the scatter plot). Higher = more signal preserved, slower."
         )
+
+    if st.session_state.get("feature_matrix") is not None:
+        if st.button(
+            "✨ Suggest optimal settings",
+            help="Runs UMAP + sweeps HDBSCAN parameter combinations to maximise silhouette score (~10–20s)",
+        ):
+            with st.spinner("Scanning parameter space… (~10–20s)"):
+                _result = find_optimal_params(st.session_state.feature_matrix, umap_cluster_dims)
+            st.session_state["autotune_result"]    = _result
+            st.session_state["min_cluster_size"]   = _result["min_cluster_size"]
+            st.session_state["min_samples"]        = _result["min_samples"]
+            st.session_state["cluster_epsilon"]    = 0.0
+            st.rerun()
+
     st.divider()
 else:
     min_cluster_size, min_samples, cluster_epsilon, umap_cluster_dims = 5, 3, 0.0, 15
@@ -603,9 +687,10 @@ else:
 # PIPELINE — FULL RUN
 # ============================================================
 if start and df_input is not None:
-    st.session_state.done           = False
+    st.session_state.done            = False
     st.session_state.df_clean       = None
     st.session_state.cluster_metrics = None
+    st.session_state["autotune_result"] = None
 
     available_dims = [d for d in DIMENSIONS if d in df_input.columns]
     use_desc = bool(
