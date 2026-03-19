@@ -820,6 +820,7 @@ if recluster and st.session_state.feature_matrix is not None:
     st.session_state.embedded_2d     = embedded_2d
     st.session_state.cluster_metrics = metrics
     st.session_state.done            = True
+    st.session_state["chat_deleted_cluster_indices"] = set()
     st.rerun()
 
 # ============================================================

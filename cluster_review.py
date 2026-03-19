@@ -226,10 +226,15 @@ def _llm_reassign_all(
     """Reassign all eligible companies via LLM. Returns ({row_index: new_cluster_name}, {row_index: reason})."""
     cluster_block = _build_cluster_block(cluster_names, df_clean, dimensions)
 
+    deleted_indices = st.session_state.get("chat_deleted_cluster_indices", set())
+
     if include_outliers:
         eligible = df_clean
     else:
-        eligible = df_clean[df_clean["Cluster"] != _OUTLIER_LABEL]
+        eligible = df_clean[
+            (df_clean["Cluster"] != _OUTLIER_LABEL) |
+            (df_clean.index.isin(deleted_indices))
+        ]
 
     companies = []
     for idx, row in eligible.iterrows():
@@ -525,6 +530,12 @@ def render_cluster_review(
         df_out = df_named.copy()
         for row_idx, new_cluster in assignments.items():
             df_out.at[row_idx, "Cluster"] = new_cluster
+
+        # Remove successfully reassigned companies from the deleted-cluster tracking set
+        reassigned = set(assignments.keys()) & st.session_state.get("chat_deleted_cluster_indices", set())
+        st.session_state["chat_deleted_cluster_indices"] = (
+            st.session_state.get("chat_deleted_cluster_indices", set()) - reassigned
+        )
 
         # Build before/after report and store in session state (survives st.rerun)
         before_counts = old_clusters.value_counts().to_dict()

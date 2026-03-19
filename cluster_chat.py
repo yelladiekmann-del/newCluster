@@ -221,6 +221,9 @@ def _execute_actions(
         t = action.get("type")
         if t == "delete":
             cluster = action.get("cluster", "")
+            deleted_indices = set(df.index[df["Cluster"] == cluster].tolist())
+            existing = st.session_state.get("chat_deleted_cluster_indices", set())
+            st.session_state["chat_deleted_cluster_indices"] = existing | deleted_indices
             df.loc[df["Cluster"] == cluster, "Cluster"] = _OUTLIER_LABEL
             descs.pop(cluster, None)
 
@@ -280,6 +283,8 @@ def render_cluster_chat(
     st.session_state.setdefault("chat_analysis_context", "")
     st.session_state.setdefault("chat_market_context_raw", "")
     st.session_state.setdefault("chat_pending_actions", None)
+    st.session_state.setdefault("chat_pending_display", None)
+    st.session_state.setdefault("chat_deleted_cluster_indices", set())
 
     # Reset onboarding when clusters change
     current_hash = _build_context_hash(df_clean)
@@ -291,6 +296,8 @@ def render_cluster_chat(
         st.session_state["chat_onboarded"] = False
         st.session_state["chat_analysis_context"] = ""
         st.session_state["chat_pending_actions"] = None
+        st.session_state["chat_pending_display"] = None
+        st.session_state["chat_deleted_cluster_indices"] = set()
         if was_populated:
             st.session_state["chat_reset_notice"] = True
 
@@ -358,6 +365,7 @@ def render_cluster_chat(
 
     # Pick up any pending message from the previous submit
     pending = st.session_state.get("chat_pending_msg")
+    display_pending = st.session_state.get("chat_pending_display") or pending
 
     # Messages in a bounded scrollable container
     with st.container(height=430):
@@ -368,7 +376,7 @@ def render_cluster_chat(
         # Render the in-flight exchange inside the same container so it stays visible
         if pending:
             with st.chat_message("user"):
-                st.markdown(pending)
+                st.markdown(display_pending)
             with st.chat_message("assistant"):
                 with st.spinner("Thinking… (~5–15s)"):
                     raw_response = _call_gemini(
@@ -379,11 +387,12 @@ def render_cluster_chat(
                     )
                 display_text, actions = _extract_actions(raw_response)
                 st.markdown(display_text)
-            st.session_state["chat_history"].append({"role": "user", "content": pending})
+            st.session_state["chat_history"].append({"role": "user", "content": display_pending})
             st.session_state["chat_history"].append({"role": "assistant", "content": display_text})
             if actions is not None:
                 st.session_state["chat_pending_actions"] = actions
             st.session_state["chat_pending_msg"] = None
+            st.session_state["chat_pending_display"] = None
 
     # Pre-written cluster review prompt
     _REVIEW_PROMPT = (
@@ -413,6 +422,7 @@ def render_cluster_chat(
     )
     if st.button("📋 Request cluster review", disabled=not api_key):
         st.session_state["chat_pending_msg"] = _REVIEW_PROMPT
+        st.session_state["chat_pending_display"] = "📋 Please review all clusters and provide structured recommendations (KEEP / DELETE / MERGE / ADD)."
         st.rerun()
 
     # Input row sits below the container — not sticky, not overlapping messages
