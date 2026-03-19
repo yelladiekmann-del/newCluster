@@ -317,7 +317,7 @@ with col_b:
     )
 with col_c:
     name_btn = st.button(
-        "🏷 Name clusters", use_container_width=True,
+        "🏷 Name clusters", key="name_btn_step4", use_container_width=True,
         disabled=not (has_api_key and _clustered),
         help="One Gemini call — names all clusters at once.",
     )
@@ -481,23 +481,87 @@ if st.session_state.df_clean is not None and "Cluster" in st.session_state.df_cl
 
     st.divider()
 
-    c1, c2, c3, c4, c5 = st.columns(5)
-    c1.metric("Companies", len(df))
-    c2.metric("Clusters", df["Cluster"].nunique() - (1 if "Outliers" in df["Cluster"].values else 0))
-    c3.metric("Outliers", int((df["Cluster"] == "Outliers").sum()))
+    # ── Quality signal helper ─────────────────────────────────────────────────
     sil = metrics.get("silhouette")
     db  = metrics.get("davies_bouldin")
-    c4.metric("Silhouette", f"{sil:.3f}" if sil is not None else "n/a",
-              help="Range −1 to 1. Above 0.3 is reasonable; above 0.5 is good.")
-    c5.metric("Davies-Bouldin", f"{db:.3f}" if db is not None else "n/a",
-              help="Lower = better. Below 1.0 is good.")
 
+    def _quality_signal(sil, db):
+        signals = []
+        if sil is not None:
+            signals.append("good" if sil >= 0.5 else ("fair" if sil >= 0.3 else "poor"))
+        if db is not None:
+            signals.append("good" if db < 1.0 else ("fair" if db < 1.5 else "poor"))
+        if not signals:
+            return "n/a", "#888"
+        if "poor" in signals:
+            return "Poor", "#d9534f"
+        if "fair" in signals:
+            return "Fair", "#f0ad4e"
+        return "Good", "#5cb85c"
+
+    q_label, q_color = _quality_signal(sil, db)
+    sil_str = f"{sil:.3f}" if sil is not None else "n/a"
+    db_str  = f"{db:.3f}" if db is not None else "n/a"
+    n_comp  = len(df)
+    n_clust = df["Cluster"].nunique() - (1 if "Outliers" in df["Cluster"].values else 0)
+    n_out   = int((df["Cluster"] == "Outliers").sum())
+
+    # ── Slim header bar: Name clusters + compact stats + quality indicator ────
+    col_name_btn, col_stats, col_quality = st.columns([2, 3, 2])
+    with col_name_btn:
+        name_btn_results = st.button(
+            "🏷 Name clusters",
+            key="name_btn_results",
+            disabled=not (has_api_key and _clustered),
+            help="One Gemini call — names all clusters at once.",
+        )
+    with col_stats:
+        st.markdown(
+            f"<span style='color:#888'>{n_comp} companies · {n_clust} clusters · {n_out} outliers</span>",
+            unsafe_allow_html=True,
+        )
+    with col_quality:
+        st.markdown(
+            f"<span style='color:{q_color}; font-size:1.1em'>●</span> "
+            f"**Quality: {q_label}** "
+            f"<span style='color:#888; font-size:0.85em'>(Sil {sil_str} · DB {db_str})</span>",
+            unsafe_allow_html=True,
+        )
+
+    # Handle name button from results header
+    if name_btn_results:
+        if not api_key:
+            st.error("Gemini API key missing.")
+        else:
+            _df_to_name = st.session_state.df_clean
+            _dims_n     = [d for d in DIMENSIONS if d in _df_to_name.columns]
+            _unique_cl  = sorted(
+                [c for c in _df_to_name["Cluster"].unique() if c != "Outliers"],
+                key=lambda x: int(x.split()[-1]) if x.split()[-1].isdigit() else 0,
+            )
+            _profiles = {
+                i: (int((_df_to_name["Cluster"] == c).sum()), build_cluster_profile(_df_to_name[_df_to_name["Cluster"] == c], _dims_n))
+                for i, c in enumerate(_unique_cl)
+            }
+            with st.spinner(f"Naming {len(_profiles)} clusters… (~5–10s)"):
+                _llm_names = name_all_clusters(_profiles, api_key)
+            if _llm_names:
+                _name_map = {c: _llm_names.get(i, c) for i, c in enumerate(_unique_cl)}
+                _name_map["Outliers"] = "Outliers"
+                _df_named = _df_to_name.copy()
+                _df_named["Cluster"] = _df_named["Cluster"].map(_name_map)
+                st.session_state.df_clean = _df_named
+                df = _df_named
+            else:
+                st.warning("Naming failed — keeping numeric labels")
+
+    # ── UMAP scatter plot (leads) ─────────────────────────────────────────────
     hover_cols = [c for c in [company_col, "Outlier score"] + DIMENSIONS if c in df.columns]
     fig = px.scatter(
         df, x="_x", y="_y", color="Cluster",
         hover_data=hover_cols,
         color_discrete_sequence=px.colors.qualitative.Bold,
-        height=500,
+        height=520,
     )
     fig.update_traces(marker=dict(size=7, opacity=0.80))
     fig.update_layout(
@@ -508,9 +572,42 @@ if st.session_state.df_clean is not None and "Cluster" in st.session_state.df_cl
     )
     st.plotly_chart(fig, use_container_width=True)
 
-    with st.expander("Cluster dimension profiles"):
-        dims_present   = [d for d in DIMENSIONS if d in df.columns]
-        named_clusters = [c for c in df["Cluster"].unique() if c != "Outliers"]
+    # ── Cluster cards (interactive legend below UMAP) ─────────────────────────
+    dims_present   = [d for d in DIMENSIONS if d in df.columns]
+    named_clusters = [c for c in df["Cluster"].unique() if c != "Outliers"]
+
+    if named_clusters and dims_present:
+        n_card_cols = min(4, len(named_clusters))
+        card_rows = [named_clusters[i:i + n_card_cols] for i in range(0, len(named_clusters), n_card_cols)]
+        for card_row in card_rows:
+            cols = st.columns(len(card_row))
+            for col, cname in zip(cols, card_row):
+                n = int((df["Cluster"] == cname).sum())
+                top_vals = []
+                for d in dims_present[:2]:
+                    tv = (
+                        df.loc[df["Cluster"] == cname, d]
+                        .dropna().str.strip().replace("", pd.NA).dropna()
+                        .value_counts().head(1).index.tolist()
+                    )
+                    if tv:
+                        top_vals.append(tv[0])
+                dim_str = " / ".join(top_vals) if top_vals else "—"
+                with col:
+                    st.markdown(
+                        f"<div style='border:1px solid #e0e0e0;border-radius:8px;"
+                        f"padding:10px 12px;margin:2px 0'>"
+                        f"<b>{cname}</b><br>"
+                        f"<span style='color:#888'>{n} companies</span><br>"
+                        f"<small style='color:#555'>{dim_str}</small>"
+                        f"</div>",
+                        unsafe_allow_html=True,
+                    )
+
+    # ── Tabs: Profiles | Outliers | All companies ─────────────────────────────
+    tab_profiles, tab_outliers, tab_companies = st.tabs(["Profiles", "Outliers", "All companies"])
+
+    with tab_profiles:
         if dims_present and named_clusters:
             profile_rows = []
             for dim in dims_present:
@@ -523,27 +620,41 @@ if st.session_state.df_clean is not None and "Cluster" in st.session_state.df_cl
                     )
                     row_data[cname] = top[0] if top else "—"
                 profile_rows.append(row_data)
-            st.dataframe(pd.DataFrame(profile_rows).set_index("Dimension"), use_container_width=True)
+            st.dataframe(
+                pd.DataFrame(profile_rows).set_index("Dimension"),
+                use_container_width=True,
+            )
+        else:
+            st.info("No dimension data available.")
 
-    with st.expander("Outlier score distribution"):
+    with tab_outliers:
         if "Outlier score" in df.columns:
             fig_out = px.histogram(
                 df[df["Cluster"] != "Outliers"],
                 x="Outlier score", color="Cluster",
-                nbins=30, barmode="overlay", opacity=0.7, height=280,
+                nbins=30, barmode="overlay", opacity=0.7, height=260,
                 color_discrete_sequence=px.colors.qualitative.Bold,
             )
             fig_out.update_layout(margin=dict(l=0, r=0, t=10, b=0), showlegend=False)
             st.plotly_chart(fig_out, use_container_width=True)
+        df_out_tab = df[df["Cluster"] == "Outliers"]
+        if len(df_out_tab) > 0:
+            show_out = [c for c in [company_col, "Outlier score"] + dims_present if c in df.columns]
+            st.dataframe(df_out_tab[show_out], use_container_width=True, hide_index=True, height=300)
+        else:
+            st.info("No outliers.")
 
-    show_cols = [c for c in [company_col, "Cluster", "Outlier score"] + DIMENSIONS if c in df.columns]
-    st.dataframe(df[show_cols], use_container_width=True, hide_index=True)
+    with tab_companies:
+        show_cols = [c for c in [company_col, "Cluster", "Outlier score"] + DIMENSIONS if c in df.columns]
+        st.dataframe(df[show_cols], use_container_width=True, hide_index=True, height=400)
 
+    # ── Downloads ─────────────────────────────────────────────────────────────
+    show_cols_dl = [c for c in [company_col, "Cluster", "Outlier score"] + DIMENSIONS if c in df.columns]
     col_dl1, col_dl2, col_go = st.columns(3)
     with col_dl1:
         st.download_button(
             "⬇ Download results CSV",
-            df[show_cols].to_csv(index=False),
+            df[show_cols_dl].to_csv(index=False),
             "cluster_results.csv", "text/csv", use_container_width=True,
         )
     with col_dl2:

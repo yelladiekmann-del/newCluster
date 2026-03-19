@@ -33,11 +33,20 @@ def _build_auto_description(df_cluster: pd.DataFrame, dimensions: list[str], top
     return "  \n".join(parts) if parts else "_No dimension data available._"
 
 
-def _render_outlier_cluster(df_outliers: pd.DataFrame, company_col: str, dimensions: list[str]) -> None:
-    n = len(df_outliers)
-    with st.expander(f"Outliers — {n} {'company' if n == 1 else 'companies'} (read-only)"):
-        show_cols = [c for c in [company_col, "Outlier score"] + dimensions if c in df_outliers.columns]
-        st.dataframe(df_outliers[show_cols], use_container_width=True, hide_index=True)
+def _cluster_header_line(cluster_name: str, df_cluster: pd.DataFrame, dimensions: list[str]) -> str:
+    n = len(df_cluster)
+    top_parts = []
+    for d in dimensions[:2]:
+        if d not in df_cluster.columns:
+            continue
+        top = (
+            df_cluster[d].dropna().str.strip().replace("", pd.NA).dropna()
+            .value_counts().head(1).index.tolist()
+        )
+        if top:
+            top_parts.append(top[0])
+    suffix = "  ·  " + " / ".join(top_parts) if top_parts else ""
+    return f"{cluster_name}  ·  {n}{suffix}"
 
 
 def _render_named_cluster(
@@ -46,19 +55,14 @@ def _render_named_cluster(
     company_col: str,
     dimensions: list[str],
 ) -> None:
-    n = len(df_cluster)
-    col_hdr, col_merge, col_del = st.columns([10, 1, 1])
-    with col_hdr:
-        st.markdown(
-            f"### {cluster_name} &nbsp; <sup style='font-size:0.6em;color:gray'>{n} companies</sup>",
-            unsafe_allow_html=True,
-        )
+    # Merge + Delete buttons at top of expanded panel
+    col_merge, col_del, _ = st.columns([1, 1, 8])
     with col_merge:
-        if st.button("↔", key=f"cr_merge_{cluster_name}", help=f"Merge \"{cluster_name}\" into another cluster"):
+        if st.button("↔ Merge", key=f"cr_merge_{cluster_name}", use_container_width=True):
             st.session_state["cr_merge_pending"] = cluster_name
             st.rerun()
     with col_del:
-        if st.button("🗑", key=f"cr_del_{cluster_name}", help=f"Delete cluster \"{cluster_name}\""):
+        if st.button("🗑 Delete", key=f"cr_del_{cluster_name}", use_container_width=True):
             st.session_state["cr_delete_pending"] = cluster_name
             st.session_state["cr_delete_target"] = _OUTLIER_LABEL
             st.rerun()
@@ -67,15 +71,12 @@ def _render_named_cluster(
     if user_desc:
         st.caption(f"_{user_desc}_")
 
-    st.markdown(_build_auto_description(df_cluster, dimensions))
-
     col_name, col_core = st.columns([1, 2])
     with col_name:
         st.text_input(
             "Edit name",
             value=st.session_state["cr_name_edits"].get(cluster_name, cluster_name),
             key=f"cr_name_{cluster_name}",
-            label_visibility="collapsed",
             placeholder="Cluster name…",
         )
     with col_core:
@@ -84,22 +85,28 @@ def _render_named_cluster(
             if company_col in df_cluster.columns else []
         )
         st.multiselect(
-            "Core companies (optional)",
+            "Core companies",
             options=company_options,
             default=[
                 c for c in st.session_state["cr_core_companies"].get(cluster_name, [])
                 if c in company_options
             ],
             key=f"cr_core_{cluster_name}",
-            label_visibility="collapsed",
             placeholder="Mark core companies…",
         )
 
-    with st.expander(f"All {n} companies"):
-        show_cols = [c for c in [company_col, _DESC_COL, "Outlier score"] + dimensions if c in df_cluster.columns]
-        st.dataframe(df_cluster[show_cols], use_container_width=True, hide_index=True)
-
-    st.divider()
+    search = st.text_input(
+        "Filter companies",
+        key=f"cr_search_{cluster_name}",
+        placeholder="Search by name…",
+        label_visibility="collapsed",
+    )
+    show_cols = [c for c in [company_col, _DESC_COL, "Outlier score"] + dimensions if c in df_cluster.columns]
+    df_show = df_cluster
+    if search:
+        mask = df_cluster[company_col].astype(str).str.contains(search, case=False, na=False)
+        df_show = df_cluster[mask]
+    st.dataframe(df_show[show_cols], use_container_width=True, hide_index=True, height=300)
 
 
 def _collect_edits(cluster_names: list[str]) -> tuple[dict[str, str], dict[str, list[str]]]:
@@ -395,51 +402,17 @@ def render_cluster_review(
     st.session_state.setdefault("cr_merge_pending", None)
     st.session_state.setdefault("cr_cluster_descriptions", {})
 
-    st.caption(
-        "Inspect each cluster, rename it, and optionally mark core companies. "
-        "Hit **Rerun** to re-verify all assignments using Gemini."
-    )
-
-    # ── Rerun report ─────────────────────────────────────────────────────────
-    report = st.session_state.get("cr_rerun_report")
-    if report:
-        col_rep, col_dismiss = st.columns([5, 1])
-        with col_rep:
-            st.info(
-                f"**{report['n_switched']}** {'company' if report['n_switched'] == 1 else 'companies'} "
-                f"changed cluster. **{report['n_outliers_after']}** outliers remaining."
-                + (f" **{report['pulled_in']}** outlier{'s' if report['pulled_in'] != 1 else ''} pulled in." if report["pulled_in"] > 0 else "")
-            )
-        with col_dismiss:
-            st.write("")
-            if st.button("Dismiss", key="cr_dismiss_report"):
-                st.session_state["cr_rerun_report"] = None
-                st.rerun()
-
-        with st.expander("Rerun report details"):
-            all_cluster_names = sorted(set(list(report["before"].keys()) + list(report["after"].keys())))
-            size_rows = []
-            for name in all_cluster_names:
-                before = report["before"].get(name, 0)
-                after  = report["after"].get(name, 0)
-                diff   = after - before
-                size_rows.append({"Cluster": name, "Before": before, "After": after,
-                                   "Change": f"+{diff}" if diff > 0 else str(diff)})
-            st.dataframe(pd.DataFrame(size_rows), use_container_width=True, hide_index=True)
-
-            if report["switches"]:
-                st.markdown(f"**Companies that switched ({len(report['switches'])}):**")
-                switch_df = pd.DataFrame(report["switches"], columns=["Company", "From", "To", "Reason"])
-                if switch_df["Reason"].str.strip().eq("").all():
-                    switch_df = switch_df.drop(columns=["Reason"])
-                st.dataframe(switch_df, use_container_width=True, hide_index=True)
-
     all_clusters   = df_clean["Cluster"].unique().tolist()
     named_clusters = sorted(
         [c for c in all_clusters if c != _OUTLIER_LABEL],
         key=lambda c: -(df_clean["Cluster"] == c).sum(),
     )
     df_outliers = df_clean[df_clean["Cluster"] == _OUTLIER_LABEL]
+
+    # Collect edits from previous run's widget state (available before widgets render)
+    name_edits, core_selections = _collect_edits(named_clusters)
+    st.session_state["cr_name_edits"]     = name_edits
+    st.session_state["cr_core_companies"] = core_selections
 
     # ── Open dialogs if pending ───────────────────────────────────────────────
     merge_pending  = st.session_state.get("cr_merge_pending")
@@ -451,30 +424,8 @@ def render_cluster_review(
     if delete_pending and delete_pending in named_clusters:
         _delete_dialog(delete_pending, named_clusters, df_clean)
 
-    # ── Cluster list ──────────────────────────────────────────────────────────
-    for cluster_name in named_clusters:
-        df_cluster = df_clean[df_clean["Cluster"] == cluster_name].reset_index(drop=True)
-        _render_named_cluster(cluster_name, df_cluster, company_col, dimensions)
-
-    if len(df_outliers) > 0:
-        _render_outlier_cluster(df_outliers.reset_index(drop=True), company_col, dimensions)
-
-    # ── Action bar ────────────────────────────────────────────────────────────
-    col_add, col_toggle, col_apply, col_rerun = st.columns([1, 2, 1, 1])
-    with col_add:
-        if st.button("➕ Add cluster", key="cr_add_btn", use_container_width=True):
-            _add_cluster_dialog(df_clean, company_col)
-
-    with col_toggle:
-        include_outliers = st.toggle(
-            "Include outliers in reassignment",
-            key="cr_include_outliers",
-            help="When ON, outlier companies are also sent to Gemini and may be sorted into a cluster.",
-        )
-
-    name_edits, core_selections = _collect_edits(named_clusters)
-    st.session_state["cr_name_edits"]     = name_edits
-    st.session_state["cr_core_companies"] = core_selections
+    # ── Action buttons at TOP ─────────────────────────────────────────────────
+    col_apply, col_rerun = st.columns([1, 1])
 
     with col_apply:
         if st.button("Apply edits", key="cr_apply", use_container_width=True):
@@ -485,8 +436,9 @@ def render_cluster_review(
             st.rerun()
 
     with col_rerun:
+        include_outliers = st.session_state.get("cr_include_outliers", False)
         if st.button(
-            "Rerun (Gemini)", key="cr_rerun", type="primary", use_container_width=True,
+            "Rerun via Gemini", key="cr_rerun", type="primary", use_container_width=True,
             help="Gemini reads each company's description and reassigns it to the best cluster.",
             disabled=not api_key,
         ):
@@ -536,3 +488,69 @@ def render_cluster_review(
             st.session_state["cr_core_companies"] = {}
             st.session_state.df_clean = df_out
             st.rerun()
+
+    # ── Rerun report ─────────────────────────────────────────────────────────
+    report = st.session_state.get("cr_rerun_report")
+    if report:
+        col_rep, col_dismiss = st.columns([5, 1])
+        with col_rep:
+            st.info(
+                f"**{report['n_switched']}** {'company' if report['n_switched'] == 1 else 'companies'} "
+                f"changed cluster. **{report['n_outliers_after']}** outliers remaining."
+                + (f" **{report['pulled_in']}** outlier{'s' if report['pulled_in'] != 1 else ''} pulled in." if report["pulled_in"] > 0 else "")
+            )
+        with col_dismiss:
+            st.write("")
+            if st.button("Dismiss", key="cr_dismiss_report"):
+                st.session_state["cr_rerun_report"] = None
+                st.rerun()
+
+        with st.expander("Rerun report details"):
+            all_cluster_names = sorted(set(list(report["before"].keys()) + list(report["after"].keys())))
+            size_rows = []
+            for name in all_cluster_names:
+                before = report["before"].get(name, 0)
+                after  = report["after"].get(name, 0)
+                diff   = after - before
+                size_rows.append({"Cluster": name, "Before": before, "After": after,
+                                   "Change": f"+{diff}" if diff > 0 else str(diff)})
+            st.dataframe(pd.DataFrame(size_rows), use_container_width=True, hide_index=True)
+
+            if report["switches"]:
+                st.markdown(f"**Companies that switched ({len(report['switches'])}):**")
+                switch_df = pd.DataFrame(report["switches"], columns=["Company", "From", "To", "Reason"])
+                if switch_df["Reason"].str.strip().eq("").all():
+                    switch_df = switch_df.drop(columns=["Reason"])
+                st.dataframe(switch_df, use_container_width=True, hide_index=True)
+
+    # ── Cluster list (collapsed expanders) ────────────────────────────────────
+    for cluster_name in named_clusters:
+        df_cluster = df_clean[df_clean["Cluster"] == cluster_name].reset_index(drop=True)
+        header_line = _cluster_header_line(cluster_name, df_cluster, dimensions)
+        with st.expander(header_line, expanded=False):
+            _render_named_cluster(cluster_name, df_cluster, company_col, dimensions)
+
+    # ── Outliers (collapsed) ──────────────────────────────────────────────────
+    if len(df_outliers) > 0:
+        n_out = len(df_outliers)
+        with st.expander(
+            f"Outliers  ·  {n_out} {'company' if n_out == 1 else 'companies'}  (read-only)",
+            expanded=False,
+        ):
+            show_cols = [c for c in [company_col, "Outlier score"] + dimensions if c in df_outliers.columns]
+            st.dataframe(
+                df_outliers.reset_index(drop=True)[show_cols],
+                use_container_width=True, hide_index=True, height=300,
+            )
+
+    # ── Add cluster + Include outliers toggle ─────────────────────────────────
+    col_add, col_toggle = st.columns([1, 2])
+    with col_add:
+        if st.button("➕ Add cluster", key="cr_add_btn", use_container_width=True):
+            _add_cluster_dialog(df_clean, company_col)
+    with col_toggle:
+        st.toggle(
+            "Include outliers in reassignment",
+            key="cr_include_outliers",
+            help="When ON, outlier companies are also sent to Gemini and may be sorted into a cluster.",
+        )
