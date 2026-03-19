@@ -422,26 +422,31 @@ with col4:
 
 st.divider()
 
+# --- Shared button gates ---
+has_api_key    = bool(api_key)
+has_csv        = df_input is not None
+has_embeddings = st.session_state.feature_matrix is not None
+_clustered     = (
+    st.session_state.df_clean is not None
+    and "Cluster" in st.session_state.df_clean.columns
+)
+
 col_a, col_b, col_c = st.columns(3)
 with col_a:
     start = st.button(
         "▶  Run embeddings + clustering", type="primary", width='stretch',
-        disabled=(df_input is None or not api_key),
+        disabled=not (has_api_key and has_csv),
     )
 with col_b:
     recluster = st.button(
         "↺  Re-cluster only", width='stretch',
-        disabled=(st.session_state.feature_matrix is None or st.session_state.df_clean is None),
+        disabled=not has_embeddings,
         help="Skips embeddings. Re-runs UMAP + HDBSCAN with current parameters.",
     )
 with col_c:
-    _clustered = (
-        st.session_state.df_clean is not None
-        and "Cluster" in st.session_state.df_clean.columns
-    )
     name_btn = st.button(
         "🏷  Name clusters", width='stretch',
-        disabled=not _clustered,
+        disabled=not (has_api_key and _clustered),
         help="One Gemini call — names all clusters at once.",
     )
 
