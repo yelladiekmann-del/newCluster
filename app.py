@@ -1,6 +1,7 @@
 import streamlit as st
 from cluster_review import render_cluster_review
 from cluster_chat import render_cluster_chat
+from dimension_extraction import extract_dimensions, EXTRACTED_DIMENSIONS, _BATCH_SIZE as _DIM_BATCH_SIZE
 import pandas as pd
 import numpy as np
 import time
@@ -31,22 +32,24 @@ except ImportError:
 st.set_page_config(page_title="Company Clustering", page_icon="◈", layout="wide")
 
 DIMENSIONS = [
-    "Problem Solved", "Target Beneficiary", "The How",
-    "Innovation Cluster", "Value Shift", "Ecosystem Role", "Scalability Lever",
+    "Problem Solved", "Customer Segment", "Core Mechanism",
+    "Tech Category", "Business Model", "Value Shift",
+    "Ecosystem Role", "Scalability Lever",
 ]
 
 # IMPROVEMENT 1: Per-dimension weights
 # Not all dimensions are equally informative for separating companies.
-# "Problem Solved" and "The How" carry the most discriminative signal;
+# "Problem Solved" and "Core Mechanism" carry the most discriminative signal;
 # "Ecosystem Role" is often too broad to differentiate well.
 DIMENSION_WEIGHTS = {
-    "Problem Solved":     1.4,
-    "Target Beneficiary": 1.2,
-    "The How":            1.3,
-    "Innovation Cluster": 1.0,
-    "Value Shift":        0.9,
-    "Ecosystem Role":     0.7,
-    "Scalability Lever":  0.8,
+    "Problem Solved":   1.4,
+    "Customer Segment": 1.2,
+    "Core Mechanism":   1.3,
+    "Tech Category":    1.1,
+    "Business Model":   1.2,
+    "Value Shift":      0.9,
+    "Ecosystem Role":   0.7,
+    "Scalability Lever": 0.8,
 }
 
 EMBED_MODEL = "gemini-embedding-001"
@@ -56,6 +59,7 @@ GEN_URL     = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.
 _defaults = {
     "df_clean": None, "embedded_2d": None, "feature_matrix": None,
     "done": False, "cluster_metrics": None, "confirm_rerun_pending": False,
+    "df_enriched": None, "df_enriched_src": None,
 }
 for k, v in _defaults.items():
     st.session_state.setdefault(k, v)
@@ -325,6 +329,61 @@ if uploaded:
 
         with st.expander("Preview"):
             st.dataframe(df_input.head(5), width='stretch', hide_index=True)
+
+        # ── Generate dimensions ──────────────────────────────────────────────
+        _fresh = (
+            st.session_state["df_enriched"] is not None
+            and st.session_state["df_enriched_src"] == uploaded.name
+        )
+        _dims_in_csv = all(d in df_input.columns for d in EXTRACTED_DIMENSIONS)
+
+        if _fresh:
+            df_input = st.session_state["df_enriched"]
+            col_msg, col_regen, col_dl = st.columns([4, 1, 1])
+            with col_msg:
+                st.success(
+                    f"✔ Dimensions extracted — {len(EXTRACTED_DIMENSIONS)} columns ready. "
+                    "These will be used for embedding."
+                )
+            with col_regen:
+                if st.button("↺ Regenerate", key="regen_dims", help="Re-run extraction"):
+                    st.session_state["df_enriched"] = None
+                    st.rerun()
+            with col_dl:
+                csv_bytes = df_input.to_csv(index=False).encode()
+                st.download_button(
+                    "⬇ Download enriched CSV",
+                    data=csv_bytes,
+                    file_name="companies_with_dimensions.csv",
+                    mime="text/csv",
+                    key="dl_enriched",
+                )
+
+        elif _dims_in_csv:
+            st.info(
+                f"All {len(EXTRACTED_DIMENSIONS)} dimension columns found in the uploaded file — "
+                "no extraction needed."
+            )
+
+        elif desc_col:
+            with st.expander("⚡ Generate dimensions from descriptions", expanded=True):
+                st.caption(
+                    f"Uses Gemini to extract **{len(EXTRACTED_DIMENSIONS)} dimensions** from each "
+                    f"company description (~{max(1, len(df_input) // _DIM_BATCH_SIZE)} API calls for "
+                    f"{len(df_input)} companies). Save the enriched CSV afterwards to skip this step next time."
+                )
+                dim_pills = "  ·  ".join(f"`{d}`" for d in EXTRACTED_DIMENSIONS)
+                st.markdown(dim_pills)
+                if st.button(
+                    "⚡ Generate dimensions", key="gen_dims", type="primary",
+                    disabled=not bool(api_key),
+                    help="Requires an API key." if not api_key else None,
+                ):
+                    enriched = extract_dimensions(df_input, company_col, desc_col, api_key)
+                    st.session_state["df_enriched"] = enriched
+                    st.session_state["df_enriched_src"] = uploaded.name
+                    st.rerun()
+
     except Exception as e:
         st.error(f"Could not load file: {e}")
 
@@ -352,6 +411,15 @@ with st.expander("⚡ Load saved embeddings (skips embedding step)"):
             st.error(f"Error loading embeddings: {e}")
 
 st.divider()
+
+# Use enriched df (with extracted dimensions) if available for the current file
+if (
+    uploaded is not None
+    and st.session_state["df_enriched"] is not None
+    and st.session_state["df_enriched_src"] == uploaded.name
+    and df_input is not None
+):
+    df_input = st.session_state["df_enriched"]
 
 # --- Shared button gates (computed early so sections can use them) ---
 has_api_key    = bool(api_key)
