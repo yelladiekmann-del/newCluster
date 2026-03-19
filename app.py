@@ -431,6 +431,19 @@ _clustered     = (
     and "Cluster" in st.session_state.df_clean.columns
 )
 
+with st.expander("🔍 Button gate diagnostics (temporary)", expanded=False):
+    st.write({
+        "has_api_key":       has_api_key,
+        "has_csv":           has_csv,
+        "has_embeddings":    has_embeddings,
+        "_clustered":        _clustered,
+        "df_clean is None":  st.session_state.df_clean is None,
+        "Cluster col exists": (
+            "Cluster" in st.session_state.df_clean.columns
+            if st.session_state.df_clean is not None else "N/A"
+        ),
+    })
+
 col_a, col_b, col_c = st.columns(3)
 with col_a:
     start = st.button(
@@ -532,6 +545,7 @@ if start and df_input is not None:
     st.session_state.feature_matrix  = feature_matrix
     st.session_state.cluster_metrics = metrics
     st.session_state.done            = True
+    st.rerun()
 
 # ============================================================
 # RECLUSTER
@@ -554,7 +568,7 @@ if recluster and st.session_state.feature_matrix is not None:
     st.session_state.embedded_2d     = embedded_2d
     st.session_state.cluster_metrics = metrics
     st.session_state.done            = True
-    st.success(f"✔ {n_c} clusters · {n_o} outliers")
+    st.rerun()
 
 # ============================================================
 # CLUSTER NAMING
