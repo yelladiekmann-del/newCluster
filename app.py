@@ -360,11 +360,35 @@ st.subheader("Clustering parameters")
 
 col1, col2, col3, col4 = st.columns(4)
 with col1:
-    min_cluster_size  = st.slider("Min cluster size", 2, 30, 5)
+    min_cluster_size  = st.slider(
+        "Min cluster size", 2, 30, 5,
+        help=(
+            "Minimum number of companies to form a cluster. "
+            "Lower → more, smaller clusters (risk: noise gets its own cluster). "
+            "Higher → fewer, larger clusters (risk: real sub-groups get merged or dropped as outliers). "
+            "Start around 5 and increase if you're getting too many tiny clusters."
+        ),
+    )
 with col2:
-    min_samples       = st.slider("Min samples", 1, 20, 3)
+    min_samples       = st.slider(
+        "Min samples", 1, 20, 3,
+        help=(
+            "Controls how conservative HDBSCAN is about calling a point a core point. "
+            "Higher → stricter core membership, more companies labelled as outliers, tighter clusters. "
+            "Lower → more permissive, fewer outliers, but clusters may be looser. "
+            "Rule of thumb: keep it ≤ Min cluster size. Set to 1 for the most inclusive clustering."
+        ),
+    )
 with col3:
-    cluster_epsilon   = st.slider("Cluster epsilon", 0.0, 2.0, 0.0, step=0.1)
+    cluster_epsilon   = st.slider(
+        "Cluster epsilon", 0.0, 2.0, 0.0, step=0.1,
+        help=(
+            "Merges clusters that are closer than this distance threshold (like a DBSCAN fallback). "
+            "0 = pure HDBSCAN hierarchy, no merging. "
+            "Increase gradually if you're getting too many clusters that look nearly identical. "
+            "Too high → everything collapses into one cluster."
+        ),
+    )
 with col4:
     umap_cluster_dims = st.slider(
         "UMAP cluster dims", 5, 50, 15,
