@@ -558,11 +558,15 @@ if has_csv:
             f"{_at['n_clusters']} clusters · silhouette={_at['silhouette']:.3f}"
         )
 
+    # Read autotune suggestions (plain session state keys, not widget keys)
+    _at_mcs = st.session_state.get("_autotune_mcs", 5)
+    _at_ms  = st.session_state.get("_autotune_ms",  3)
+    _at_eps = st.session_state.get("_autotune_eps", 0.0)
+
     col1, col2, col3, col4 = st.columns(4)
     with col1:
         min_cluster_size  = st.slider(
-            "Min cluster size", 2, 30, 5,
-            key="min_cluster_size",
+            "Min cluster size", 2, 30, _at_mcs,
             help=(
                 "Minimum number of companies to form a cluster. "
                 "Lower → more, smaller clusters (risk: noise gets its own cluster). "
@@ -572,8 +576,7 @@ if has_csv:
         )
     with col2:
         min_samples       = st.slider(
-            "Min samples", 1, 20, 3,
-            key="min_samples",
+            "Min samples", 1, 20, _at_ms,
             help=(
                 "Controls how conservative HDBSCAN is about calling a point a core point. "
                 "Higher → stricter core membership, more companies labelled as outliers, tighter clusters. "
@@ -583,8 +586,7 @@ if has_csv:
         )
     with col3:
         cluster_epsilon   = st.slider(
-            "Cluster epsilon", 0.0, 2.0, 0.0, step=0.1,
-            key="cluster_epsilon",
+            "Cluster epsilon", 0.0, 2.0, _at_eps, step=0.1,
             help=(
                 "Merges clusters that are closer than this distance threshold (like a DBSCAN fallback). "
                 "0 = pure HDBSCAN hierarchy, no merging. "
@@ -605,10 +607,11 @@ if has_csv:
         ):
             with st.spinner("Scanning parameter space… (~10–20s)"):
                 _result = find_optimal_params(st.session_state.feature_matrix, umap_cluster_dims)
-            st.session_state["autotune_result"]    = _result
-            st.session_state["min_cluster_size"]   = _result["min_cluster_size"]
-            st.session_state["min_samples"]        = _result["min_samples"]
-            st.session_state["cluster_epsilon"]    = 0.0
+            st.session_state["autotune_result"] = _result
+            # Use separate keys (not widget keys) so Streamlit accepts the assignment
+            st.session_state["_autotune_mcs"] = _result["min_cluster_size"]
+            st.session_state["_autotune_ms"]  = _result["min_samples"]
+            st.session_state["_autotune_eps"] = 0.0
             st.rerun()
 
     st.divider()
@@ -691,6 +694,9 @@ if start and df_input is not None:
     st.session_state.df_clean       = None
     st.session_state.cluster_metrics = None
     st.session_state["autotune_result"] = None
+    st.session_state["_autotune_mcs"] = 5
+    st.session_state["_autotune_ms"]  = 3
+    st.session_state["_autotune_eps"] = 0.0
 
     available_dims = [d for d in DIMENSIONS if d in df_input.columns]
     use_desc = bool(
