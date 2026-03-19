@@ -410,9 +410,13 @@ with col_b:
         help="Skips embeddings. Re-runs UMAP + HDBSCAN with current parameters.",
     )
 with col_c:
+    _clustered = (
+        st.session_state.df_clean is not None
+        and "Cluster" in st.session_state.df_clean.columns
+    )
     name_btn = st.button(
         "🏷  Name clusters", width='stretch',
-        disabled=(not st.session_state.done or st.session_state.df_clean is None),
+        disabled=not _clustered,
         help="One Gemini call — names all clusters at once.",
     )
 
@@ -556,7 +560,7 @@ if name_btn and st.session_state.df_clean is not None:
 # ============================================================
 # RESULTS
 # ============================================================
-if st.session_state.done and st.session_state.df_clean is not None:
+if st.session_state.df_clean is not None and "Cluster" in st.session_state.df_clean.columns:
     df      = st.session_state.df_clean
     metrics = st.session_state.cluster_metrics or {}
 
@@ -672,15 +676,17 @@ with st.expander("⚡ Load saved embeddings (skips embedding step)"):
     if emb_file:
         try:
             npz = np.load(io.BytesIO(emb_file.read()))
-            st.session_state.embedded_2d   = npz["embedded_2d"]
+            st.session_state.embedded_2d    = npz["embedded_2d"]
             st.session_state.feature_matrix = npz["feature_matrix"]
-            st.session_state.done          = False
-            if df_input is not None:
-                st.session_state.df_clean = df_input.copy()
-            elif "df_json" in npz:
-                st.session_state.df_clean = pd.read_json(
-                    io.StringIO(npz["df_json"].tobytes().decode())
-                )
+            # Only initialise df_clean if it hasn't been set yet.
+            # Once clustering runs it will have a Cluster column — don't overwrite it.
+            if st.session_state.df_clean is None:
+                if df_input is not None:
+                    st.session_state.df_clean = df_input.copy()
+                elif "df_json" in npz:
+                    st.session_state.df_clean = pd.read_json(
+                        io.StringIO(npz["df_json"].tobytes().decode())
+                    )
             st.success(
                 f"✔ Embeddings loaded — {st.session_state.embedded_2d.shape[0]} companies. "
                 "Now click '↺ Re-cluster only'."
