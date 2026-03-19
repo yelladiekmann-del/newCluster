@@ -140,15 +140,19 @@ def render_cluster_chat(
     st.session_state.setdefault("chat_history", [])
     st.session_state.setdefault("chat_context", "")
     st.session_state.setdefault("chat_context_hash", "")
+    st.session_state.setdefault("chat_reset_notice", False)
 
     # Rebuild context if clusters have changed
     current_hash = _build_context_hash(df_clean)
     if current_hash != st.session_state["chat_context_hash"]:
+        was_populated = bool(st.session_state["chat_history"])
         st.session_state["chat_context"] = _build_system_context(
             df_clean, company_col, dimensions, cluster_metrics
         )
         st.session_state["chat_context_hash"] = current_hash
         st.session_state["chat_history"] = []
+        if was_populated:
+            st.session_state["chat_reset_notice"] = True
 
     n_companies = len(df_clean)
     n_clusters = df_clean["Cluster"].nunique() - (1 if _OUTLIER_LABEL in df_clean["Cluster"].values else 0)
@@ -168,6 +172,10 @@ def render_cluster_chat(
         f"The assistant has full knowledge of all {n_companies} companies across {n_clusters} clusters. "
         "Ask anything — cluster comparisons, company lookups, market insights, where a new company might fit."
     )
+
+    if st.session_state.get("chat_reset_notice"):
+        st.info("Chat history was reset because cluster assignments changed.")
+        st.session_state["chat_reset_notice"] = False
 
     # Render chat history in a bounded scrollable container
     with st.container(height=450):

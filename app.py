@@ -353,76 +353,7 @@ with st.expander("⚡ Load saved embeddings (skips embedding step)"):
 
 st.divider()
 
-# --- Embedding mode ---
-st.subheader("Embedding strategy")
-embed_mode = st.radio(
-    "How to build embeddings",
-    ["Per-dimension (recommended)", "Description column", "All dimensions joined"],
-    horizontal=True,
-    help=(
-        "Per-dimension: each field embedded separately and concatenated — best cluster quality. "
-        "Description: uses a free-text description field directly. "
-        "Joined: legacy behaviour, pipes all dimensions into one string."
-    ),
-)
-
-# --- Dimension weights (shown only in per-dimension mode) ---
-if embed_mode == "Per-dimension (recommended)":
-    with st.expander("Dimension weights (optional)"):
-        st.caption("Increase the weight of dimensions that matter most for your clustering goal.")
-        custom_weights = {}
-        cols = st.columns(len(DIMENSIONS))
-        for i, dim in enumerate(DIMENSIONS):
-            with cols[i]:
-                custom_weights[dim] = st.slider(
-                    dim, 0.0, 2.0, DIMENSION_WEIGHTS.get(dim, 1.0), step=0.1, key=f"w_{dim}"
-                )
-else:
-    custom_weights = DIMENSION_WEIGHTS
-
-st.divider()
-st.subheader("Clustering parameters")
-
-col1, col2, col3, col4 = st.columns(4)
-with col1:
-    min_cluster_size  = st.slider(
-        "Min cluster size", 2, 30, 5,
-        help=(
-            "Minimum number of companies to form a cluster. "
-            "Lower → more, smaller clusters (risk: noise gets its own cluster). "
-            "Higher → fewer, larger clusters (risk: real sub-groups get merged or dropped as outliers). "
-            "Start around 5 and increase if you're getting too many tiny clusters."
-        ),
-    )
-with col2:
-    min_samples       = st.slider(
-        "Min samples", 1, 20, 3,
-        help=(
-            "Controls how conservative HDBSCAN is about calling a point a core point. "
-            "Higher → stricter core membership, more companies labelled as outliers, tighter clusters. "
-            "Lower → more permissive, fewer outliers, but clusters may be looser. "
-            "Rule of thumb: keep it ≤ Min cluster size. Set to 1 for the most inclusive clustering."
-        ),
-    )
-with col3:
-    cluster_epsilon   = st.slider(
-        "Cluster epsilon", 0.0, 2.0, 0.0, step=0.1,
-        help=(
-            "Merges clusters that are closer than this distance threshold (like a DBSCAN fallback). "
-            "0 = pure HDBSCAN hierarchy, no merging. "
-            "Increase gradually if you're getting too many clusters that look nearly identical. "
-            "Too high → everything collapses into one cluster."
-        ),
-    )
-with col4:
-    umap_cluster_dims = st.slider(
-        "UMAP cluster dims", 5, 50, 15,
-        help="Dimensions used for HDBSCAN (not the scatter plot). Higher = more signal preserved, slower."
-    )
-
-st.divider()
-
-# --- Shared button gates ---
+# --- Shared button gates (computed early so sections can use them) ---
 has_api_key    = bool(api_key)
 has_csv        = df_input is not None
 has_embeddings = st.session_state.feature_matrix is not None
@@ -430,25 +361,125 @@ _clustered     = (
     st.session_state.df_clean is not None
     and "Cluster" in st.session_state.df_clean.columns
 )
+_named = (
+    _clustered
+    and not any(
+        str(c).startswith("Cluster ")
+        for c in st.session_state.df_clean["Cluster"].unique()
+    )
+)
+_reviewed = st.session_state.get("cr_rerun_report") is not None
 
-with st.expander("🔍 Button gate diagnostics (temporary)", expanded=False):
-    st.write({
-        "has_api_key":       has_api_key,
-        "has_csv":           has_csv,
-        "has_embeddings":    has_embeddings,
-        "_clustered":        _clustered,
-        "df_clean is None":  st.session_state.df_clean is None,
-        "Cluster col exists": (
-            "Cluster" in st.session_state.df_clean.columns
-            if st.session_state.df_clean is not None else "N/A"
+# --- Embedding mode (only shown when CSV loaded and no embeddings yet) ---
+embed_mode    = "Per-dimension (recommended)"
+custom_weights = DIMENSION_WEIGHTS
+
+if has_csv and not has_embeddings:
+    st.subheader("Embedding strategy")
+    embed_mode = st.radio(
+        "How to build embeddings",
+        ["Per-dimension (recommended)", "Description column", "All dimensions joined"],
+        horizontal=True,
+        help=(
+            "Per-dimension: each field embedded separately and concatenated — best cluster quality. "
+            "Description: uses a free-text description field directly. "
+            "Joined: legacy behaviour, pipes all dimensions into one string."
         ),
+    )
+    if embed_mode == "Per-dimension (recommended)":
+        with st.expander("Dimension weights (optional)"):
+            st.caption("Increase the weight of dimensions that matter most for your clustering goal.")
+            custom_weights = {}
+            cols = st.columns(len(DIMENSIONS))
+            for i, dim in enumerate(DIMENSIONS):
+                with cols[i]:
+                    custom_weights[dim] = st.slider(
+                        dim, 0.0, 2.0, DIMENSION_WEIGHTS.get(dim, 1.0), step=0.1, key=f"w_{dim}"
+                    )
+    st.divider()
+elif has_embeddings and not _clustered:
+    st.info("Embeddings loaded from file — click **↺ Re-cluster only** to continue.")
+
+# --- Clustering parameters (only shown when CSV is loaded) ---
+if has_csv:
+    st.subheader("Clustering parameters")
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        min_cluster_size  = st.slider(
+            "Min cluster size", 2, 30, 5,
+            help=(
+                "Minimum number of companies to form a cluster. "
+                "Lower → more, smaller clusters (risk: noise gets its own cluster). "
+                "Higher → fewer, larger clusters (risk: real sub-groups get merged or dropped as outliers). "
+                "Start around 5 and increase if you're getting too many tiny clusters."
+            ),
+        )
+    with col2:
+        min_samples       = st.slider(
+            "Min samples", 1, 20, 3,
+            help=(
+                "Controls how conservative HDBSCAN is about calling a point a core point. "
+                "Higher → stricter core membership, more companies labelled as outliers, tighter clusters. "
+                "Lower → more permissive, fewer outliers, but clusters may be looser. "
+                "Rule of thumb: keep it ≤ Min cluster size. Set to 1 for the most inclusive clustering."
+            ),
+        )
+    with col3:
+        cluster_epsilon   = st.slider(
+            "Cluster epsilon", 0.0, 2.0, 0.0, step=0.1,
+            help=(
+                "Merges clusters that are closer than this distance threshold (like a DBSCAN fallback). "
+                "0 = pure HDBSCAN hierarchy, no merging. "
+                "Increase gradually if you're getting too many clusters that look nearly identical. "
+                "Too high → everything collapses into one cluster."
+            ),
+        )
+    with col4:
+        umap_cluster_dims = st.slider(
+            "UMAP cluster dims", 5, 50, 15,
+            help="Dimensions used for HDBSCAN (not the scatter plot). Higher = more signal preserved, slower."
+        )
+    st.divider()
+else:
+    min_cluster_size, min_samples, cluster_epsilon, umap_cluster_dims = 5, 3, 0.0, 15
+
+# --- Workflow status ---
+if has_csv:
+    steps = [
+        ("Data loaded",      has_csv),
+        ("Embeddings ready", has_embeddings),
+        ("Clustered",        _clustered),
+        ("Named",            _named),
+        ("Reviewed",         _reviewed),
+    ]
+    scols = st.columns(len(steps))
+    for scol, (label, done) in zip(scols, steps):
+        with scol:
+            st.caption(f"{'✅' if done else '⬜'} {label}")
+
+# --- Confirmation guard for destructive re-run ---
+if _clustered:
+    st.warning("Running again will discard all current clustering results, names, and review edits.")
+    confirmed = st.checkbox("I understand — discard current results and re-run", key="confirm_rerun")
+else:
+    confirmed = True
+
+# --- Load-bearing expander (fixes Streamlit widget-tree sync) ---
+with st.expander("ℹ️ Session status", expanded=False):
+    st.write({
+        "has_api_key":    has_api_key,
+        "has_csv":        has_csv,
+        "has_embeddings": has_embeddings,
+        "_clustered":     _clustered,
+        "_named":         _named,
+        "_reviewed":      _reviewed,
     })
 
 col_a, col_b, col_c = st.columns(3)
 with col_a:
     start = st.button(
         "▶  Run embeddings + clustering", type="primary", width='stretch',
-        disabled=not (has_api_key and has_csv),
+        disabled=not (has_api_key and has_csv and confirmed),
     )
 with col_b:
     recluster = st.button(
