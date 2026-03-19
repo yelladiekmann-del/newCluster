@@ -141,6 +141,7 @@ def render_cluster_chat(
     st.session_state.setdefault("chat_context", "")
     st.session_state.setdefault("chat_context_hash", "")
     st.session_state.setdefault("chat_reset_notice", False)
+    st.session_state.setdefault("chat_pending_msg", None)
 
     # Rebuild context if clusters have changed
     current_hash = _build_context_hash(df_clean)
@@ -177,30 +178,45 @@ def render_cluster_chat(
         st.info("Chat history was reset because cluster assignments changed.")
         st.session_state["chat_reset_notice"] = False
 
-    # Chat history + input inside a single bounded container (keeps input non-sticky)
-    with st.container(height=500):
+    # Pick up any pending message from the previous submit
+    pending = st.session_state.get("chat_pending_msg")
+
+    # Messages in a bounded scrollable container
+    with st.container(height=430):
         for msg in st.session_state["chat_history"]:
             with st.chat_message(msg["role"]):
                 st.markdown(msg["content"])
 
-        prompt = st.chat_input(
-            "Ask anything about the clusters or companies…",
-            disabled=not api_key,
-        )
-
-        if prompt:
-            st.session_state["chat_history"].append({"role": "user", "content": prompt})
+        # Render the in-flight exchange inside the same container so it stays visible
+        if pending:
             with st.chat_message("user"):
-                st.markdown(prompt)
-
+                st.markdown(pending)
             with st.chat_message("assistant"):
                 with st.spinner("Thinking…"):
                     response = _call_gemini(
-                        prompt,
+                        pending,
                         st.session_state["chat_context"],
-                        st.session_state["chat_history"][:-1],  # exclude the message we just added
+                        st.session_state["chat_history"],
                         api_key,
                     )
                 st.markdown(response)
-
+            st.session_state["chat_history"].append({"role": "user", "content": pending})
             st.session_state["chat_history"].append({"role": "assistant", "content": response})
+            st.session_state["chat_pending_msg"] = None
+
+    # Input row sits below the container — not sticky, not overlapping messages
+    with st.form("chat_form", clear_on_submit=True):
+        col_input, col_btn = st.columns([9, 1])
+        with col_input:
+            user_input = st.text_input(
+                "",
+                placeholder="Ask anything about the clusters or companies…",
+                label_visibility="collapsed",
+                disabled=not api_key,
+            )
+        with col_btn:
+            submitted = st.form_submit_button("↑", disabled=not api_key)
+
+    if submitted and user_input.strip():
+        st.session_state["chat_pending_msg"] = user_input.strip()
+        st.rerun()
