@@ -49,17 +49,26 @@ def _render_named_cluster(
     dimensions: list[str],
 ) -> None:
     n = len(df_cluster)
-    col_hdr, col_del = st.columns([11, 1])
+    col_hdr, col_merge, col_del = st.columns([10, 1, 1])
     with col_hdr:
         st.markdown(
             f"### {cluster_name} &nbsp; <sup style='font-size:0.6em;color:gray'>{n} companies</sup>",
             unsafe_allow_html=True,
         )
+    with col_merge:
+        if st.button("↔", key=f"cr_merge_{cluster_name}", help=f"Merge \"{cluster_name}\" into another cluster"):
+            st.session_state["cr_merge_pending"] = cluster_name
+            st.rerun()
     with col_del:
         if st.button("🗑", key=f"cr_del_{cluster_name}", help=f"Delete cluster \"{cluster_name}\""):
             st.session_state["cr_delete_pending"] = cluster_name
             st.session_state["cr_delete_target"] = _OUTLIER_LABEL
             st.rerun()
+
+    # User-provided description (if any)
+    user_desc = st.session_state.get("cr_cluster_descriptions", {}).get(cluster_name, "")
+    if user_desc:
+        st.caption(f"_{user_desc}_")
 
     st.markdown(_build_auto_description(df_cluster, dimensions))
 
@@ -290,6 +299,8 @@ def render_cluster_review(
     st.session_state.setdefault("cr_delete_pending", None)
     st.session_state.setdefault("cr_delete_target", _OUTLIER_LABEL)
     st.session_state.setdefault("cr_adding", False)
+    st.session_state.setdefault("cr_merge_pending", None)
+    st.session_state.setdefault("cr_cluster_descriptions", {})
 
     st.subheader("Cluster Review & Edit")
     st.caption(
@@ -343,6 +354,45 @@ def render_cluster_review(
     )
     df_outliers = df_clean[df_clean["Cluster"] == _OUTLIER_LABEL]
 
+    # --- Merge confirmation ---
+    merge_pending = st.session_state.get("cr_merge_pending")
+    if merge_pending and merge_pending in named_clusters:
+        n_merge = int((df_clean["Cluster"] == merge_pending).sum())
+        other_clusters = [c for c in named_clusters if c != merge_pending]
+        if not other_clusters:
+            st.warning("No other clusters to merge into.")
+            if st.button("Cancel", key="cr_merge_cancel_solo"):
+                st.session_state["cr_merge_pending"] = None
+                st.rerun()
+        else:
+            st.warning(
+                f"Merge **{merge_pending}** into another cluster? "
+                f"All {n_merge} {'company' if n_merge == 1 else 'companies'} will be moved."
+            )
+            col_dest, col_confirm, col_cancel = st.columns([3, 2, 2])
+            with col_dest:
+                merge_target = st.selectbox(
+                    "Merge into",
+                    options=other_clusters,
+                    key="cr_merge_target_select",
+                    label_visibility="collapsed",
+                )
+            with col_confirm:
+                if st.button("Confirm merge", type="primary", key="cr_merge_confirm", width="stretch"):
+                    df_clean.loc[df_clean["Cluster"] == merge_pending, "Cluster"] = merge_target
+                    descs = st.session_state.get("cr_cluster_descriptions", {})
+                    descs.pop(merge_pending, None)
+                    st.session_state["cr_cluster_descriptions"] = descs
+                    st.session_state.df_clean = df_clean
+                    st.session_state["cr_merge_pending"] = None
+                    st.session_state["cr_name_edits"] = {}
+                    st.rerun()
+            with col_cancel:
+                if st.button("Cancel", key="cr_merge_cancel", width="stretch"):
+                    st.session_state["cr_merge_pending"] = None
+                    st.rerun()
+        st.divider()
+
     # --- Delete confirmation ---
     delete_pending = st.session_state.get("cr_delete_pending")
     if delete_pending and delete_pending in named_clusters:
@@ -388,6 +438,12 @@ def render_cluster_review(
             key="cr_new_cluster_name",
             placeholder="e.g. Enterprise SaaS",
         )
+        new_desc = st.text_area(
+            "Description (optional)",
+            key="cr_new_cluster_desc",
+            placeholder="e.g. Infrastructure tools for payments and treasury automation",
+            height=80,
+        )
         all_companies = df_clean[company_col].dropna().tolist() if company_col in df_clean.columns else []
         new_companies = st.multiselect(
             "Assign companies",
@@ -408,6 +464,10 @@ def render_cluster_review(
                     st.error("Select at least one company.")
                 else:
                     df_clean.loc[df_clean[company_col].isin(new_companies), "Cluster"] = new_name_clean
+                    if new_desc and new_desc.strip():
+                        descs = st.session_state.get("cr_cluster_descriptions", {})
+                        descs[new_name_clean] = new_desc.strip()
+                        st.session_state["cr_cluster_descriptions"] = descs
                     st.session_state.df_clean = df_clean
                     st.session_state["cr_adding"] = False
                     st.session_state["cr_name_edits"] = {}

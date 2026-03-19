@@ -80,21 +80,13 @@ def _build_system_context(
     df_clean: pd.DataFrame,
     company_col: str,
     dimensions: list[str],
-    cluster_metrics: dict,
     market_context: str = "",
+    cluster_descriptions: dict = {},
 ) -> str:
     n_total = len(df_clean)
     n_outliers = int((df_clean["Cluster"] == _OUTLIER_LABEL).sum())
     named_clusters = [c for c in df_clean["Cluster"].unique() if c != _OUTLIER_LABEL]
     n_clusters = len(named_clusters)
-
-    sil = cluster_metrics.get("silhouette")
-    db = cluster_metrics.get("davies_bouldin")
-    quality = ""
-    if sil is not None:
-        quality += f"Silhouette score: {sil:.3f} (higher is better, >0.3 is good)"
-    if db is not None:
-        quality += f" | Davies-Bouldin: {db:.3f} (lower is better, <1.0 is good)"
 
     desc_limit = _DESC_CHAR_LIMIT_LARGE if n_total > _LARGE_DATASET_THRESHOLD else _DESC_CHAR_LIMIT_NORMAL
     large_note = " (truncated for brevity)" if n_total > _LARGE_DATASET_THRESHOLD else ""
@@ -108,8 +100,6 @@ def _build_system_context(
         "=== ANALYSIS OVERVIEW ===",
         f"- {n_total} companies across {n_clusters} named clusters ({n_outliers} outliers)",
     ]
-    if quality:
-        lines.append(f"- {quality}")
 
     lines += ["", "=== CLUSTERS ==="]
 
@@ -117,6 +107,11 @@ def _build_system_context(
         df_c = df_clean[df_clean["Cluster"] == cluster_name]
         n = len(df_c)
         lines.append(f"\n## {cluster_name} ({n} companies)")
+
+        # User-provided description (if any)
+        user_desc = cluster_descriptions.get(cluster_name, "")
+        if user_desc:
+            lines.append(f"Description: {user_desc}")
 
         # Dimension characteristics
         char_parts = []
@@ -196,7 +191,6 @@ def render_cluster_chat(
     company_col: str,
     dimensions: list[str],
     api_key: str,
-    cluster_metrics: dict,
 ) -> None:
     st.session_state.setdefault("chat_history", [])
     st.session_state.setdefault("chat_context", "")
@@ -243,9 +237,11 @@ def render_cluster_chat(
                 market_ctx = _fetch_market_context(
                     named_clusters, df_clean, company_col, api_key, user_context=ctx
                 )
+            cluster_descs = st.session_state.get("cr_cluster_descriptions", {})
             st.session_state["chat_context"] = _build_system_context(
-                df_clean, company_col, dimensions, cluster_metrics,
+                df_clean, company_col, dimensions,
                 market_context=market_ctx,
+                cluster_descriptions=cluster_descs,
             )
             st.session_state["chat_onboarded"] = True
             st.rerun()
@@ -302,6 +298,24 @@ def render_cluster_chat(
             st.session_state["chat_history"].append({"role": "user", "content": pending})
             st.session_state["chat_history"].append({"role": "assistant", "content": response})
             st.session_state["chat_pending_msg"] = None
+
+    # Pre-written cluster review prompt
+    _REVIEW_PROMPT = (
+        "Please review all clusters in this analysis and provide structured recommendations:\n\n"
+        "**1. KEEP** — List clusters that are well-defined and should remain exactly as they are. "
+        "Briefly explain why each is cohesive.\n\n"
+        "**2. DELETE** — List clusters that are too small, too vague, overlap heavily with another, "
+        "or add no analytical value. Explain why each should be removed.\n\n"
+        "**3. MERGE** — Identify pairs or groups of clusters that are too similar and should be combined. "
+        "For each merge, specify which clusters to combine and suggest a name for the result.\n\n"
+        "**4. ADD** — Identify important market segments that are absent from the current clustering. "
+        "For each new cluster to add, provide: a proposed name, a one-sentence description, "
+        "and 3–5 example companies from the dataset that would belong there.\n\n"
+        "Ground all recommendations in the specific companies and cluster compositions you know."
+    )
+    if st.button("📋 Request cluster review", disabled=not api_key):
+        st.session_state["chat_pending_msg"] = _REVIEW_PROMPT
+        st.rerun()
 
     # Input row sits below the container — not sticky, not overlapping messages
     with st.form("chat_form", clear_on_submit=True):

@@ -981,6 +981,5 @@ if st.session_state.df_clean is not None and "Cluster" in st.session_state.df_cl
         company_col=company_col,
         dimensions=DIMENSIONS,
         api_key=api_key,
-        cluster_metrics=st.session_state.cluster_metrics or {},
     )
 
