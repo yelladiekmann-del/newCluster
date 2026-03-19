@@ -312,8 +312,11 @@ def run_clustering(
 # ============================================================
 def find_optimal_params(feature_matrix: np.ndarray, umap_cluster_dims: int) -> dict:
     """
-    Run UMAP once then sweep a small HDBSCAN grid, returning the combo with
-    the best silhouette score (Davies-Bouldin as tiebreaker).
+    Run UMAP once then sweep a 3-axis HDBSCAN grid (min_cluster_size ×
+    min_samples × cluster_epsilon). Selects the combo maximising a combined
+    score: 0.6 × silhouette + 0.4 × (1 / (1 + davies_bouldin)).
+    Both metrics are given real weight — silhouette is primary but DB
+    meaningfully affects the result, not just a tiebreaker.
     """
     n = len(feature_matrix)
     actual_dims = min(umap_cluster_dims, n - 2, feature_matrix.shape[1])
@@ -335,33 +338,39 @@ def find_optimal_params(feature_matrix: np.ndarray, umap_cluster_dims: int) -> d
         for ms in [1, 3, 5]:
             if ms > mcs:
                 continue
-            try:
-                labels = hdbscan.HDBSCAN(
-                    min_cluster_size=mcs,
-                    min_samples=ms,
-                    cluster_selection_epsilon=0.0,
-                    cluster_selection_method="leaf",
-                    metric="euclidean",
-                ).fit_predict(embedded)
-                nc = len([l for l in set(labels) if l >= 0])
-                mask = labels != -1
-                if nc < 2 or mask.sum() < 2:
+            for eps in [0.0, 0.2, 0.5]:
+                try:
+                    labels = hdbscan.HDBSCAN(
+                        min_cluster_size=mcs,
+                        min_samples=ms,
+                        cluster_selection_epsilon=eps,
+                        cluster_selection_method="leaf",
+                        metric="euclidean",
+                    ).fit_predict(embedded)
+                    nc = len([l for l in set(labels) if l >= 0])
+                    mask = labels != -1
+                    if nc < 2 or mask.sum() < 2:
+                        continue
+                    sil = float(silhouette_score(embedded[mask], labels[mask]))
+                    db  = float(davies_bouldin_score(embedded[mask], labels[mask]))
+                    # Combined score: silhouette 60% + normalised DB 40%
+                    combined = sil * 0.6 + (1.0 / (1.0 + db)) * 0.4
+                    if best is None or combined > best["_combined"]:
+                        best = {
+                            "min_cluster_size": mcs, "min_samples": ms,
+                            "cluster_epsilon": eps, "n_clusters": nc,
+                            "silhouette": round(sil, 3),
+                            "davies_bouldin": round(db, 3),
+                            "_combined": combined,
+                        }
+                except Exception:
                     continue
-                sil = float(silhouette_score(embedded[mask], labels[mask]))
-                db  = float(davies_bouldin_score(embedded[mask], labels[mask]))
-                if best is None or sil > best["silhouette"] or (
-                    abs(sil - best["silhouette"]) < 1e-4 and db < best["davies_bouldin"]
-                ):
-                    best = {
-                        "min_cluster_size": mcs, "min_samples": ms,
-                        "n_clusters": nc,
-                        "silhouette": round(sil, 3), "davies_bouldin": round(db, 3),
-                    }
-            except Exception:
-                continue
 
-    return best or {"min_cluster_size": 5, "min_samples": 3, "n_clusters": 0,
-                    "silhouette": 0.0, "davies_bouldin": 999.0}
+    if best:
+        best.pop("_combined")  # internal only
+        return best
+    return {"min_cluster_size": 5, "min_samples": 3, "cluster_epsilon": 0.0,
+            "n_clusters": 0, "silhouette": 0.0, "davies_bouldin": 999.0}
 
 
 # ============================================================
@@ -554,8 +563,9 @@ if has_csv:
     if _at and _at.get("n_clusters", 0) > 0:
         st.success(
             f"✨ Suggested: min\_cluster\_size={_at['min_cluster_size']}, "
-            f"min\_samples={_at['min_samples']} → "
-            f"{_at['n_clusters']} clusters · silhouette={_at['silhouette']:.3f}"
+            f"min\_samples={_at['min_samples']}, "
+            f"cluster\_epsilon={_at.get('cluster_epsilon', 0.0)} → "
+            f"{_at['n_clusters']} clusters · silhouette={_at['silhouette']:.3f} · DB={_at['davies_bouldin']:.3f}"
         )
 
     # Read autotune suggestions (plain session state keys, not widget keys)

@@ -24,11 +24,12 @@ def _fetch_market_context(
     df_clean: pd.DataFrame,
     company_col: str,
     api_key: str,
+    user_context: str = "",
 ) -> str:
     """
     Make one Gemini call with Google Search grounding to get a live market
-    landscape overview tailored to the actual cluster names and companies.
-    Cached per clustering session in session state.
+    landscape overview. When user_context is provided (from onboarding), the
+    search is tailored to that specific buyer/use-case context.
     """
     # One sample company per cluster
     samples = []
@@ -37,15 +38,26 @@ def _fetch_market_context(
         if row is not None:
             samples.append(str(row.get(company_col, name)))
 
+    context_line = (
+        f"This analysis is being conducted for: {user_context}\n\n"
+        if user_context else ""
+    )
+    focus_line = (
+        f"Pay special attention to what would matter most for: {user_context}\n"
+        if user_context else ""
+    )
+
     prompt = (
         "You are a market research analyst. A startup/company portfolio has been organized into these market segments:\n\n"
         f"Segments: {', '.join(cluster_names)}\n"
         f"Sample companies: {', '.join(samples)}\n\n"
+        f"{context_line}"
         "Search the web and provide a focused market landscape overview (200–300 words):\n"
         "1. What broader market domain does this portfolio represent?\n"
         "2. What key segments are typically present in this space — including any that may be MISSING from the segments above?\n"
         "3. Major incumbent players or solution categories buyers evaluate\n"
-        "4. Common buyer pain points and evaluation criteria\n\n"
+        f"4. Common buyer pain points and evaluation criteria\n"
+        f"{focus_line}\n"
         "This context will be used to answer portfolio gap-analysis and market completeness questions."
     )
     try:
@@ -191,27 +203,55 @@ def render_cluster_chat(
     st.session_state.setdefault("chat_context_hash", "")
     st.session_state.setdefault("chat_reset_notice", False)
     st.session_state.setdefault("chat_pending_msg", None)
-    st.session_state.setdefault("chat_market_context", "")
+    st.session_state.setdefault("chat_onboarded", False)
+    st.session_state.setdefault("chat_analysis_context", "")
 
-    # Rebuild context if clusters have changed
+    # Reset onboarding when clusters change
     current_hash = _build_context_hash(df_clean)
     if current_hash != st.session_state["chat_context_hash"]:
         was_populated = bool(st.session_state["chat_history"])
-
-        named_clusters = [c for c in df_clean["Cluster"].unique() if c != _OUTLIER_LABEL]
-        with st.spinner("Researching market landscape… (~5s)"):
-            market_ctx = _fetch_market_context(named_clusters, df_clean, company_col, api_key)
-        st.session_state["chat_market_context"] = market_ctx
-
-        st.session_state["chat_context"] = _build_system_context(
-            df_clean, company_col, dimensions, cluster_metrics,
-            market_context=market_ctx,
-        )
         st.session_state["chat_context_hash"] = current_hash
         st.session_state["chat_history"] = []
+        st.session_state["chat_context"] = ""
+        st.session_state["chat_onboarded"] = False
+        st.session_state["chat_analysis_context"] = ""
         if was_populated:
             st.session_state["chat_reset_notice"] = True
 
+    # ── ONBOARDING ──────────────────────────────────────────────
+    if not st.session_state["chat_onboarded"]:
+        st.subheader("Before we start")
+        st.caption(
+            "Tell us who this analysis is for — this shapes the market intelligence web search "
+            "and helps the assistant answer gap-analysis questions more precisely."
+        )
+        with st.form("chat_onboarding_form", clear_on_submit=False):
+            analysis_ctx = st.text_input(
+                "Who is this analysis for?",
+                placeholder="e.g. a regional bank exploring fintech partnerships",
+                disabled=not api_key,
+            )
+            ob_submitted = st.form_submit_button(
+                "Start analysis →", type="primary", disabled=not api_key
+            )
+
+        if ob_submitted and analysis_ctx.strip():
+            ctx = analysis_ctx.strip()
+            st.session_state["chat_analysis_context"] = ctx
+            named_clusters = [c for c in df_clean["Cluster"].unique() if c != _OUTLIER_LABEL]
+            with st.spinner("Researching market landscape… (~5–10s)"):
+                market_ctx = _fetch_market_context(
+                    named_clusters, df_clean, company_col, api_key, user_context=ctx
+                )
+            st.session_state["chat_context"] = _build_system_context(
+                df_clean, company_col, dimensions, cluster_metrics,
+                market_context=market_ctx,
+            )
+            st.session_state["chat_onboarded"] = True
+            st.rerun()
+        return  # Don't render chat until onboarding is complete
+
+    # ── CHAT ────────────────────────────────────────────────────
     n_companies = len(df_clean)
     n_clusters = df_clean["Cluster"].nunique() - (1 if _OUTLIER_LABEL in df_clean["Cluster"].values else 0)
 
@@ -226,9 +266,11 @@ def render_cluster_chat(
             on_click=lambda: st.session_state.update({"chat_history": []}),
         )
 
+    analysis_label = st.session_state.get("chat_analysis_context", "")
     st.caption(
-        f"The assistant has full knowledge of all {n_companies} companies across {n_clusters} clusters. "
-        "Ask anything — cluster comparisons, company lookups, market insights, where a new company might fit."
+        (f"Analysis context: _{analysis_label}_ · " if analysis_label else "")
+        + f"Full knowledge of {n_companies} companies across {n_clusters} clusters. "
+        "Ask anything — comparisons, company lookups, market gaps, where a new company fits."
     )
 
     if st.session_state.get("chat_reset_notice"):
