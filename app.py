@@ -223,7 +223,8 @@ def run_clustering(
 
     # --- UMAP for clustering (high-D) ---
     actual_cluster_dims = min(umap_cluster_dims, n - 2, feature_matrix.shape[1])
-    with st.spinner(f"UMAP {feature_matrix.shape[1]}D → {actual_cluster_dims}D for clustering…"):
+    _umap_eta = _fmt_secs(max(5, int(n * 0.05)))
+    with st.spinner(f"UMAP {feature_matrix.shape[1]}D → {actual_cluster_dims}D for clustering… ({_umap_eta})"):
         reducer_nd = umap.UMAP(
             n_components=actual_cluster_dims,
             n_neighbors=min(15, n - 1),
@@ -234,7 +235,8 @@ def run_clustering(
         embedded_nd = reducer_nd.fit_transform(feature_matrix)
 
     # --- UMAP for visualisation (2D) ---
-    with st.spinner("UMAP → 2D for visualisation…"):
+    _umap2d_eta = _fmt_secs(max(3, int(n * 0.03)))
+    with st.spinner(f"UMAP → 2D for visualisation… ({_umap2d_eta})"):
         reducer_2d = umap.UMAP(
             n_components=2,
             n_neighbors=min(15, n - 1),
@@ -245,7 +247,7 @@ def run_clustering(
         embedded_2d = reducer_2d.fit_transform(feature_matrix)
 
     # --- HDBSCAN on high-D embeddings ---
-    with st.spinner("HDBSCAN on high-D space…"):
+    with st.spinner("HDBSCAN on high-D space… (usually <5s)"):
         clusterer = hdbscan.HDBSCAN(
             min_cluster_size=min_cluster_size,
             min_samples=min_samples,
@@ -296,6 +298,17 @@ def run_clustering(
     df_out["_y"]            = embedded_2d[:, 1]
 
     return df_out, embedded_2d, n_clusters, n_outliers, metrics
+
+
+# ============================================================
+# HELPERS — UI
+# ============================================================
+def _fmt_secs(s: int) -> str:
+    """Format a number of seconds as a human-readable estimate string."""
+    if s < 60:
+        return f"~{s}s"
+    m, sec = divmod(s, 60)
+    return f"~{m}m {sec}s" if sec else f"~{m}m"
 
 
 # ============================================================
@@ -610,13 +623,16 @@ if start and df_input is not None:
         df_clean = df_input.reset_index(drop=True)
 
     total = len(df_clean)
-    st.info(f"{total} companies will be processed")
+    _secs_per_company = (len(available_dims) * 0.35) if embed_mode == "Per-dimension (recommended)" else 0.5
+    _embed_eta = max(1, int(total * _secs_per_company))
+    st.info(f"{total} companies will be processed — embedding est. {_fmt_secs(_embed_eta)}")
 
     # --- Embeddings ---
     st.subheader("1 · Embeddings")
     prog   = st.progress(0)
     status = st.empty()
     vectors, errors = [], 0
+    _embed_start = time.time()
 
     for i in range(total):
         row     = df_clean.iloc[i]
@@ -636,7 +652,13 @@ if start and df_input is not None:
             errors += 1
 
         prog.progress((i + 1) / total)
-        status.caption(f"{i+1}/{total} · {name_str} · ✗ {errors}")
+        _elapsed = time.time() - _embed_start
+        if i > 0:
+            _rate = _elapsed / (i + 1)
+            _remaining = int(_rate * (total - i - 1))
+            status.caption(f"{i+1}/{total} · {name_str} · ✗ {errors} · {_fmt_secs(_remaining)} remaining")
+        else:
+            status.caption(f"{i+1}/{total} · {name_str} · ✗ {errors}")
 
     prog.empty(); status.empty()
 
@@ -704,7 +726,7 @@ if name_btn and st.session_state.df_clean is not None:
             for i, c in enumerate(unique_clusters)
         }
 
-        with st.spinner(f"Naming {len(cluster_profiles)} clusters…"):
+        with st.spinner(f"Naming {len(cluster_profiles)} clusters… (~5–10s)"):
             llm_names = name_all_clusters(cluster_profiles, api_key)
 
         if llm_names:

@@ -192,7 +192,7 @@ def render_cluster_chat(
             with st.chat_message("user"):
                 st.markdown(pending)
             with st.chat_message("assistant"):
-                with st.spinner("Thinking…"):
+                with st.spinner("Thinking… (~5–15s)"):
                     response = _call_gemini(
                         pending,
                         st.session_state["chat_context"],

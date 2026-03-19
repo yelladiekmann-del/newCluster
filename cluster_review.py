@@ -216,13 +216,23 @@ def _llm_reassign_all(
 
     results: dict[int, str] = {}
     n_batches = max(1, (len(companies) + _BATCH_SIZE - 1) // _BATCH_SIZE)
-    prog = st.progress(0, text="Reassigning companies via Gemini…")
+    _eta_secs = n_batches * 4
+    _eta_str = f"~{_eta_secs}s" if _eta_secs < 60 else f"~{_eta_secs // 60}m {_eta_secs % 60}s"
+    prog = st.progress(0, text=f"Reassigning companies via Gemini… (est. {_eta_str})")
+    _reassign_start = time.time()
 
     for b in range(n_batches):
         batch = companies[b * _BATCH_SIZE: (b + 1) * _BATCH_SIZE]
         batch_result = _llm_reassign_batch(batch, cluster_block, cluster_names, include_outliers, api_key)
         results.update(batch_result)
-        prog.progress((b + 1) / n_batches, text=f"Batch {b + 1} / {n_batches}…")
+        _elapsed = time.time() - _reassign_start
+        if b > 0:
+            _rate = _elapsed / (b + 1)
+            _remaining = int(_rate * (n_batches - b - 1))
+            _rem_str = f"~{_remaining}s" if _remaining < 60 else f"~{_remaining // 60}m {_remaining % 60}s"
+            prog.progress((b + 1) / n_batches, text=f"Batch {b + 1} / {n_batches} — {_rem_str} remaining…")
+        else:
+            prog.progress((b + 1) / n_batches, text=f"Batch {b + 1} / {n_batches}…")
         time.sleep(0.15)
 
     prog.empty()
