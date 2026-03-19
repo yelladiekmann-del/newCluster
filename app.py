@@ -10,6 +10,8 @@ import requests
 import io
 import json
 import re
+import threading
+from concurrent.futures import ThreadPoolExecutor
 
 from sklearn.preprocessing import normalize
 from sklearn.metrics import silhouette_score, davies_bouldin_score
@@ -56,6 +58,12 @@ EMBED_MODEL = "gemini-embedding-001"
 EMBED_URL   = f"https://generativelanguage.googleapis.com/v1beta/models/{EMBED_MODEL}:embedContent"
 GEN_URL     = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
 
+# Parallel workers for embedding calls.
+# gemini-embedding-001 is TPM-governed with generous limits on paid tier.
+# 429s are retried with exponential backoff in get_embedding() — no manual throttle needed.
+# Reduce if you consistently see 429 errors on a free-tier key.
+_EMBED_WORKERS = 10
+
 _defaults = {
     "df_clean": None, "embedded_2d": None, "feature_matrix": None,
     "done": False, "cluster_metrics": None, "confirm_rerun_pending": False,
@@ -89,7 +97,6 @@ def get_embedding(text: str, api_key: str, dim: int = 768) -> np.ndarray:
                 return np.zeros(dim)
             v = np.array(resp.json()["embedding"]["values"])
             norm = np.linalg.norm(v)
-            time.sleep(0.05)
             return v / norm if norm > 0 else v
         except requests.exceptions.Timeout:
             time.sleep(2 ** attempt)
@@ -117,12 +124,13 @@ def get_per_dimension_embedding(
     Using dim_per_field=256 keeps total vector size manageable:
     7 dims × 256 = 1792-d → still tractable for UMAP/HDBSCAN at 2000 companies.
     """
-    parts = []
-    for d in available_dims:
+    def _embed_dim(d):
         val = str(row.get(d, "")).strip()
         vec = get_embedding(val if val else "unknown", api_key, dim=dim_per_field)
-        weight = DIMENSION_WEIGHTS.get(d, 1.0)
-        parts.append(vec * weight)
+        return vec * DIMENSION_WEIGHTS.get(d, 1.0)
+
+    with ThreadPoolExecutor(max_workers=len(available_dims)) as ex:
+        parts = list(ex.map(_embed_dim, available_dims))
 
     if not parts:
         return np.zeros(dim_per_field)
@@ -623,21 +631,21 @@ if start and df_input is not None:
         df_clean = df_input.reset_index(drop=True)
 
     total = len(df_clean)
-    _secs_per_company = (len(available_dims) * 0.35) if embed_mode == "Per-dimension (recommended)" else 0.5
-    _embed_eta = max(1, int(total * _secs_per_company))
-    st.info(f"{total} companies will be processed — embedding est. {_fmt_secs(_embed_eta)}")
+    _secs_per_company = 0.35 if embed_mode == "Per-dimension (recommended)" else 0.5
+    _embed_eta = max(1, int((total * _secs_per_company) / _EMBED_WORKERS))
+    st.info(f"{total} companies will be processed — embedding est. {_fmt_secs(_embed_eta)} ({_EMBED_WORKERS} parallel workers)")
 
     # --- Embeddings ---
     st.subheader("1 · Embeddings")
     prog   = st.progress(0)
     status = st.empty()
-    vectors, errors = [], 0
     _embed_start = time.time()
+    _done_count  = [0]
+    _error_count = [0]
+    _progress_lock = threading.Lock()
 
-    for i in range(total):
-        row     = df_clean.iloc[i]
-        name_str = str(row.get(company_col, ""))[:40]
-
+    def _embed_one(i):
+        row = df_clean.iloc[i]
         if embed_mode == "Per-dimension (recommended)":
             vec = get_per_dimension_embedding(row, available_dims, api_key, dim_per_field=256)
         elif embed_mode == "Description column" and use_desc:
@@ -647,20 +655,30 @@ if start and df_input is not None:
             text = " | ".join(str(row.get(d, "")) for d in available_dims)
             vec  = get_description_embedding(text, api_key)
 
-        vectors.append(vec)
-        if np.all(vec == 0):
-            errors += 1
+        is_zero = bool(np.all(vec == 0))
+        with _progress_lock:
+            _done_count[0]  += 1
+            _error_count[0] += int(is_zero)
+            done   = _done_count[0]
+            errors = _error_count[0]
 
-        prog.progress((i + 1) / total)
+        prog.progress(done / total)
         _elapsed = time.time() - _embed_start
-        if i > 0:
-            _rate = _elapsed / (i + 1)
-            _remaining = int(_rate * (total - i - 1))
-            status.caption(f"{i+1}/{total} · {name_str} · ✗ {errors} · {_fmt_secs(_remaining)} remaining")
+        if done > 1:
+            _remaining = int((_elapsed / done) * (total - done))
+            status.caption(f"{done}/{total} · ✗ {errors} · {_fmt_secs(_remaining)} remaining")
         else:
-            status.caption(f"{i+1}/{total} · {name_str} · ✗ {errors}")
+            status.caption(f"{done}/{total}")
+
+        return vec, is_zero
+
+    with ThreadPoolExecutor(max_workers=_EMBED_WORKERS) as ex:
+        _results = list(ex.map(_embed_one, range(total)))
 
     prog.empty(); status.empty()
+
+    vectors = [r[0] for r in _results]
+    errors  = sum(r[1] for r in _results)
 
     if errors == total:
         st.error("All embeddings failed. Check your API key and network connection.")

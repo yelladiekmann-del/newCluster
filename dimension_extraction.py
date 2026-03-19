@@ -8,7 +8,10 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 _GEN_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
 _BATCH_SIZE = 20
-_MAX_WORKERS = 5
+# Paid tier: gemini-2.5-flash is ~300–1000 RPM — 10 workers is safe.
+# 429s are retried with exponential backoff; no manual throttle needed.
+# Reduce to 3–5 if you consistently see 429 errors on a free-tier key.
+_MAX_WORKERS = 10
 
 EXTRACTED_DIMENSIONS = [
     "Problem Solved",
