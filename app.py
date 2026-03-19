@@ -1,5 +1,6 @@
 import streamlit as st
 from cluster_review import render_cluster_review
+from cluster_chat import render_cluster_chat
 import pandas as pd
 import numpy as np
 import time
@@ -679,6 +680,15 @@ if st.session_state.df_clean is not None and "Cluster" in st.session_state.df_cl
     if reviewed_df is not None:
         st.session_state.df_clean = reviewed_df
         st.rerun()
+
+    st.divider()
+    render_cluster_chat(
+        df_clean=st.session_state.df_clean,
+        company_col=company_col,
+        dimensions=DIMENSIONS,
+        api_key=api_key,
+        cluster_metrics=st.session_state.cluster_metrics or {},
+    )
 
 # ============================================================
 # SAVED EMBEDDINGS UPLOAD
