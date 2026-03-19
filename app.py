@@ -562,9 +562,9 @@ if has_csv:
     _at = st.session_state.get("autotune_result")
     if _at and _at.get("n_clusters", 0) > 0:
         st.success(
-            f"✨ Suggested: min\_cluster\_size={_at['min_cluster_size']}, "
-            f"min\_samples={_at['min_samples']}, "
-            f"cluster\_epsilon={_at.get('cluster_epsilon', 0.0)} → "
+            f"✨ Suggested: min_cluster_size={_at['min_cluster_size']}, "
+            f"min_samples={_at['min_samples']}, "
+            f"cluster_epsilon={_at.get('cluster_epsilon', 0.0)} → "
             f"{_at['n_clusters']} clusters · silhouette={_at['silhouette']:.3f} · DB={_at['davies_bouldin']:.3f}"
         )
 
