@@ -322,7 +322,7 @@ if uploaded:
             desc_col     = None if desc_sel.startswith("(none") else desc_sel
 
         with st.expander("Preview"):
-            st.dataframe(df_input.head(5), use_container_width=True, hide_index=True)
+            st.dataframe(df_input.head(5), width='stretch', hide_index=True)
     except Exception as e:
         st.error(f"Could not load file: {e}")
 
@@ -400,19 +400,19 @@ st.divider()
 col_a, col_b, col_c = st.columns(3)
 with col_a:
     start = st.button(
-        "▶  Run embeddings + clustering", type="primary", use_container_width=True,
+        "▶  Run embeddings + clustering", type="primary", width='stretch',
         disabled=(df_input is None or not api_key),
     )
 with col_b:
     recluster = st.button(
-        "↺  Re-cluster only", use_container_width=True,
+        "↺  Re-cluster only", width='stretch',
         disabled=(st.session_state.feature_matrix is None or st.session_state.df_clean is None),
         help="Skips embeddings. Re-runs UMAP + HDBSCAN with current parameters.",
     )
 with col_c:
     name_btn = st.button(
-        "🏷  Name clusters", use_container_width=True,
-        disabled=(st.session_state.df_clean is None),
+        "🏷  Name clusters", width='stretch',
+        disabled=(not st.session_state.done or st.session_state.df_clean is None),
         help="One Gemini call — names all clusters at once.",
     )
 
@@ -596,7 +596,7 @@ if st.session_state.done and st.session_state.df_clean is not None:
         yaxis=dict(title="", showticklabels=False, showgrid=False, zeroline=False),
         dragmode="lasso",
     )
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width='stretch')
 
     # IMPROVEMENT 5: Cluster comparison table
     # Shows the top value per dimension for each cluster side-by-side,
@@ -617,7 +617,7 @@ if st.session_state.done and st.session_state.df_clean is not None:
                     )
                     row_data[cname] = top[0] if top else "—"
                 profile_rows.append(row_data)
-            st.dataframe(pd.DataFrame(profile_rows).set_index("Dimension"), use_container_width=True)
+            st.dataframe(pd.DataFrame(profile_rows).set_index("Dimension"), width='stretch')
 
     # IMPROVEMENT 6: Outlier score distribution
     # Lets you spot "soft outliers" — companies with a high score that
@@ -635,17 +635,17 @@ if st.session_state.done and st.session_state.df_clean is not None:
                 color_discrete_sequence=px.colors.qualitative.Bold,
             )
             fig_out.update_layout(margin=dict(l=0, r=0, t=10, b=0), showlegend=False)
-            st.plotly_chart(fig_out, use_container_width=True)
+            st.plotly_chart(fig_out, width='stretch')
 
     show_cols = [c for c in [company_col, "Cluster", "Outlier score"] + DIMENSIONS if c in df.columns]
-    st.dataframe(df[show_cols], use_container_width=True, hide_index=True)
+    st.dataframe(df[show_cols], width='stretch', hide_index=True)
 
     col_dl1, col_dl2 = st.columns(2)
     with col_dl1:
         st.download_button(
             "⬇  Download results as CSV",
             df[show_cols].to_csv(index=False),
-            "cluster_results.csv", "text/csv", use_container_width=True,
+            "cluster_results.csv", "text/csv", width='stretch',
         )
     with col_dl2:
         if st.session_state.feature_matrix is not None:
@@ -660,7 +660,7 @@ if st.session_state.done and st.session_state.df_clean is not None:
             st.download_button(
                 "⬇  Save embeddings (.npz)",
                 buf, "embeddings.npz", "application/octet-stream",
-                use_container_width=True,
+                width='stretch',
                 help="Upload next time to skip the embedding step.",
             )
 
