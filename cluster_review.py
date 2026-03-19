@@ -234,6 +234,7 @@ def render_cluster_review(
 ) -> "pd.DataFrame | None":
     st.session_state.setdefault("cr_name_edits", {})
     st.session_state.setdefault("cr_core_companies", {})
+    st.session_state.setdefault("cr_rerun_report", None)
 
     st.subheader("Cluster Review & Edit")
     st.caption(
@@ -241,6 +242,42 @@ def render_cluster_review(
         "Hit **Rerun** to re-verify all assignments using Gemini — "
         "the LLM reads each company's description and re-sorts it into the best-fitting cluster."
     )
+
+    # Show rerun report if one was stored from the previous run
+    report = st.session_state.get("cr_rerun_report")
+    if report:
+        with st.expander("Last rerun report", expanded=True):
+            st.markdown(
+                f"**{report['n_switched']}** {'company' if report['n_switched'] == 1 else 'companies'} "
+                f"changed cluster. **{report['n_outliers_after']}** outliers remaining."
+                + (f" **{report['pulled_in']}** outlier{'s' if report['pulled_in'] != 1 else ''} pulled into a cluster." if report['pulled_in'] > 0 else "")
+            )
+
+            # Before / after cluster size table
+            all_cluster_names = sorted(set(list(report["before"].keys()) + list(report["after"].keys())))
+            size_rows = []
+            for name in all_cluster_names:
+                before = report["before"].get(name, 0)
+                after = report["after"].get(name, 0)
+                diff = after - before
+                size_rows.append({
+                    "Cluster": name,
+                    "Before": before,
+                    "After": after,
+                    "Change": f"+{diff}" if diff > 0 else str(diff),
+                })
+            import pandas as _pd
+            st.dataframe(_pd.DataFrame(size_rows), width="stretch", hide_index=True)
+
+            # Companies that switched
+            if report["switches"]:
+                st.markdown(f"**Companies that switched ({len(report['switches'])}):**")
+                switch_df = _pd.DataFrame(report["switches"], columns=["Company", "From", "To"])
+                st.dataframe(switch_df, width="stretch", hide_index=True)
+
+        if st.button("Dismiss report", key="cr_dismiss_report"):
+            st.session_state["cr_rerun_report"] = None
+            st.rerun()
 
     all_clusters = df_clean["Cluster"].unique().tolist()
     named_clusters = sorted(
@@ -300,19 +337,27 @@ def render_cluster_review(
         for row_idx, new_cluster in assignments.items():
             df_out.at[row_idx, "Cluster"] = new_cluster
 
-        # Track switches
-        switched = int((old_clusters != df_out["Cluster"]).sum())
-        n_outliers_after = int((df_out["Cluster"] == _OUTLIER_LABEL).sum())
-        n_outliers_before = int((old_clusters == _OUTLIER_LABEL).sum())
-        pulled_in = max(0, n_outliers_before - n_outliers_after)
+        # Build before/after report and store in session state (survives st.rerun)
+        before_counts = old_clusters.value_counts().to_dict()
+        after_counts = df_out["Cluster"].value_counts().to_dict()
+        n_outliers_before = before_counts.get(_OUTLIER_LABEL, 0)
+        n_outliers_after = after_counts.get(_OUTLIER_LABEL, 0)
 
-        summary = (
-            f"**{switched}** {'company' if switched == 1 else 'companies'} changed cluster. "
-            f"**{n_outliers_after}** outliers remaining."
-        )
-        if include_outliers and pulled_in > 0:
-            summary += f" **{pulled_in}** outlier{'s' if pulled_in != 1 else ''} pulled into a cluster."
-        st.success(summary)
+        switch_mask = old_clusters != df_out["Cluster"]
+        switches = []
+        for idx in df_out.index[switch_mask]:
+            company_name = str(df_out.at[idx, company_col]) if company_col in df_out.columns else str(idx)
+            switches.append((company_name, old_clusters[idx], df_out.at[idx, "Cluster"]))
+
+        st.session_state["cr_rerun_report"] = {
+            "n_switched": len(switches),
+            "n_outliers_before": n_outliers_before,
+            "n_outliers_after": n_outliers_after,
+            "pulled_in": max(0, n_outliers_before - n_outliers_after),
+            "before": before_counts,
+            "after": after_counts,
+            "switches": switches,
+        }
 
         st.session_state["cr_name_edits"] = {}
         st.session_state["cr_core_companies"] = {}

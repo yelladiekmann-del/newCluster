@@ -43,8 +43,9 @@ def _build_system_context(
 
     lines = [
         "You are an expert market analyst assistant with complete knowledge of a company clustering analysis.",
-        "Answer questions accurately and specifically, always citing actual company names and cluster characteristics.",
-        "Be concise but substantive. If asked about a company, state its cluster and describe it.",
+        "Answer conversationally, like a knowledgeable colleague talking through insights — not a report writer.",
+        "Use plain prose. Avoid bullet points, headers, and numbered lists unless the user explicitly asks for a structured breakdown.",
+        "Always ground your answers in specific companies and cluster characteristics from the data.",
         "",
         "=== ANALYSIS OVERVIEW ===",
         f"- {n_total} companies across {n_clusters} named clusters ({n_outliers} outliers)",
@@ -149,24 +150,30 @@ def render_cluster_chat(
         st.session_state["chat_context_hash"] = current_hash
         st.session_state["chat_history"] = []
 
-    st.subheader("Ask about your clusters")
     n_companies = len(df_clean)
     n_clusters = df_clean["Cluster"].nunique() - (1 if _OUTLIER_LABEL in df_clean["Cluster"].values else 0)
+
+    col_title, col_clear = st.columns([5, 1])
+    with col_title:
+        st.subheader("Ask about your clusters")
+    with col_clear:
+        st.button(
+            "Clear",
+            key="chat_clear",
+            disabled=not st.session_state["chat_history"],
+            on_click=lambda: st.session_state.update({"chat_history": []}),
+        )
+
     st.caption(
         f"The assistant has full knowledge of all {n_companies} companies across {n_clusters} clusters. "
         "Ask anything — cluster comparisons, company lookups, market insights, where a new company might fit."
     )
 
-    # Render chat history
-    for msg in st.session_state["chat_history"]:
-        with st.chat_message(msg["role"]):
-            st.markdown(msg["content"])
-
-    # Clear button
-    if st.session_state["chat_history"]:
-        if st.button("Clear chat", key="chat_clear"):
-            st.session_state["chat_history"] = []
-            st.rerun()
+    # Render chat history in a bounded scrollable container
+    with st.container(height=450):
+        for msg in st.session_state["chat_history"]:
+            with st.chat_message(msg["role"]):
+                st.markdown(msg["content"])
 
     # Chat input
     prompt = st.chat_input(
