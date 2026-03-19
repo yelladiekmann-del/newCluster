@@ -10,8 +10,7 @@ import requests
 import io
 import json
 import re
-import threading
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from sklearn.preprocessing import normalize
 from sklearn.metrics import silhouette_score, davies_bouldin_score
@@ -640,10 +639,8 @@ if start and df_input is not None:
     prog   = st.progress(0)
     status = st.empty()
     _embed_start = time.time()
-    _done_count  = [0]
-    _error_count = [0]
-    _progress_lock = threading.Lock()
 
+    # Worker: pure computation only — no st.* calls (Streamlit requires main thread)
     def _embed_one(i):
         row = df_clean.iloc[i]
         if embed_mode == "Per-dimension (recommended)":
@@ -654,31 +651,29 @@ if start and df_input is not None:
         else:
             text = " | ".join(str(row.get(d, "")) for d in available_dims)
             vec  = get_description_embedding(text, api_key)
+        return i, vec
 
-        is_zero = bool(np.all(vec == 0))
-        with _progress_lock:
-            _done_count[0]  += 1
-            _error_count[0] += int(is_zero)
-            done   = _done_count[0]
-            errors = _error_count[0]
-
-        prog.progress(done / total)
-        _elapsed = time.time() - _embed_start
-        if done > 1:
-            _remaining = int((_elapsed / done) * (total - done))
-            status.caption(f"{done}/{total} · ✗ {errors} · {_fmt_secs(_remaining)} remaining")
-        else:
-            status.caption(f"{done}/{total}")
-
-        return vec, is_zero
-
+    # Main thread collects results and drives all UI updates
+    indexed = {}
+    errors  = 0
     with ThreadPoolExecutor(max_workers=_EMBED_WORKERS) as ex:
-        _results = list(ex.map(_embed_one, range(total)))
+        futures = {ex.submit(_embed_one, i): i for i in range(total)}
+        for done_n, future in enumerate(as_completed(futures), 1):
+            i, vec = future.result()
+            indexed[i] = vec
+            if np.all(vec == 0):
+                errors += 1
+            prog.progress(done_n / total)
+            _elapsed = time.time() - _embed_start
+            if done_n > 1:
+                _remaining = int((_elapsed / done_n) * (total - done_n))
+                status.caption(f"{done_n}/{total} · ✗ {errors} · {_fmt_secs(_remaining)} remaining")
+            else:
+                status.caption(f"{done_n}/{total}")
 
     prog.empty(); status.empty()
 
-    vectors = [r[0] for r in _results]
-    errors  = sum(r[1] for r in _results)
+    vectors = [indexed[i] for i in range(total)]
 
     if errors == total:
         st.error("All embeddings failed. Check your API key and network connection.")
