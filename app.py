@@ -672,9 +672,9 @@ if st.session_state.df_clean is not None and "Cluster" in st.session_state.df_cl
     st.divider()
     reviewed_df = render_cluster_review(
         df_clean=st.session_state.df_clean,
-        feature_matrix=st.session_state.feature_matrix,
         company_col=company_col,
         dimensions=DIMENSIONS,
+        api_key=api_key,
     )
     if reviewed_df is not None:
         st.session_state.df_clean = reviewed_df

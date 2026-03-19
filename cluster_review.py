@@ -1,13 +1,19 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-from sklearn.preprocessing import normalize
+import requests
+import json
+import re
+import time
 
 _OUTLIER_LABEL = "Outliers"
+_GEN_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
+_BATCH_SIZE = 20
+_DESC_COL = "Description"
 
 
 # ============================================================
-# HELPERS
+# HELPERS — DISPLAY
 # ============================================================
 
 def _build_auto_description(df_cluster: pd.DataFrame, dimensions: list[str], top_n: int = 2) -> str:
@@ -39,10 +45,12 @@ def _render_named_cluster(
     dimensions: list[str],
 ) -> None:
     n = len(df_cluster)
-    st.markdown(f"### {cluster_name} &nbsp; <sup style='font-size:0.6em;color:gray'>{n} companies</sup>", unsafe_allow_html=True)
+    st.markdown(
+        f"### {cluster_name} &nbsp; <sup style='font-size:0.6em;color:gray'>{n} companies</sup>",
+        unsafe_allow_html=True,
+    )
 
-    description = _build_auto_description(df_cluster, dimensions)
-    st.markdown(description)
+    st.markdown(_build_auto_description(df_cluster, dimensions))
 
     col_name, col_core = st.columns([1, 2])
     with col_name:
@@ -56,28 +64,29 @@ def _render_named_cluster(
     with col_core:
         company_options = (
             df_cluster[company_col].dropna().tolist()
-            if company_col in df_cluster.columns
-            else []
+            if company_col in df_cluster.columns else []
         )
         st.multiselect(
             "Core companies (optional)",
             options=company_options,
-            default=st.session_state["cr_core_companies"].get(cluster_name, []),
+            default=[
+                c for c in st.session_state["cr_core_companies"].get(cluster_name, [])
+                if c in company_options
+            ],
             key=f"cr_core_{cluster_name}",
             label_visibility="collapsed",
             placeholder="Mark core companies…",
         )
 
     with st.expander(f"All {n} companies"):
-        show_cols = [c for c in [company_col, "Outlier score"] + dimensions if c in df_cluster.columns]
+        show_cols = [c for c in [company_col, _DESC_COL, "Outlier score"] + dimensions if c in df_cluster.columns]
         st.dataframe(df_cluster[show_cols], width="stretch", hide_index=True)
 
     st.divider()
 
 
 def _collect_edits(cluster_names: list[str]) -> tuple[dict[str, str], dict[str, list[str]]]:
-    name_edits = {}
-    core_selections = {}
+    name_edits, core_selections = {}, {}
     for name in cluster_names:
         edited = st.session_state.get(f"cr_name_{name}", "").strip()
         name_edits[name] = edited if edited else name
@@ -91,57 +100,126 @@ def _apply_name_edits(df_clean: pd.DataFrame, name_edits: dict[str, str]) -> pd.
     return df_out
 
 
-def _compute_centroids(
+# ============================================================
+# HELPERS — LLM REASSIGNMENT
+# ============================================================
+
+def _build_cluster_block(cluster_names: list[str], df_clean: pd.DataFrame, dimensions: list[str]) -> str:
+    """Build the cluster description block for the LLM prompt."""
+    lines = []
+    for name in cluster_names:
+        df_c = df_clean[df_clean["Cluster"] == name]
+        desc = _build_auto_description(df_c, dimensions)
+        # Strip markdown bold markers for the raw prompt
+        desc_plain = desc.replace("**", "").replace("  \n", "; ")
+        lines.append(f'"{name}": {desc_plain}')
+    return "\n".join(lines)
+
+
+def _llm_reassign_batch(
+    batch: list[tuple[int, str, str]],   # (row_index, company_name, description)
+    cluster_block: str,
+    cluster_names: list[str],
+    include_outliers: bool,
+    api_key: str,
+) -> dict[int, str]:
+    """Call Gemini for one batch. Returns {row_index: cluster_name}."""
+    company_lines = "\n".join(
+        f'  "{i}": {name} — {desc[:600]}'
+        for i, (_, name, desc) in enumerate(batch)
+    )
+
+    valid = list(cluster_names) + ([_OUTLIER_LABEL] if include_outliers else [])
+    valid_str = ", ".join(f'"{v}"' for v in valid)
+
+    outlier_instruction = (
+        f'If a company clearly fits none of the segments, assign it "{_OUTLIER_LABEL}".'
+        if include_outliers
+        else "Every company MUST be assigned to exactly one of the segments listed."
+    )
+
+    prompt = (
+        "You are a market analyst. Assign each company to the best-fitting market segment "
+        "based on its description.\n\n"
+        f"MARKET SEGMENTS:\n{cluster_block}\n\n"
+        f"COMPANIES TO ASSIGN:\n{company_lines}\n\n"
+        f"{outlier_instruction}\n"
+        f"Valid segment names: [{valid_str}]\n\n"
+        'Return ONLY a JSON object where keys are the company numbers (as strings) '
+        'and values are the exact segment name:\n'
+        '{"0": "Segment Name", "1": "Other Segment", ...}\n'
+        "No explanation, no markdown, just the JSON."
+    )
+
+    try:
+        resp = requests.post(
+            f"{_GEN_URL}?key={api_key}",
+            json={"contents": [{"parts": [{"text": prompt}]}]},
+            timeout=60,
+        )
+        if resp.status_code != 200:
+            st.warning(f"LLM batch error {resp.status_code}: {resp.text[:200]}")
+            return {}
+        raw = resp.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
+        raw = re.sub(r"```json|```", "", raw).strip()
+        parsed = json.loads(raw)
+
+        valid_set = set(valid)
+        result = {}
+        for pos_str, assigned in parsed.items():
+            pos = int(pos_str)
+            if 0 <= pos < len(batch):
+                row_idx = batch[pos][0]
+                result[row_idx] = assigned if assigned in valid_set else (
+                    _OUTLIER_LABEL if include_outliers else cluster_names[0]
+                )
+        return result
+
+    except json.JSONDecodeError as e:
+        st.warning(f"LLM returned invalid JSON: {e}")
+        return {}
+    except Exception as e:
+        st.warning(f"LLM reassignment batch failed: {e}")
+        return {}
+
+
+def _llm_reassign_all(
     df_clean: pd.DataFrame,
-    feature_matrix: np.ndarray,
-    core_selections: dict[str, list[str]],
     company_col: str,
-) -> dict[str, np.ndarray]:
-    centroids = {}
-    cluster_names = [c for c in df_clean["Cluster"].unique() if c != _OUTLIER_LABEL]
+    dimensions: list[str],
+    cluster_names: list[str],
+    include_outliers: bool,
+    api_key: str,
+) -> dict[int, str]:
+    """Reassign all eligible companies via LLM. Returns {row_index: new_cluster_name}."""
+    cluster_block = _build_cluster_block(cluster_names, df_clean, dimensions)
 
-    for cluster_name in cluster_names:
-        mask = df_clean["Cluster"] == cluster_name
-        indices = df_clean.index[mask].tolist()
+    if include_outliers:
+        eligible = df_clean
+    else:
+        eligible = df_clean[df_clean["Cluster"] != _OUTLIER_LABEL]
 
-        cores = core_selections.get(cluster_name, [])
-        if cores and company_col in df_clean.columns:
-            core_mask = mask & df_clean[company_col].isin(cores)
-            core_indices = df_clean.index[core_mask].tolist()
-            if core_indices:
-                indices = core_indices
+    companies = []
+    for idx, row in eligible.iterrows():
+        name = str(row.get(company_col, f"Row {idx}"))
+        desc = str(row.get(_DESC_COL, "")).strip()
+        if not desc:
+            desc = " | ".join(str(row.get(d, "")) for d in dimensions if d in row.index)
+        companies.append((idx, name, desc))
 
-        vecs = feature_matrix[indices]
-        centroid = vecs.mean(axis=0)
-        norm = np.linalg.norm(centroid)
-        centroids[cluster_name] = centroid / norm if norm > 0 else centroid
+    results: dict[int, str] = {}
+    n_batches = max(1, (len(companies) + _BATCH_SIZE - 1) // _BATCH_SIZE)
+    prog = st.progress(0, text="Reassigning companies via Gemini…")
 
-    return centroids
+    for b in range(n_batches):
+        batch = companies[b * _BATCH_SIZE: (b + 1) * _BATCH_SIZE]
+        batch_result = _llm_reassign_batch(batch, cluster_block, cluster_names, include_outliers, api_key)
+        results.update(batch_result)
+        prog.progress((b + 1) / n_batches, text=f"Batch {b + 1} / {n_batches}…")
+        time.sleep(0.15)
 
-
-def _reassign_companies(
-    df_clean: pd.DataFrame,
-    feature_matrix: np.ndarray,
-    centroids: dict[str, np.ndarray],
-    similarity_threshold: float,
-) -> pd.DataFrame:
-    cluster_names = list(centroids.keys())
-    C = np.array([centroids[n] for n in cluster_names])  # [n_clusters, dim]
-
-    # feature_matrix is already L2-normalized → cosine similarity = dot product
-    sim_matrix = feature_matrix @ C.T  # [n_companies, n_clusters]
-
-    new_labels = []
-    for i in range(len(df_clean)):
-        best_idx = int(np.argmax(sim_matrix[i]))
-        best_sim = float(sim_matrix[i, best_idx])
-        new_labels.append(cluster_names[best_idx] if best_sim >= similarity_threshold else _OUTLIER_LABEL)
-
-    df_out = df_clean.copy()
-    df_out["Cluster"] = new_labels
-    if "Outlier score" in df_out.columns:
-        df_out["Outlier score"] = np.nan  # HDBSCAN scores no longer valid
-    return df_out
+    prog.empty()
+    return results
 
 
 # ============================================================
@@ -150,62 +228,51 @@ def _reassign_companies(
 
 def render_cluster_review(
     df_clean: pd.DataFrame,
-    feature_matrix: np.ndarray,
     company_col: str,
     dimensions: list[str],
-    similarity_threshold: float = 0.3,
+    api_key: str,
 ) -> "pd.DataFrame | None":
-    if len(df_clean) != len(feature_matrix):
-        st.error(
-            f"Row mismatch: DataFrame has {len(df_clean)} rows but "
-            f"feature_matrix has {len(feature_matrix)}. Cannot run cluster review."
-        )
-        return None
-
     st.session_state.setdefault("cr_name_edits", {})
     st.session_state.setdefault("cr_core_companies", {})
 
     st.subheader("Cluster Review & Edit")
     st.caption(
-        "Inspect each cluster, rename it, and optionally mark core companies that best represent it. "
-        "Hit **Rerun** to re-verify all company assignments using centroid similarity — "
-        "companies too distant from any cluster centre become Outliers."
+        "Inspect each cluster, rename it, and optionally mark core companies. "
+        "Hit **Rerun** to re-verify all assignments using Gemini — "
+        "the LLM reads each company's description and re-sorts it into the best-fitting cluster."
     )
 
-    # Separate named clusters from outliers
     all_clusters = df_clean["Cluster"].unique().tolist()
     named_clusters = sorted(
         [c for c in all_clusters if c != _OUTLIER_LABEL],
-        key=lambda c: -(df_clean["Cluster"] == c).sum(),  # largest first
+        key=lambda c: -(df_clean["Cluster"] == c).sum(),
     )
     df_outliers = df_clean[df_clean["Cluster"] == _OUTLIER_LABEL]
 
-    # Render each named cluster
     for cluster_name in named_clusters:
         df_cluster = df_clean[df_clean["Cluster"] == cluster_name].reset_index(drop=True)
         _render_named_cluster(cluster_name, df_cluster, company_col, dimensions)
 
-    # Render outliers
     if len(df_outliers) > 0:
         _render_outlier_cluster(df_outliers.reset_index(drop=True), company_col, dimensions)
 
-    # Buttons
+    include_outliers = st.toggle(
+        "Include outliers in reassignment",
+        key="cr_include_outliers",
+        help="When ON, outlier companies are also sent to Gemini and may be sorted into a cluster.",
+    )
+
     col_apply, col_rerun = st.columns(2)
     with col_apply:
         apply_btn = st.button("Apply name edits", key="cr_apply", width="stretch")
     with col_rerun:
         rerun_btn = st.button(
-            "Rerun (reassign companies)", key="cr_rerun", type="primary", width="stretch",
-            help=(
-                "Recomputes cluster centroids and reassigns every company by cosine similarity. "
-                "Companies below the similarity threshold become Outliers."
-            ),
+            "Rerun (re-sort via Gemini)", key="cr_rerun", type="primary", width="stretch",
+            help="Gemini reads each company's description and reassigns it to the best cluster.",
+            disabled=not api_key,
         )
 
-    # Collect current widget values
     name_edits, core_selections = _collect_edits(named_clusters)
-
-    # Persist for next render cycle
     st.session_state["cr_name_edits"] = name_edits
     st.session_state["cr_core_companies"] = core_selections
 
@@ -217,23 +284,35 @@ def render_cluster_review(
         st.rerun()
 
     if rerun_btn:
-        # Apply name edits first so centroids use the new names
         df_named = _apply_name_edits(df_clean, name_edits)
         named_after_edit = [name_edits.get(n, n) for n in named_clusters]
-        core_after_edit = {name_edits.get(n, n): v for n, v in core_selections.items()}
+        old_clusters = df_named["Cluster"].copy()
 
-        with st.spinner("Computing cluster centroids…"):
-            centroids = _compute_centroids(df_named, feature_matrix, core_after_edit, company_col)
-
-        with st.spinner("Reassigning companies…"):
-            df_out = _reassign_companies(df_named, feature_matrix, centroids, similarity_threshold)
-
-        n_outliers = int((df_out["Cluster"] == _OUTLIER_LABEL).sum())
-        st.success(
-            f"Reassigned {len(df_out)} companies — "
-            f"{len(df_out) - n_outliers} in clusters, {n_outliers} outliers. "
-            "Outlier score column reset (scores from HDBSCAN are no longer valid)."
+        assignments = _llm_reassign_all(
+            df_named, company_col, dimensions, named_after_edit, include_outliers, api_key
         )
+
+        if not assignments:
+            st.error("Reassignment returned no results. Check your API key and try again.")
+            return None
+
+        df_out = df_named.copy()
+        for row_idx, new_cluster in assignments.items():
+            df_out.at[row_idx, "Cluster"] = new_cluster
+
+        # Track switches
+        switched = int((old_clusters != df_out["Cluster"]).sum())
+        n_outliers_after = int((df_out["Cluster"] == _OUTLIER_LABEL).sum())
+        n_outliers_before = int((old_clusters == _OUTLIER_LABEL).sum())
+        pulled_in = max(0, n_outliers_before - n_outliers_after)
+
+        summary = (
+            f"**{switched}** {'company' if switched == 1 else 'companies'} changed cluster. "
+            f"**{n_outliers_after}** outliers remaining."
+        )
+        if include_outliers and pulled_in > 0:
+            summary += f" **{pulled_in}** outlier{'s' if pulled_in != 1 else ''} pulled into a cluster."
+        st.success(summary)
 
         st.session_state["cr_name_edits"] = {}
         st.session_state["cr_core_companies"] = {}
