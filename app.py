@@ -328,6 +328,29 @@ if uploaded:
     except Exception as e:
         st.error(f"Could not load file: {e}")
 
+with st.expander("⚡ Load saved embeddings (skips embedding step)"):
+    emb_file = st.file_uploader("Upload embeddings.npz", type=["npz"], key="emb_upload")
+    if emb_file:
+        try:
+            npz = np.load(io.BytesIO(emb_file.read()))
+            st.session_state.embedded_2d    = npz["embedded_2d"]
+            st.session_state.feature_matrix = npz["feature_matrix"]
+            # Only initialise df_clean if it hasn't been set yet.
+            # Once clustering runs it will have a Cluster column — don't overwrite it.
+            if st.session_state.df_clean is None:
+                if df_input is not None:
+                    st.session_state.df_clean = df_input.copy()
+                elif "df_json" in npz:
+                    st.session_state.df_clean = pd.read_json(
+                        io.StringIO(npz["df_json"].tobytes().decode())
+                    )
+            st.success(
+                f"✔ Embeddings loaded — {st.session_state.embedded_2d.shape[0]} companies. "
+                "Now click '↺ Re-cluster only'."
+            )
+        except Exception as e:
+            st.error(f"Error loading embeddings: {e}")
+
 st.divider()
 
 # --- Embedding mode ---
@@ -690,28 +713,3 @@ if st.session_state.df_clean is not None and "Cluster" in st.session_state.df_cl
         cluster_metrics=st.session_state.cluster_metrics or {},
     )
 
-# ============================================================
-# SAVED EMBEDDINGS UPLOAD
-# ============================================================
-with st.expander("⚡ Load saved embeddings (skips embedding step)"):
-    emb_file = st.file_uploader("Upload embeddings.npz", type=["npz"], key="emb_upload")
-    if emb_file:
-        try:
-            npz = np.load(io.BytesIO(emb_file.read()))
-            st.session_state.embedded_2d    = npz["embedded_2d"]
-            st.session_state.feature_matrix = npz["feature_matrix"]
-            # Only initialise df_clean if it hasn't been set yet.
-            # Once clustering runs it will have a Cluster column — don't overwrite it.
-            if st.session_state.df_clean is None:
-                if df_input is not None:
-                    st.session_state.df_clean = df_input.copy()
-                elif "df_json" in npz:
-                    st.session_state.df_clean = pd.read_json(
-                        io.StringIO(npz["df_json"].tobytes().decode())
-                    )
-            st.success(
-                f"✔ Embeddings loaded — {st.session_state.embedded_2d.shape[0]} companies. "
-                "Now click '↺ Re-cluster only'."
-            )
-        except Exception as e:
-            st.error(f"Error loading embeddings: {e}")
