@@ -1,4 +1,5 @@
 import streamlit as st
+from cluster_review import render_cluster_review
 import pandas as pd
 import numpy as np
 import time
@@ -667,6 +668,17 @@ if st.session_state.df_clean is not None and "Cluster" in st.session_state.df_cl
                 width='stretch',
                 help="Upload next time to skip the embedding step.",
             )
+
+    st.divider()
+    reviewed_df = render_cluster_review(
+        df_clean=st.session_state.df_clean,
+        feature_matrix=st.session_state.feature_matrix,
+        company_col=company_col,
+        dimensions=DIMENSIONS,
+    )
+    if reviewed_df is not None:
+        st.session_state.df_clean = reviewed_df
+        st.rerun()
 
 # ============================================================
 # SAVED EMBEDDINGS UPLOAD
