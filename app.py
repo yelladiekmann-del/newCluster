@@ -49,7 +49,7 @@ DIMENSION_WEIGHTS = {
 
 EMBED_MODEL = "gemini-embedding-001"
 EMBED_URL   = f"https://generativelanguage.googleapis.com/v1beta/models/{EMBED_MODEL}:embedContent"
-GEN_URL     = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
+GEN_URL     = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
 
 _defaults = {
     "df_clean": None, "embedded_2d": None, "feature_matrix": None,
