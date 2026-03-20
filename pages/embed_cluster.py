@@ -17,7 +17,6 @@ from utils import (
     _EMBED_WORKERS,
     _fmt_secs,
     build_cluster_profile,
-    find_optimal_params,
     generate_cluster_descriptions,
     get_per_dimension_embedding,
     name_all_clusters,
@@ -69,25 +68,6 @@ def _reembed_dialog():
             st.rerun()
 
 
-@st.dialog("Dimension weights", width="large")
-def _weights_dialog():
-    st.caption("Increase the weight of dimensions that matter most for your clustering goal.")
-    w = {}
-    cols = st.columns(4)
-    for i, dim in enumerate(DIMENSIONS):
-        with cols[i % 4]:
-            w[dim] = st.slider(
-                dim, 0.0, 2.0,
-                float(custom_weights.get(dim, DIMENSION_WEIGHTS[dim])),
-                step=0.1,
-            )
-    if st.button("Apply", type="primary"):
-        st.session_state["custom_weights"] = w
-        st.rerun()
-    if st.button("Reset to defaults"):
-        st.session_state["custom_weights"] = dict(DIMENSION_WEIGHTS)
-        st.rerun()
-
 
 # ── STEP 1: Embed ─────────────────────────────────────────────────────────────
 _h1col, _h1chips = st.columns([3, 2])
@@ -125,7 +105,7 @@ elif has_embeddings and not npz_preloaded:
         f'<span class="hy-chip hy-chip-green">✓ {n_emb} companies embedded</span>',
         unsafe_allow_html=True,
     )
-    col_dl, col_wt, col_reembed = st.columns([2, 1, 1])
+    col_dl, col_reembed = st.columns([2, 1])
     with col_dl:
         _buf = io.BytesIO()
         np.savez_compressed(
@@ -144,9 +124,6 @@ elif has_embeddings and not npz_preloaded:
             key="dl_emb_step1",
             type="secondary",
         )
-    with col_wt:
-        if st.button("⚙ Dimension weights", width="stretch", key="wt_btn_top", type="secondary"):
-            st.session_state["_show_weights"] = True
     with col_reembed:
         if st.button("↺ Re-embed", width="stretch"):
             if _clustered:
@@ -154,9 +131,6 @@ elif has_embeddings and not npz_preloaded:
             else:
                 st.session_state["_reembed_confirmed"] = True
                 st.rerun()
-
-    if st.session_state.pop("_show_weights", False):
-        _weights_dialog()
 
 else:
     # No embeddings yet (or re-embed confirmed)
@@ -177,25 +151,31 @@ else:
             "Go back to Setup to extract dimensions."
         )
     else:
-        col_emb, col_wt = st.columns([4, 1])
-        with col_wt:
-            if st.button("⚙ Dimension weights", key="wt_btn_embed", type="secondary"):
-                st.session_state["_show_weights"] = True
+        st.caption("Increase the weight of dimensions that matter most for your clustering goal.")
+        _w_cols = st.columns(4)
+        _new_weights = {}
+        for _i, _dim in enumerate(DIMENSIONS):
+            with _w_cols[_i % 4]:
+                _new_weights[_dim] = st.slider(
+                    _dim, 0.0, 2.0,
+                    float(custom_weights.get(_dim, DIMENSION_WEIGHTS[_dim])),
+                    step=0.1, key=f"wt_{_dim}",
+                )
+        st.session_state["custom_weights"] = _new_weights
 
-        if st.session_state.pop("_show_weights", False):
-            _weights_dialog()
+        _col_emb, _col_reset = st.columns([4, 1])
+        with _col_reset:
+            if st.button("Reset weights", type="secondary", width="stretch"):
+                st.session_state["custom_weights"] = dict(DIMENSION_WEIGHTS)
+                st.rerun()
 
         _embed_disabled = not has_api_key or df_clean is None or not available_dims
 
         if not has_api_key:
             st.caption("Add a Gemini API key on the Setup page to enable embedding.")
 
-        if st.button("⚡ Embed", type="primary", disabled=_embed_disabled, key="embed_btn"):
+        if st.button("Embed", type="primary", disabled=_embed_disabled, key="embed_btn"):
             total = len(df_clean)
-            _eta = max(1, int((total * 0.35) / _EMBED_WORKERS))
-            st.info(
-                f"{total} companies — est. {_fmt_secs(_eta)} ({_EMBED_WORKERS} parallel workers)"
-            )
 
             _weights = st.session_state.get("custom_weights") or dict(DIMENSION_WEIGHTS)
             prog   = st.progress(0)
@@ -257,25 +237,6 @@ if not has_embeddings:
     )
     st.info(f"Embeddings not yet generated. {_reason}")
 else:
-    # Cyan info banner with tip about Suggest optimal
-    st.markdown(
-        '<div style="background:#26B4D218;border:1px solid #26B4D230;border-radius:9px;'
-        'padding:10px 14px;margin-bottom:14px;font-size:12px;color:#0d1f2d">'
-        '💡 <strong>Tip:</strong> Click <em>✨ Suggest optimal</em> to auto-tune HDBSCAN '
-        'parameters for your dataset. Then fine-tune manually if needed.'
-        '</div>',
-        unsafe_allow_html=True,
-    )
-
-    _at = st.session_state.get("autotune_result")
-    if _at and _at.get("n_clusters", 0) > 0:
-        st.success(
-            f"✨ Suggested: min_cluster_size={_at['min_cluster_size']}, "
-            f"min_samples={_at['min_samples']}, "
-            f"cluster_epsilon={_at.get('cluster_epsilon', 0.0)} → "
-            f"{_at['n_clusters']} clusters · silhouette={_at['silhouette']:.3f}"
-        )
-
     _at_mcs = st.session_state.get("_autotune_mcs", 5)
     _at_ms  = st.session_state.get("_autotune_ms",  3)
     _at_eps = st.session_state.get("_autotune_eps", 0.0)
@@ -286,68 +247,23 @@ else:
             "Min cluster size", 2, 30, _at_mcs,
             help="Minimum companies to form a cluster. Lower → more, smaller clusters.",
         )
-        st.markdown(
-            f'<div style="text-align:right;margin-top:-8px">'
-            f'<span style="font-family:IBM Plex Mono,monospace;font-size:10px;'
-            f'background:#001f2b;color:#fff;padding:1px 6px;border-radius:4px">'
-            f'{min_cluster_size}</span></div>',
-            unsafe_allow_html=True,
-        )
     with col2:
         min_samples = st.slider(
             "Min samples", 1, 20, _at_ms,
             help="HDBSCAN conservatism. Higher → stricter, more outliers.",
-        )
-        st.markdown(
-            f'<div style="text-align:right;margin-top:-8px">'
-            f'<span style="font-family:IBM Plex Mono,monospace;font-size:10px;'
-            f'background:#001f2b;color:#fff;padding:1px 6px;border-radius:4px">'
-            f'{min_samples}</span></div>',
-            unsafe_allow_html=True,
         )
     with col3:
         cluster_epsilon = st.slider(
             "Cluster epsilon", 0.0, 2.0, _at_eps, step=0.1,
             help="Merges clusters within this distance. 0 = pure HDBSCAN.",
         )
-        st.markdown(
-            f'<div style="text-align:right;margin-top:-8px">'
-            f'<span style="font-family:IBM Plex Mono,monospace;font-size:10px;'
-            f'background:#001f2b;color:#fff;padding:1px 6px;border-radius:4px">'
-            f'{cluster_epsilon}</span></div>',
-            unsafe_allow_html=True,
-        )
     with col4:
         umap_cluster_dims = st.slider(
             "UMAP cluster dims", 5, 50, 15,
             help="Dimensions used for HDBSCAN. Higher = more signal preserved.",
         )
-        st.markdown(
-            f'<div style="text-align:right;margin-top:-8px">'
-            f'<span style="font-family:IBM Plex Mono,monospace;font-size:10px;'
-            f'background:#001f2b;color:#fff;padding:1px 6px;border-radius:4px">'
-            f'{umap_cluster_dims}</span></div>',
-            unsafe_allow_html=True,
-        )
 
-    col_cluster, col_autotune = st.columns([2, 1])
-    with col_cluster:
-        cluster_btn = st.button("▶ Cluster", type="primary", width="stretch")
-    with col_autotune:
-        autotune_btn = st.button(
-            "✨ Suggest optimal",
-            width="stretch",
-            help="Sweeps HDBSCAN params to maximise silhouette (~10–20s)",
-        )
-
-    if autotune_btn:
-        with st.spinner("Scanning parameter space… (~10–20s)"):
-            _result = find_optimal_params(st.session_state["feature_matrix"], umap_cluster_dims)
-        st.session_state["autotune_result"] = _result
-        st.session_state["_autotune_mcs"]   = _result["min_cluster_size"]
-        st.session_state["_autotune_ms"]    = _result["min_samples"]
-        st.session_state["_autotune_eps"]   = 0.0
-        st.rerun()
+    cluster_btn = st.button("▶ Cluster", type="primary")
 
     if cluster_btn:
         _df = st.session_state.get("df_clean")
@@ -397,19 +313,22 @@ if _clustered:
     n_clust = df["Cluster"].nunique() - (1 if "Outliers" in df["Cluster"].values else 0)
     n_out   = int((df["Cluster"] == "Outliers").sum())
 
-    col_stats, col_quality = st.columns([3, 2])
-    with col_stats:
+    stat_col1, stat_col2, stat_col3, stat_qual = st.columns(4)
+    with stat_col1:
+        st.metric("Companies", n_comp)
+    with stat_col2:
+        st.metric("Clusters", n_clust)
+    with stat_col3:
+        st.metric("Outliers", n_out)
+    with stat_qual:
         st.markdown(
-            f"<span style='color:#7496b2'>{n_comp} companies · "
-            f"{n_clust} clusters · {n_out} outliers</span>",
-            unsafe_allow_html=True,
-        )
-    with col_quality:
-        st.markdown(
-            f"<span style='color:{q_color}; font-size:1.1em'>●</span> "
-            f"<strong>Quality: {q_label}</strong> "
-            f"<span style='font-family:IBM Plex Mono,monospace;font-size:0.82em;color:#7496b2'>"
-            f"Sil {sil_str} · DB {db_str}</span>",
+            f'<div style="padding-top:8px">'
+            f'<div style="font-size:10px;text-transform:uppercase;letter-spacing:0.06em;'
+            f'color:#7496b2;margin-bottom:4px">Cluster Quality</div>'
+            f'<div style="font-size:18px;font-weight:700;color:{q_color}">{q_label}</div>'
+            f'<div style="font-family:IBM Plex Mono,monospace;font-size:11px;color:#7496b2">'
+            f'Sil {sil_str} · DB {db_str}</div>'
+            f'</div>',
             unsafe_allow_html=True,
         )
 
@@ -434,7 +353,7 @@ if _clustered:
     dims_present   = [d for d in DIMENSIONS if d in df.columns]
     named_clusters = [c for c in df["Cluster"].unique() if c != "Outliers"]
 
-    with st.expander("🔍 Inspect: Profiles & Outliers"):
+    with st.expander("Inspect: Profiles & Outliers"):
         tab_profiles, tab_outliers = st.tabs(["Profiles", "Outliers"])
 
         with tab_profiles:
@@ -516,29 +435,21 @@ if _clustered:
                 key="dl_emb_step2",
             )
 
-    # ── Confirm CTA banner ────────────────────────────────────────────────────
-    _banner_l, _banner_r = st.columns([3, 1])
-    with _banner_l:
-        st.markdown(
-            '<div style="background:#001f2b;border-radius:12px;padding:20px 24px;">'
-            '<div style="color:#ffffff;font-size:15px;font-weight:700;'
-            'letter-spacing:-0.01em">Happy with these clusters?</div>'
-            '<div style="color:#7496b2;font-size:12px;margin-top:3px">'
-            'Name them with Gemini and move to the review page. '
-            'You can always come back to re-cluster.</div>'
-            '</div>',
-            unsafe_allow_html=True,
-        )
-    with _banner_r:
-        if not has_api_key:
-            st.caption("Add a Gemini API key on the Setup page to enable Confirm.")
-        if st.button(
-            "Confirm & name clusters →",
-            type="primary",
-            disabled=not has_api_key,
-            help="Names all clusters via Gemini, generates descriptions, then opens Review & Edit.",
-            key="confirm_btn",
-        ):
+    # ── Confirm CTA ───────────────────────────────────────────────────────────
+    if not has_api_key:
+        st.caption("Add a Gemini API key on the Setup page to enable Confirm.")
+    st.markdown(
+        '<div style="font-size:11px;color:#7496b2;margin-bottom:6px">'
+        'Name them with Gemini and move to the review page. '
+        'You can always come back to re-cluster.</div>',
+        unsafe_allow_html=True,
+    )
+    if st.button(
+        "Confirm & name clusters →",
+        type="primary",
+        disabled=not has_api_key,
+        key="confirm_btn",
+    ):
             _df_confirm = st.session_state["df_clean"]
             _dims_n     = [d for d in DIMENSIONS if d in _df_confirm.columns]
             _unique_cl  = sorted(

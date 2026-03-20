@@ -99,11 +99,8 @@ with st.container(border=True):
                 pd.read_csv(uploaded) if uploaded.name.endswith(".csv")
                 else pd.read_excel(uploaded)
             )
-            # Inline chips: filename, row count, col count
             st.markdown(
-                f'<span class="hy-chip hy-chip-cyan">{uploaded.name}</span>&nbsp;'
-                f'<span class="hy-chip hy-chip-green">{len(df_input)} rows</span>&nbsp;'
-                f'<span class="hy-chip hy-chip-cyan">{len(df_input.columns)} columns</span>',
+                f'<span class="hy-chip hy-chip-green">✓ {len(df_input)} companies detected</span>',
                 unsafe_allow_html=True,
             )
 
@@ -243,9 +240,7 @@ with st.container(border=True):
             )
             st.session_state["df_deals"] = df_deals_input
             st.markdown(
-                f'<span class="hy-chip hy-chip-green">✓ Deals loaded</span>&nbsp;'
-                f'<span class="hy-chip hy-chip-cyan">{len(df_deals_input)} rows</span>&nbsp;'
-                f'<span class="hy-chip hy-chip-cyan">{len(df_deals_input.columns)} columns</span>',
+                f'<span class="hy-chip hy-chip-green">✓ {len(df_deals_input)} deals loaded</span>',
                 unsafe_allow_html=True,
             )
         except Exception as e:

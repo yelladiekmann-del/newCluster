@@ -207,6 +207,7 @@ hr { border: none; border-top: 1px solid #e4eaf2; margin: 18px 0; }
 .hy-cluster-card {
   background: #ffffff; border: 1px solid #e4eaf2;
   border-radius: 12px; padding: 14px 16px;
+  min-height: 120px;
   cursor: pointer; transition: box-shadow 0.15s, transform 0.15s;
 }
 .hy-cluster-card:hover {

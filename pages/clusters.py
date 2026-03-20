@@ -68,7 +68,22 @@ n_clust  = df["Cluster"].nunique() - (1 if "Outliers" in df["Cluster"].values el
 n_out    = int((df["Cluster"] == "Outliers").sum())
 
 # ── Header ─────────────────────────────────────────────────────────────────────
-page_header("Review & Edit", "Inspect, rename, merge, delete, and chat about your clusters.")
+_hdr_col, _export_col = st.columns([4, 1])
+with _hdr_col:
+    page_header("Review & Edit", "Inspect, rename, merge, delete, and chat about your clusters.")
+with _export_col:
+    show_cols_dl = [
+        c for c in [company_col, "Cluster", "Outlier score"] + DIMENSIONS if c in df.columns
+    ]
+    st.markdown('<div style="padding-top:14px">', unsafe_allow_html=True)
+    st.download_button(
+        "Download results",
+        df[show_cols_dl].to_csv(index=False),
+        "cluster_results.csv", "text/csv",
+        width="stretch",
+        key="export_dl",
+    )
+    st.markdown('</div>', unsafe_allow_html=True)
 
 # Top stat row: 3 metrics + quality badge
 stat_col1, stat_col2, stat_col3, stat_qual = st.columns(4)
@@ -125,42 +140,42 @@ if named_clusters:
         for i in range(0, len(named_clusters), n_card_cols)
     ]
     for card_row in card_rows:
-        cols = st.columns(len(card_row))
-        for col, cname in zip(cols, card_row):
+        cols = st.columns(n_card_cols)
+        for col_idx in range(n_card_cols):
+            if col_idx >= len(card_row):
+                break
+            cname = card_row[col_idx]
             n = int((df["Cluster"] == cname).sum())
             desc = cluster_descriptions.get(cname, "")
-            first_sentence = desc.split(".")[0].strip() + "." if desc else "—"
+            first_sentence = desc.split(".")[0].strip() + "." if desc else ""
             border_color = _color_map.get(cname, "#26B4D2")
-            with col:
-                # Clickable card via button (invisible, overlaid via label)
-                _is_selected = st.session_state.get("selected_cluster") == cname
-                _card_bg     = "#f0fbfe" if _is_selected else "#ffffff"
-                _border_w    = "2px" if _is_selected else "1px"
+            _is_selected = st.session_state.get("selected_cluster") == cname
+            _card_bg     = "#f0fbfe" if _is_selected else "#ffffff"
+            _border_w    = "2px" if _is_selected else "1px"
+            with cols[col_idx]:
                 st.markdown(
-                    f"<div style='border-top:3px solid {border_color};"
+                    f"<div class='hy-cluster-card' style='"
+                    f"border-top:3px solid {border_color};"
                     f"border-left:{_border_w} solid #e4eaf2;"
                     f"border-right:{_border_w} solid #e4eaf2;"
                     f"border-bottom:{_border_w} solid #e4eaf2;"
-                    f"border-radius:12px;padding:14px 16px;"
-                    f"background:{_card_bg};margin-bottom:4px;"
-                    f"position:relative'>"
+                    f"background:{_card_bg};cursor:pointer'>"
                     f"<div style='display:flex;justify-content:space-between;"
-                    f"align-items:flex-start'>"
+                    f"align-items:flex-start;margin-bottom:6px'>"
                     f"<b style='font-size:13px;color:#0d1f2d'>{cname}</b>"
                     f"<span style='color:#aac0d1;font-size:13px'>→</span>"
                     f"</div>"
-                    f"<span class='hy-chip hy-chip-cyan' style='margin:4px 0 6px'>"
-                    f"{n} companies</span><br>"
-                    f"<small style='color:#7496b2;display:-webkit-box;"
-                    f"-webkit-line-clamp:2;-webkit-box-orient:vertical;"
-                    f"overflow:hidden;line-height:1.5'>{first_sentence}</small>"
+                    f"<span class='hy-chip hy-chip-cyan'>{n} companies</span>"
+                    f"<div style='margin-top:6px;color:#7496b2;font-size:11px;"
+                    f"display:-webkit-box;-webkit-line-clamp:2;"
+                    f"-webkit-box-orient:vertical;overflow:hidden;"
+                    f"line-height:1.5'>{first_sentence}</div>"
                     f"</div>",
                     unsafe_allow_html=True,
                 )
                 if st.button(
-                    "View companies",
-                    key=f"card_click_{cname}",
-                    help=f"Inspect companies in {cname}",
+                    "→", key=f"card_click_{cname}",
+                    use_container_width=True, type="secondary",
                 ):
                     st.session_state["selected_cluster"] = cname
                     st.rerun()
@@ -182,30 +197,26 @@ if _sel_cluster and _sel_cluster in named_clusters:
 
 st.divider()
 
-# ── Export (prominent) ─────────────────────────────────────────────────────────
-show_cols_dl = [
-    c for c in [company_col, "Cluster", "Outlier score"] + DIMENSIONS if c in df.columns
-]
-st.download_button(
-    "⬇ Download cluster results",
-    df[show_cols_dl].to_csv(index=False),
-    "cluster_results.csv", "text/csv",
-    width="stretch",
-    type="primary",
-    key="export_dl",
-)
-
-st.divider()
-
 # ── Edit (left) | AI Assistant (right) ────────────────────────────────────────
-col_edit, col_chat = st.columns([3, 2])
+col_edit, col_sep, col_chat = st.columns([3, 0.04, 2])
 
 with col_edit:
+    st.markdown(
+        '<div style="font-size:14px;font-weight:700;color:#0d1f2d;'
+        'letter-spacing:-0.01em;margin-bottom:12px">Cluster Editor</div>',
+        unsafe_allow_html=True,
+    )
     render_cluster_review(
         df_clean=st.session_state.df_clean,
         company_col=company_col,
         dimensions=dimensions,
         api_key=api_key,
+    )
+
+with col_sep:
+    st.markdown(
+        '<div style="border-left:1px solid #e4eaf2;height:100%;min-height:400px"></div>',
+        unsafe_allow_html=True,
     )
 
 with col_chat:
