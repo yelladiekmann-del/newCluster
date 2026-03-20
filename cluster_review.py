@@ -44,22 +44,6 @@ def _render_named_cluster(
     company_col: str,
     dimensions: list[str],
 ) -> None:
-    # Action buttons — right-aligned icon style
-    _, col_rename, col_merge, col_del = st.columns([7, 1, 1, 1])
-    with col_rename:
-        if st.button("✏️", key=f"cr_rename_{cluster_name}", width="stretch", help="Rename cluster"):
-            st.session_state["cr_rename_pending"] = cluster_name
-            st.rerun()
-    with col_merge:
-        if st.button("↔", key=f"cr_merge_{cluster_name}", width="stretch", help="Merge into another cluster"):
-            st.session_state["cr_merge_pending"] = cluster_name
-            st.rerun()
-    with col_del:
-        if st.button("🗑", key=f"cr_del_{cluster_name}", width="stretch", help="Delete cluster"):
-            st.session_state["cr_delete_pending"] = cluster_name
-            st.session_state["cr_delete_target"] = _OUTLIER_LABEL
-            st.rerun()
-
     # LLM-generated (or user-edited) description — editable inline
     current_desc = st.session_state.get("cr_cluster_descriptions", {}).get(cluster_name, "")
     new_desc = st.text_area(
@@ -412,11 +396,33 @@ def render_cluster_review(
     if rename_pending and rename_pending in named_clusters:
         _rename_dialog(rename_pending, df_clean)
 
-    # ── Cluster list (collapsed expanders) ────────────────────────────────────
+    # ── Cluster list ──────────────────────────────────────────────────────────
     for cluster_name in named_clusters:
         df_cluster = df_clean[df_clean["Cluster"] == cluster_name].reset_index(drop=True)
         header_line = _cluster_header_line(cluster_name, df_cluster, dimensions)
-        with st.expander(header_line, expanded=False):
+        # Always-visible row: name + action icons
+        _hdr_col, _r_col, _m_col, _d_col = st.columns([6, 1, 1, 1])
+        with _hdr_col:
+            st.markdown(
+                f"<div style='font-size:12px;font-weight:600;color:#0d1f2d;"
+                f"padding:6px 2px 2px 2px'>{header_line}</div>",
+                unsafe_allow_html=True,
+            )
+        with _r_col:
+            if st.button("✏️", key=f"cr_rename_{cluster_name}", width="stretch", help="Rename"):
+                st.session_state["cr_rename_pending"] = cluster_name
+                st.rerun()
+        with _m_col:
+            if st.button("↔", key=f"cr_merge_{cluster_name}", width="stretch", help="Merge"):
+                st.session_state["cr_merge_pending"] = cluster_name
+                st.rerun()
+        with _d_col:
+            if st.button("🗑", key=f"cr_del_{cluster_name}", width="stretch", help="Delete"):
+                st.session_state["cr_delete_pending"] = cluster_name
+                st.session_state["cr_delete_target"] = _OUTLIER_LABEL
+                st.rerun()
+        # Expandable detail: description edit + company table
+        with st.expander("Details", expanded=False):
             _render_named_cluster(cluster_name, df_cluster, company_col, dimensions)
 
     # ── Outliers (collapsed) ──────────────────────────────────────────────────

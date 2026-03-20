@@ -160,8 +160,10 @@ if named_clusters:
                     f"border-right:{_border_w} solid #e4eaf2;"
                     f"border-bottom:{_border_w} solid #e4eaf2;"
                     f"background:{_card_bg};cursor:pointer'>"
-                    f"<div style='margin-bottom:6px'>"
+                    f"<div style='display:flex;justify-content:space-between;"
+                    f"align-items:flex-start;margin-bottom:6px'>"
                     f"<b style='font-size:13px;color:#0d1f2d'>{cname}</b>"
+                    f"<span style='color:#aac0d1;font-size:13px'>→</span>"
                     f"</div>"
                     f"<span class='hy-chip hy-chip-cyan'>{n} companies</span>"
                     f"<div style='margin-top:6px;color:#7496b2;font-size:11px;"
@@ -171,24 +173,9 @@ if named_clusters:
                     f"</div>",
                     unsafe_allow_html=True,
                 )
-                _cb1, _cb2, _cb3, _cb4 = st.columns(4)
-                with _cb1:
-                    if st.button("Companies →", key=f"card_view_{cname}", use_container_width=True, type="secondary"):
-                        st.session_state["selected_cluster"] = cname
-                        st.rerun()
-                with _cb2:
-                    if st.button("✏️", key=f"card_rename_{cname}", use_container_width=True, type="secondary", help="Rename"):
-                        st.session_state["cr_rename_pending"] = cname
-                        st.rerun()
-                with _cb3:
-                    if st.button("↔", key=f"card_merge_{cname}", use_container_width=True, type="secondary", help="Merge"):
-                        st.session_state["cr_merge_pending"] = cname
-                        st.rerun()
-                with _cb4:
-                    if st.button("🗑", key=f"card_del_{cname}", use_container_width=True, type="secondary", help="Delete"):
-                        st.session_state["cr_delete_pending"] = cname
-                        st.session_state["cr_delete_target"] = "Outliers"
-                        st.rerun()
+                if st.button("→", key=f"card_click_{cname}", use_container_width=True, type="secondary"):
+                    st.session_state["selected_cluster"] = cname
+                    st.rerun()
 
 # ── Company list dialog for selected cluster ───────────────────────────────────
 _sel_cluster = st.session_state.get("selected_cluster")
