@@ -26,10 +26,10 @@ _steps_done = sum([
     _confirmed,
 ])
 
-_setup_page     = st.Page("pages/setup.py",         title="Setup",           icon="⚙️",  default=not _has_data)
-_embed_page     = st.Page("pages/embed_cluster.py", title="Embed & Cluster", icon="⚡",  default=_has_data and not _confirmed)
-_review_page    = st.Page("pages/clusters.py",      title="Review & Edit",   icon="🗂️", default=_confirmed)
-_analytics_page = st.Page("pages/analytics.py",     title="Analytics",       icon="📊")
+_setup_page     = st.Page("pages/setup.py",         title="Setup",           default=not _has_data)
+_embed_page     = st.Page("pages/embed_cluster.py", title="Embed & Cluster", default=_has_data and not _confirmed)
+_review_page    = st.Page("pages/clusters.py",      title="Review & Edit",   default=_confirmed)
+_analytics_page = st.Page("pages/analytics.py",     title="Analytics")
 
 # ── Sidebar branding ───────────────────────────────────────────────────────────
 with st.sidebar:
