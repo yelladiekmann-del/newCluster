@@ -64,10 +64,6 @@ with st.container(border=True):
 
     api_key = st.session_state.get("api_key", "")
 
-    st.caption(
-        "Get your key from [Google AI Studio](https://aistudio.google.com). "
-        "Required for embeddings, cluster naming, and chat."
-    )
     if api_key:
         st.markdown(
             '<span class="hy-chip hy-chip-green">✓ Verified · Gemini 2.5 Flash accessible</span>',
