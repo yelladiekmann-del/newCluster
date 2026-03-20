@@ -1,4 +1,4 @@
-"""Analytics page — cluster analytics table."""
+"""Analytics page — cluster analytics table with rankings."""
 
 import datetime
 
@@ -6,7 +6,8 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
-# Series stage → numeric score (Marktreife)
+# ── Constants ─────────────────────────────────────────────────────────────────
+
 SERIES_SCORE: dict[str, float] = {
     "pre-seed": 0, "pre seed": 0, "preseed": 0,
     "seed": 1,
@@ -19,14 +20,66 @@ SERIES_SCORE: dict[str, float] = {
     "growth": 6, "late stage": 6, "ipo": 7,
 }
 
-# Ownership Status values that indicate graduation
-GRAD_OWNERSHIP = {
-    "acquired/merged",
-    "publicly held",
+GRAD_OWNERSHIP = {"acquired/merged", "publicly held"}
+GRAD_FINANCING_SUBSTRINGS = ("formerly", "private equity-backed")
+
+# "higher" = higher value is better for ranking/highlighting
+# "lower"  = lower value is better
+METRIC_DIRECTION: dict[str, str] = {
+    "# Companies":           "higher",
+    "⌀ Angestellte":         "higher",
+    "% Recently Founded":    "higher",
+    "# Deals":               "higher",
+    "Deal Momentum":         "higher",
+    "⌀ Total Raised (m€)":  "higher",
+    "Σ Total Raised (m€)":  "higher",
+    "Σ Invested (4 J.)":    "higher",
+    "Funding Momentum":      "higher",
+    "Capital Invested Mean":   "higher",
+    "Capital Invested Median": "higher",
+    "Abweichung M/M":        "lower",
+    "VC Graduation Rate":    "higher",
+    "Mortality Rate":        "lower",
+    "Marktanteil (HHI)":    "lower",
+    "Marktreife":            "higher",
+    "⌀ Patentierte Erf.":   "higher",
 }
 
-# Company Financing Status substrings that indicate graduation
-GRAD_FINANCING_SUBSTRINGS = ("formerly", "private equity-backed")
+# Excluded from overall ranking score (neutral / size-only)
+RANKING_EXCLUDE = {"Gesamt", "⌀ Year Founded"}
+
+COLUMN_DESCRIPTIONS: dict[str, str] = {
+    "Gesamt":               "Total rows for this cluster in the companies file.",
+    "# Companies":          "Count of unique Company IDs in the cluster.",
+    "⌀ Angestellte":        "Average number of employees across companies.",
+    "⌀ Year Founded":       "Average founding year. Earlier = more established; later = more innovative.",
+    "% Recently Founded":   "% of companies founded within the last 5 years (≥ Y−5). Higher = younger, more innovative cohort.",
+    "# Deals":              "Total deal records linked to this cluster's companies.",
+    "Deal Momentum":        "Deal activity trend: Count(Y & Y−1) / Count(Y−2 & Y−3) − 1. Positive = accelerating deal flow.",
+    "⌀ Total Raised (m€)": "Average total funding raised per company (from companies file).",
+    "Σ Total Raised (m€)": "Total funding raised across all companies in the cluster.",
+    "Σ Invested (4 J.)":   "Sum of all deal sizes in years Y, Y−1, Y−2, Y−3.",
+    "Funding Momentum":     "Funding trend: (Sum deal size Y & Y−1) / (Sum deal size Y−2 & Y−3) − 1. Positive = growing investment volume.",
+    "Capital Invested Mean":   "Average deal size across all deals in the cluster.",
+    "Capital Invested Median": "Median deal size. Less sensitive to outliers than the mean.",
+    "Abweichung M/M":       "Mean ÷ Median of deal sizes. Close to 1.0 = symmetric distribution. Higher = a few very large deals skew the mean upward.",
+    "VC Graduation Rate":   "% of companies that 'graduated': acquired, publicly held, or PE-backed — excluding bankrupt/out-of-business ones.",
+    "Mortality Rate":       "% of companies with Business Status = 'Out of Business' or starting with 'Bankruptcy'. Lower is better.",
+    "Marktanteil (HHI)":   "Herfindahl-Hirschman Index based on Total Raised within the cluster (0–10 000). >2 500 = highly concentrated. Lower = more competitive market.",
+    "Marktreife":           "Average deal-stage score (Seed=1, A=2, B=3, C=4, D=5, E+=6). Higher = later-stage cluster.",
+    "⌀ Patentierte Erf.":  "Average number of patent families per company. Proxy for innovation intensity.",
+}
+
+GROUPS: dict[str, list[str]] = {
+    "Größe":            ["Gesamt", "# Companies", "⌀ Angestellte"],
+    "Neuheit":          ["⌀ Year Founded", "% Recently Founded"],
+    "Deals":            ["# Deals", "Deal Momentum"],
+    "Funding":          ["⌀ Total Raised (m€)", "Σ Total Raised (m€)", "Σ Invested (4 J.)", "Funding Momentum"],
+    "Risikoverteilung": ["Capital Invested Mean", "Capital Invested Median", "Abweichung M/M"],
+    "Absolutes Risiko": ["VC Graduation Rate", "Mortality Rate"],
+    "Markt":            ["Marktanteil (HHI)", "Marktreife"],
+    "Technologie":      ["⌀ Patentierte Erf."],
+}
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -44,8 +97,7 @@ def _to_year(series: pd.Series) -> pd.Series:
 
 
 def _get_reference_year(df_de, dd_col: str | None) -> int:
-    """Return max deal year from Deals CSV, fallback to current year."""
-    import datetime
+    """Return max deal year from Deals CSV; fallback to current year."""
     fallback = datetime.date.today().year
     if df_de is None or not dd_col or dd_col not in df_de.columns:
         return fallback
@@ -55,25 +107,19 @@ def _get_reference_year(df_de, dd_col: str | None) -> int:
 
 
 def _vc_grad_flag(row: pd.Series, bs_col, os_col, cfs_col) -> int:
-    """Return 1 (graduated) or 0 (not) for a single company row."""
     bs  = str(row[bs_col]).strip().lower()  if bs_col  else ""
     os  = str(row[os_col]).strip().lower()  if os_col  else ""
     cfs = str(row[cfs_col]).strip().lower() if cfs_col else ""
-
-    # Hard override: bankrupt or out of business → 0 (exact match)
     if bs == "out of business" or bs == "bankruptcy":
         return 0
-    # Ownership status → 1
     if os in GRAD_OWNERSHIP:
         return 1
-    # Financing status → 1
     if any(sub in cfs for sub in GRAD_FINANCING_SUBSTRINGS):
         return 1
     return 0
 
 
 def _mortality_flag(row: pd.Series, bs_col) -> int:
-    """Return 1 if company is bankrupt / out of business, else 0."""
     if not bs_col:
         return 0
     bs = str(row[bs_col]).strip().lower()
@@ -88,27 +134,17 @@ def _compute(
     cluster_col: str,
     cmap: dict,
 ) -> tuple[pd.DataFrame, int]:
-    """Compute per-cluster analytics. Returns (DataFrame, reference_year Y).
-
-    cmap keys (all optional):
-        co_id, de_co_id,
-        employees, year_founded, total_raised, total_patent_families,
-        business_status, ownership_status, company_financing_status,
-        deal_id, deal_size, deal_date, series
-    """
+    """Compute per-cluster analytics. Returns (DataFrame, reference_year Y)."""
     co_id    = cmap.get("co_id")
     de_co_id = cmap.get("de_co_id")
 
-    # ── Reference year Y = max year in Deal Date column ───────────────────────
     Y = _get_reference_year(df_de, cmap.get("deal_date"))
-
     clusters = sorted([c for c in df_co[cluster_col].unique() if c != "Outliers"])
 
     rows = []
     for cname in clusters:
         co = df_co[df_co[cluster_col] == cname]
 
-        # Linked deals for this cluster
         if df_de is not None and co_id and de_co_id \
                 and co_id in co.columns and de_co_id in df_de.columns:
             ids = co[co_id].dropna().unique()
@@ -133,10 +169,10 @@ def _compute(
         yf = cmap.get("year_founded")
         if yf and yf in co.columns:
             vals = pd.to_numeric(co[yf], errors="coerce").dropna()
-            r["⌀ Year Founded"]    = int(round(vals.mean())) if len(vals) else None
+            r["⌀ Year Founded"]     = int(round(vals.mean())) if len(vals) else None
             r["% Recently Founded"] = round((vals >= (Y - 5)).sum() / len(vals) * 100, 1) if len(vals) else None
         else:
-            r["⌀ Year Founded"]    = None
+            r["⌀ Year Founded"]     = None
             r["% Recently Founded"] = None
 
         # ── Deals ─────────────────────────────────────────────────────────────
@@ -147,14 +183,13 @@ def _compute(
             dd = cmap.get("deal_date")
             if dd and dd in de.columns:
                 yrs = _to_year(de[dd])
-                # Deal Momentum: Count(Y & Y-1) / Count(Y-2 & Y-3)
                 recent_n = int(((yrs >= Y - 1) & (yrs <= Y)).sum())
                 prev_n   = int(((yrs >= Y - 3) & (yrs <= Y - 2)).sum())
-                r["Deal Momentum"] = round(recent_n / prev_n, 3) if prev_n > 0 else None
+                r["Deal Momentum"] = round((recent_n / prev_n - 1) * 100, 0) if prev_n > 0 else None
             else:
                 r["Deal Momentum"] = None
         else:
-            r["# Deals"]      = None
+            r["# Deals"]       = None
             r["Deal Momentum"] = None
 
         # ── Funding ───────────────────────────────────────────────────────────
@@ -181,8 +216,7 @@ def _compute(
                     r["Σ Invested (4 J.)"] = round(float(deal_vals[mask_4yr].sum()), 1)
                     rec_sum  = deal_vals[mask_rec].sum()
                     prev_sum = deal_vals[mask_prev].sum()
-                    # Funding Momentum: (Sum Y & Y-1) / (Sum Y-2 & Y-3) - 1
-                    r["Funding Momentum"] = round(float(rec_sum / prev_sum - 1), 4) if prev_sum > 0 else None
+                    r["Funding Momentum"] = round((rec_sum / prev_sum - 1) * 100, 1) if prev_sum > 0 else None
                 else:
                     r["Σ Invested (4 J.)"] = None
                     r["Funding Momentum"]   = None
@@ -198,7 +232,6 @@ def _compute(
                           "Capital Invested Mean", "Capital Invested Median", "Abweichung M/M"]:
                     r[k] = None
 
-            # Marktreife — from Deals, Series column
             sc = cmap.get("series")
             if sc and sc in de.columns:
                 s_lower = de[sc].astype(str).str.lower().str.strip()
@@ -212,20 +245,12 @@ def _compute(
                       "Marktreife"]:
                 r[k] = None
 
-        # ── VC Graduation Rate — from Companies ───────────────────────────────
-        # Flag logic (in priority order):
-        #   0  if Business Status is "Out of Business" or starts with "Bankruptcy"
-        #   1  if Ownership Status is Acquired/Merged or Publicly Held
-        #   1  if Company Financing Status contains "Formerly" or "Private Equity-Backed"
-        #   else 0
+        # ── VC Graduation Rate ────────────────────────────────────────────────
         bs_col  = cmap.get("business_status")
         os_col  = cmap.get("ownership_status")
         cfs_col = cmap.get("company_financing_status")
-
-        has_any_grad_col = any(
-            c and c in co.columns for c in [bs_col, os_col, cfs_col]
-        )
-        if has_any_grad_col:
+        has_any = any(c and c in co.columns for c in [bs_col, os_col, cfs_col])
+        if has_any:
             _bs  = bs_col  if (bs_col  and bs_col  in co.columns) else None
             _os  = os_col  if (os_col  and os_col  in co.columns) else None
             _cfs = cfs_col if (cfs_col and cfs_col in co.columns) else None
@@ -234,16 +259,14 @@ def _compute(
         else:
             r["VC Graduation Rate"] = None
 
-        # ── Mortality Rate — from Companies ───────────────────────────────────
-        # Flag: 1 if Business Status starts with "Bankruptcy" or is "Out of Business", else 0
+        # ── Mortality Rate ────────────────────────────────────────────────────
         if bs_col and bs_col in co.columns:
             flags = co.apply(_mortality_flag, axis=1, bs_col=bs_col)
             r["Mortality Rate"] = round(float(flags.mean()) * 100, 1)
         else:
             r["Mortality Rate"] = None
 
-        # ── Marktanteil (HHI) — from Companies ───────────────────────────────
-        # HHI = Σ (share_i²) × 10 000   where share_i = company_i_raised / cluster_total_raised
+        # ── HHI ───────────────────────────────────────────────────────────────
         if tr and tr in co.columns:
             vals  = pd.to_numeric(co[tr], errors="coerce").fillna(0)
             total = vals.sum()
@@ -254,7 +277,7 @@ def _compute(
         else:
             r["Marktanteil (HHI)"] = None
 
-        # ── Patente — from Companies ──────────────────────────────────────────
+        # ── Patents ───────────────────────────────────────────────────────────
         pat = cmap.get("total_patent_families")
         if pat and pat in co.columns:
             vals = pd.to_numeric(co[pat], errors="coerce").dropna()
@@ -269,58 +292,66 @@ def _compute(
 
 # ── Styling ───────────────────────────────────────────────────────────────────
 
+def _highlight_top2(col: pd.Series) -> list[str]:
+    """Gold = rank 1, teal = rank 2, per METRIC_DIRECTION."""
+    direction = METRIC_DIRECTION.get(col.name, "higher")
+    vals = pd.to_numeric(col, errors="coerce")
+    ranks = vals.rank(ascending=(direction == "lower"), method="min", na_option="bottom")
+    out = []
+    for r in ranks:
+        if r == 1:
+            out.append("background-color: #ffd700; font-weight: bold")
+        elif r == 2:
+            out.append("background-color: #b8e0d4")
+        else:
+            out.append("")
+    return out
+
+
 def _style(df: pd.DataFrame):
-    def _momentum_color(val):
-        if pd.isna(val) or val is None:
-            return ""
-        try:
-            v = float(val)
-        except (TypeError, ValueError):
-            return ""
-        if v > 0:
-            return "background-color: #e6f4ea; color: #1a7f37"
-        if v < 0:
-            return "background-color: #fce8e8; color: #c41230"
-        return ""
-
-    def _risk_color(val):
-        if pd.isna(val) or val is None:
-            return ""
-        try:
-            v = float(val)
-        except (TypeError, ValueError):
-            return ""
-        return "background-color: #fff3cd" if v > 30 else ""
-
-    def _hhi_color(val):
-        if pd.isna(val) or val is None:
-            return ""
-        try:
-            v = int(val)
-        except (TypeError, ValueError):
-            return ""
-        return "background-color: #fff3cd" if v > 2500 else ""
-
     s = df.style
     for col in df.columns:
-        if col == "Deal Momentum":
-            # Deal Momentum is a ratio: >1 good (green), <1 bad (red)
-            s = s.map(lambda v: _momentum_color(v - 1) if (v is not None and not pd.isna(v)) else "", subset=[col])
-        elif col == "Funding Momentum":
-            # Funding Momentum is already (ratio-1), same sign convention as before
-            s = s.map(_momentum_color, subset=[col])
-        if col == "Mortality Rate":
-            s = s.map(_risk_color, subset=[col])
-        if col == "Marktanteil (HHI)":
-            s = s.map(_hhi_color, subset=[col])
+        if col in METRIC_DIRECTION:
+            s = s.apply(_highlight_top2, subset=[col])
     return s
+
+
+# ── Ranking ───────────────────────────────────────────────────────────────────
+
+def _compute_ranking(df: pd.DataFrame) -> pd.DataFrame:
+    """Normalise each metric 0–1, average, return sorted ranking table."""
+    rank_cols = [
+        c for c in METRIC_DIRECTION
+        if c in df.columns and c not in RANKING_EXCLUDE
+    ]
+    norm_scores: dict[str, pd.Series] = {}
+    for col in rank_cols:
+        vals = pd.to_numeric(df[col], errors="coerce")
+        vmin, vmax = vals.min(), vals.max()
+        if pd.isna(vmin) or vmax == vmin:
+            continue
+        if METRIC_DIRECTION[col] == "higher":
+            norm_scores[col] = (vals - vmin) / (vmax - vmin)
+        else:
+            norm_scores[col] = (vmax - vals) / (vmax - vmin)
+
+    if not norm_scores:
+        return pd.DataFrame()
+
+    score_df = pd.DataFrame(norm_scores, index=df.index)
+    avg = score_df.mean(axis=1)
+
+    result = df[["Cluster"]].copy().reset_index(drop=True)
+    result["Score"] = (avg.values * 100).round(1)
+    result = result.sort_values("Score", ascending=False).reset_index(drop=True)
+    result.insert(0, "Rank", range(1, len(result) + 1))
+    return result
 
 
 # ── Page ──────────────────────────────────────────────────────────────────────
 
 st.title("📊 Analytics")
 
-# Gate: clusters must be confirmed
 _confirmed = st.session_state.get("clusters_confirmed", False)
 _clustered = (
     st.session_state.get("df_clean") is not None
@@ -344,7 +375,7 @@ df_de = st.session_state.get("df_deals")
 if df_de is None:
     st.info(
         "No Deals CSV loaded yet.  \n"
-        "Upload one on the **Setup** page to unlock all deal-based metrics. "
+        "Upload one on the **Setup** page to unlock deal-based metrics. "
         "Company-level metrics are still available."
     )
     col_go, _ = st.columns([1, 3])
@@ -357,7 +388,6 @@ st.divider()
 # ── Column mapping ────────────────────────────────────────────────────────────
 
 _saved_map: dict = st.session_state.get("analytics_col_map", {})
-
 NONE_OPT = "(not available)"
 co_cols  = [NONE_OPT] + df_co.columns.tolist()
 de_cols  = [NONE_OPT] + (df_de.columns.tolist() if df_de is not None else [])
@@ -379,33 +409,30 @@ def _sel(label, options, key, candidates=None):
 
 
 with st.expander("⚙️ Column Mapping", expanded=not bool(_saved_map)):
-    st.caption(
-        "Map the columns from your CSVs to the analytics fields. "
-        "Unmapped fields will be shown as N/A."
-    )
+    st.caption("Map CSV columns to analytics fields. Unmapped fields show as N/A.")
 
     st.markdown("**Companies CSV**")
     c1, c2, c3 = st.columns(3)
     with c1:
-        v_co_id  = _sel("Company ID",           co_cols, "co_id",
-                        ["Company ID", "company_id", "id", "CompanyID"])
-        v_emp    = _sel("Employees",             co_cols, "employees",
-                        ["Employees", "Headcount", "# Employees", "employees"])
-        v_yf     = _sel("Year Founded",          co_cols, "year_founded",
-                        ["Year Founded", "founded", "founding_year", "year_founded"])
+        v_co_id = _sel("Company ID",           co_cols, "co_id",
+                       ["Company ID", "company_id", "id", "CompanyID"])
+        v_emp   = _sel("Employees",             co_cols, "employees",
+                       ["Employees", "Headcount", "# Employees", "employees"])
+        v_yf    = _sel("Year Founded",          co_cols, "year_founded",
+                       ["Year Founded", "founded", "founding_year", "year_founded"])
     with c2:
-        v_tr     = _sel("Total Raised",          co_cols, "total_raised",
-                        ["Total Raised", "total_raised", "Total Funding", "funding_total"])
-        v_pat    = _sel("Total Patent Families", co_cols, "total_patent_families",
-                        ["Total Patent Families", "patents", "patent_families"])
-        v_bs     = _sel("Business Status",       co_cols, "business_status",
-                        ["Business Status", "business_status", "status"])
+        v_tr    = _sel("Total Raised",          co_cols, "total_raised",
+                       ["Total Raised", "total_raised", "Total Funding", "funding_total"])
+        v_pat   = _sel("Total Patent Families", co_cols, "total_patent_families",
+                       ["Total Patent Families", "patents", "patent_families"])
+        v_bs    = _sel("Business Status",       co_cols, "business_status",
+                       ["Business Status", "business_status", "status"])
     with c3:
-        v_os     = _sel("Ownership Status",      co_cols, "ownership_status",
-                        ["Ownership Status", "ownership_status", "ownership"])
-        v_cfs    = _sel("Company Financing Status", co_cols, "company_financing_status",
-                        ["Company Financing Status", "company_financing_status",
-                         "financing_status", "Financing Status"])
+        v_os    = _sel("Ownership Status",      co_cols, "ownership_status",
+                       ["Ownership Status", "ownership_status", "ownership"])
+        v_cfs   = _sel("Company Financing Status", co_cols, "company_financing_status",
+                       ["Company Financing Status", "company_financing_status",
+                        "financing_status", "Financing Status"])
 
     if df_de is not None:
         st.markdown("**Deals CSV**")
@@ -429,21 +456,20 @@ with st.expander("⚙️ Column Mapping", expanded=not bool(_saved_map)):
     if st.button("Apply mapping", type="primary"):
         def _v(val):
             return None if val == NONE_OPT else val
-
         st.session_state["analytics_col_map"] = {
-            "co_id":                       _v(v_co_id),
-            "employees":                   _v(v_emp),
-            "year_founded":                _v(v_yf),
-            "total_raised":                _v(v_tr),
-            "total_patent_families":       _v(v_pat),
-            "business_status":             _v(v_bs),
-            "ownership_status":            _v(v_os),
-            "company_financing_status":    _v(v_cfs),
-            "de_co_id":                    _v(v_de_co_id),
-            "deal_id":                     _v(v_did),
-            "deal_size":                   _v(v_ds),
-            "deal_date":                   _v(v_dd),
-            "series":                      _v(v_series),
+            "co_id":                    _v(v_co_id),
+            "employees":                _v(v_emp),
+            "year_founded":             _v(v_yf),
+            "total_raised":             _v(v_tr),
+            "total_patent_families":    _v(v_pat),
+            "business_status":          _v(v_bs),
+            "ownership_status":         _v(v_os),
+            "company_financing_status": _v(v_cfs),
+            "de_co_id":                 _v(v_de_co_id),
+            "deal_id":                  _v(v_did),
+            "deal_size":                _v(v_ds),
+            "deal_date":                _v(v_dd),
+            "series":                   _v(v_series),
         }
         st.rerun()
 
@@ -451,36 +477,42 @@ _cmap = st.session_state.get("analytics_col_map", {})
 
 st.divider()
 
-# ── Compute & display ─────────────────────────────────────────────────────────
-
 if not _cmap:
     st.info("Set up the column mapping above and click **Apply mapping** to generate the table.")
     st.stop()
 
+# ── Compute ───────────────────────────────────────────────────────────────────
+
 with st.spinner("Computing cluster analytics…"):
     df_analytics, _ref_year = _compute(df_co, df_de, "Cluster", _cmap)
-
-st.caption(f"Reference year Y = **{_ref_year}** (max deal year in Deals CSV). "
-           f"Time windows: Y & Y-1 = {_ref_year-1}–{_ref_year}, "
-           f"Y-2 & Y-3 = {_ref_year-2}–{_ref_year-3}. "
-           f"Recently Founded threshold: ≥ {_ref_year - 5}.")
 
 if df_analytics.empty:
     st.warning("No clusters found (Outliers excluded).")
     st.stop()
 
-# ── Group header bar ──────────────────────────────────────────────────────────
+st.caption(
+    f"Reference year **Y = {_ref_year}** (max deal year in Deals CSV) · "
+    f"Recent window: {_ref_year - 1}–{_ref_year} · "
+    f"Previous window: {_ref_year - 3}–{_ref_year - 2} · "
+    f"Recently Founded threshold: ≥ {_ref_year - 5}"
+)
 
-GROUPS = {
-    "Größe":            ["Gesamt", "# Companies", "⌀ Angestellte"],
-    "Neuheit":          ["⌀ Year Founded", "% Recently Founded"],
-    "Deals":            ["# Deals", "Deal Momentum"],
-    "Funding":          ["⌀ Total Raised (m€)", "Σ Total Raised (m€)", "Σ Invested (4 J.)", "Funding Momentum"],
-    "Risikoverteilung": ["Capital Invested Mean", "Capital Invested Median", "Abweichung M/M"],
-    "Absolutes Risiko": ["VC Graduation Rate", "Mortality Rate"],
-    "Markt":            ["Marktanteil (HHI)", "Marktreife"],
-    "Technologie":      ["⌀ Patentierte Erf."],
-}
+# ── Column descriptions ───────────────────────────────────────────────────────
+
+with st.expander("📖 Column Descriptions", expanded=False):
+    items = [(k, v) for k, v in COLUMN_DESCRIPTIONS.items() if k in df_analytics.columns]
+    mid = (len(items) + 1) // 2
+    left_col, right_col = st.columns(2)
+    for i, (col_name, desc) in enumerate(items):
+        dir_icon = {"higher": " ↑", "lower": " ↓"}.get(METRIC_DIRECTION.get(col_name, ""), "")
+        target = left_col if i < mid else right_col
+        target.markdown(
+            f"**{col_name}**{dir_icon}  \n<small style='color:#555'>{desc}</small>",
+            unsafe_allow_html=True,
+        )
+        target.markdown("")
+
+# ── Group header bar ──────────────────────────────────────────────────────────
 
 group_cols = st.columns([2] + [len(v) for v in GROUPS.values()])
 group_cols[0].markdown("")
@@ -501,52 +533,80 @@ col_cfg = {
     "⌀ Angestellte":         st.column_config.NumberColumn("⌀ Angestellte", format="%.1f"),
     "⌀ Year Founded":        st.column_config.NumberColumn("⌀ Year Founded", format="%d"),
     "% Recently Founded":    st.column_config.NumberColumn("% Recently Founded", format="%.1f %%",
-                                help="% of companies with Year Founded ≥ Y-5"),
+                                help=f"% companies founded ≥ {_ref_year - 5}"),
     "# Deals":               st.column_config.NumberColumn("# Deals", format="%d"),
-    "Deal Momentum":         st.column_config.NumberColumn(
-                                "Deal Momentum", format="%.2f×",
-                                help="Count(Y & Y-1 deals) / Count(Y-2 & Y-3 deals)"),
+    "Deal Momentum":         st.column_config.NumberColumn("Deal Momentum", format="%+.0f %%",
+                                help=f"Count({_ref_year-1}–{_ref_year}) / Count({_ref_year-3}–{_ref_year-2}) − 1"),
     "⌀ Total Raised (m€)":  st.column_config.NumberColumn("⌀ Total Raised", format="%.1f m€"),
     "Σ Total Raised (m€)":  st.column_config.NumberColumn("Σ Total Raised", format="%.1f m€"),
-    "Σ Invested (4 J.)":    st.column_config.NumberColumn(
-                                "Σ Invested (4 J.)", format="%.1f m€",
-                                help="Sum of deal sizes over the last 4 years"),
-    "Funding Momentum":      st.column_config.NumberColumn(
-                                "Funding Momentum", format="%+.1f %%",
-                                help="(Sum deal size Y & Y-1) / (Sum deal size Y-2 & Y-3) − 1"),
+    "Σ Invested (4 J.)":    st.column_config.NumberColumn("Σ Invested (4 J.)", format="%.1f m€",
+                                help=f"Sum of deal sizes {_ref_year-3}–{_ref_year}"),
+    "Funding Momentum":      st.column_config.NumberColumn("Funding Momentum", format="%+.1f %%",
+                                help=f"(Sum {_ref_year-1}–{_ref_year}) / (Sum {_ref_year-3}–{_ref_year-2}) − 1"),
     "Capital Invested Mean":   st.column_config.NumberColumn("Invested Mean",   format="%.2f m€"),
     "Capital Invested Median": st.column_config.NumberColumn("Invested Median", format="%.2f m€"),
-    "Abweichung M/M":        st.column_config.NumberColumn(
-                                "Abweichung M/M", format="%.2f",
-                                help="Invested Mean / Invested Median"),
-    "VC Graduation Rate":    st.column_config.NumberColumn(
-                                "VC Graduation Rate", format="%.1f %%",
-                                help="% of companies: 0 if bankrupt/out-of-business; "
-                                     "1 if acquired/publicly held or PE-backed/formerly"),
-    "Mortality Rate":        st.column_config.NumberColumn(
-                                "Mortality Rate", format="%.1f %%",
-                                help="% of companies with Business Status = Out of Business or Bankruptcy"),
-    "Marktanteil (HHI)":    st.column_config.NumberColumn(
-                                "Marktanteil (HHI)", format="%d",
-                                help="Herfindahl-Hirschman Index (0–10 000). >2 500 = concentrated."),
-    "Marktreife":            st.column_config.NumberColumn(
-                                "Marktreife", format="%.1f",
-                                help="Avg. series score across deals (Seed=1, A=2, B=3 … E+=6)"),
+    "Abweichung M/M":        st.column_config.NumberColumn("Abweichung M/M", format="%.2f",
+                                help="Invested Mean ÷ Invested Median"),
+    "VC Graduation Rate":    st.column_config.NumberColumn("VC Graduation Rate", format="%.1f %%",
+                                help="Acquired / Publicly held / PE-backed (excl. bankrupt)"),
+    "Mortality Rate":        st.column_config.NumberColumn("Mortality Rate", format="%.1f %%",
+                                help="Business Status = Out of Business or Bankruptcy"),
+    "Marktanteil (HHI)":    st.column_config.NumberColumn("Marktanteil (HHI)", format="%d",
+                                help="HHI 0–10 000. >2 500 = concentrated."),
+    "Marktreife":            st.column_config.NumberColumn("Marktreife", format="%.1f",
+                                help="Avg. deal stage (Seed=1 … E+=6)"),
     "⌀ Patentierte Erf.":   st.column_config.NumberColumn("⌀ Patentierte Erf.", format="%.1f"),
 }
 
 st.dataframe(
     _style(df_analytics),
     column_config=col_cfg,
-    use_container_width=True,
+    width="stretch",
     hide_index=True,
     height=min(60 + 35 * (len(df_analytics) + 1), 700),
 )
 
+st.caption("🥇 Gold = best in category  ·  🟩 Teal = 2nd best  ·  ↑ higher is better  ·  ↓ lower is better")
+
+st.divider()
+
+# ── Ranking ───────────────────────────────────────────────────────────────────
+
+st.subheader("🏆 Cluster Ranking")
+st.caption(
+    "Each metric is normalised 0–1 (best = 1, worst = 0) per column and averaged. "
+    "Excludes size/neutral columns (Gesamt, ⌀ Year Founded)."
+)
+
+df_rank = _compute_ranking(df_analytics)
+
+if not df_rank.empty:
+    rank_cfg = {
+        "Rank":    st.column_config.NumberColumn("Rank", format="%d", width="small"),
+        "Cluster": st.column_config.TextColumn("Cluster", width="large"),
+        "Score":   st.column_config.ProgressColumn(
+                       "Overall Score",
+                       format="%.1f %%",
+                       min_value=0,
+                       max_value=100,
+                   ),
+    }
+    st.dataframe(df_rank, column_config=rank_cfg, hide_index=True, width="stretch")
+
+st.divider()
+
 # ── Export ────────────────────────────────────────────────────────────────────
+
+export_df = df_analytics.copy()
+if not df_rank.empty:
+    export_df = export_df.merge(
+        df_rank[["Cluster", "Rank", "Score"]].rename(columns={"Score": "Overall Score (%)"}),
+        on="Cluster", how="left",
+    )
+
 st.download_button(
     "⬇ Download analytics CSV",
-    df_analytics.to_csv(index=False),
+    export_df.to_csv(index=False),
     "cluster_analytics.csv",
     "text/csv",
     type="primary",
