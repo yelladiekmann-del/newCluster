@@ -367,6 +367,7 @@ def render_cluster_review(
     company_col: str,
     dimensions: list[str],
     api_key: str,
+    color_map: dict | None = None,
 ) -> None:
     st.session_state.setdefault("cr_rerun_report", None)
     st.session_state.setdefault("cr_delete_pending", None)
@@ -398,32 +399,50 @@ def render_cluster_review(
 
     # ── Cluster list ──────────────────────────────────────────────────────────
     for cluster_name in named_clusters:
+        color = (color_map or {}).get(cluster_name, "#26B4D2")
         df_cluster = df_clean[df_clean["Cluster"] == cluster_name].reset_index(drop=True)
-        header_line = _cluster_header_line(cluster_name, df_cluster, dimensions)
-        # Always-visible row: name + action icons
-        _hdr_col, _r_col, _m_col, _d_col = st.columns([6, 1, 1, 1])
-        with _hdr_col:
-            st.markdown(
-                f"<div style='font-size:12px;font-weight:600;color:#0d1f2d;"
-                f"padding:6px 2px 2px 2px'>{header_line}</div>",
-                unsafe_allow_html=True,
-            )
-        with _r_col:
-            if st.button("✏️", key=f"cr_rename_{cluster_name}", width="stretch", help="Rename"):
-                st.session_state["cr_rename_pending"] = cluster_name
-                st.rerun()
-        with _m_col:
-            if st.button("↔", key=f"cr_merge_{cluster_name}", width="stretch", help="Merge"):
-                st.session_state["cr_merge_pending"] = cluster_name
-                st.rerun()
-        with _d_col:
-            if st.button("🗑", key=f"cr_del_{cluster_name}", width="stretch", help="Delete"):
-                st.session_state["cr_delete_pending"] = cluster_name
-                st.session_state["cr_delete_target"] = _OUTLIER_LABEL
-                st.rerun()
-        # Expandable detail: description edit + company table
-        with st.expander("Details", expanded=False):
-            _render_named_cluster(cluster_name, df_cluster, company_col, dimensions)
+        n = len(df_cluster)
+        _noun = "company" if n == 1 else "companies"
+        current_desc = st.session_state.get("cr_cluster_descriptions", {}).get(cluster_name, "")
+        desc_preview = ""
+        if current_desc:
+            first_sent = current_desc.split(".")[0].strip()
+            desc_preview = (first_sent[:110] + "…") if len(first_sent) > 110 else (first_sent + ".")
+
+        with st.container(border=True):
+            _left, _right = st.columns([7, 3])
+            with _left:
+                st.markdown(
+                    f'<div style="display:flex;align-items:center;gap:10px;padding:2px 0 2px">'
+                    f'<div style="width:11px;height:11px;border-radius:50%;background:{color};flex-shrink:0"></div>'
+                    f'<span style="font-size:14px;font-weight:700;color:#0d1f2d;letter-spacing:-0.01em">{cluster_name}</span>'
+                    f'<span style="font-size:11px;color:#7496b2;background:#f7f9fc;border:1px solid #e4eaf2;'
+                    f'border-radius:20px;padding:1px 8px;white-space:nowrap">{n} {_noun}</span>'
+                    f'</div>'
+                    + (
+                        f'<div style="font-size:11.5px;color:#aac0d1;line-height:1.5;padding:4px 0 2px 21px">'
+                        f'{desc_preview}</div>'
+                        if desc_preview else ""
+                    ),
+                    unsafe_allow_html=True,
+                )
+            with _right:
+                _b1, _b2, _b3 = st.columns(3)
+                with _b1:
+                    if st.button("Rename", key=f"cr_rename_{cluster_name}", use_container_width=True, type="secondary"):
+                        st.session_state["cr_rename_pending"] = cluster_name
+                        st.rerun()
+                with _b2:
+                    if st.button("Merge", key=f"cr_merge_{cluster_name}", use_container_width=True, type="secondary"):
+                        st.session_state["cr_merge_pending"] = cluster_name
+                        st.rerun()
+                with _b3:
+                    if st.button("Delete", key=f"cr_del_{cluster_name}", use_container_width=True, type="secondary"):
+                        st.session_state["cr_delete_pending"] = cluster_name
+                        st.session_state["cr_delete_target"] = _OUTLIER_LABEL
+                        st.rerun()
+            with st.expander(f"Edit & browse {n} {_noun}", expanded=False):
+                _render_named_cluster(cluster_name, df_cluster, company_col, dimensions)
 
     # ── Outliers (collapsed) ──────────────────────────────────────────────────
     if len(df_outliers) > 0:

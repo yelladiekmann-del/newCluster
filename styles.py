@@ -239,7 +239,9 @@ hr { border: none; border-top: 1px solid #e4eaf2; margin: 18px 0; }
   transition: box-shadow 0.15s, transform 0.12s;
   position: relative;
   margin-bottom: 4px;
-  min-height: 110px;
+  height: 130px;
+  box-sizing: border-box;
+  overflow: hidden;
 }
 .hy-cl-card:hover {
   box-shadow: 0 4px 16px rgba(0,30,50,0.10);
@@ -262,6 +264,10 @@ hr { border: none; border-top: 1px solid #e4eaf2; margin: 18px 0; }
 .hy-cl-desc {
   font-size: 10.5px; color: #7496b2;
   line-height: 1.55;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
 }
 .hy-cl-arrow {
   position: absolute; top: 13px; right: 12px;
@@ -275,8 +281,8 @@ hr { border: none; border-top: 1px solid #e4eaf2; margin: 18px 0; }
 /* Invisible full-card click button overlay */
 .element-container:has(.hy-cl-card) + .element-container .stButton button {
   position: relative !important;
-  margin-top: -118px !important;
-  height: 118px !important;
+  margin-top: -130px !important;
+  height: 130px !important;
   opacity: 0 !important;
   cursor: pointer !important;
   z-index: 10 !important;
