@@ -302,7 +302,7 @@ def _llm_reassign_all(
 # DIALOGS
 # ============================================================
 
-@st.dialog("Merge cluster")
+@st.dialog("Merge cluster", width="large")
 def _merge_dialog(merge_pending: str, named_clusters: list[str], df_clean: pd.DataFrame):
     n_merge = int((df_clean["Cluster"] == merge_pending).sum())
     other_clusters = [c for c in named_clusters if c != merge_pending]
@@ -335,7 +335,7 @@ def _merge_dialog(merge_pending: str, named_clusters: list[str], df_clean: pd.Da
             st.rerun()
 
 
-@st.dialog("Delete cluster")
+@st.dialog("Delete cluster", width="large")
 def _delete_dialog(delete_pending: str, named_clusters: list[str], df_clean: pd.DataFrame):
     n_del = int((df_clean["Cluster"] == delete_pending).sum())
     other_destinations = [_OUTLIER_LABEL] + [c for c in named_clusters if c != delete_pending]
@@ -358,7 +358,7 @@ def _delete_dialog(delete_pending: str, named_clusters: list[str], df_clean: pd.
             st.rerun()
 
 
-@st.dialog("Add new cluster")
+@st.dialog("Add new cluster", width="large")
 def _add_cluster_dialog(df_clean: pd.DataFrame, company_col: str):
     new_name = st.text_input("Cluster name", placeholder="e.g. Enterprise SaaS")
     new_desc = st.text_area(

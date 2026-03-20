@@ -60,7 +60,7 @@ use_desc = bool(
 )
 
 
-@st.dialog("Confirm re-embed")
+@st.dialog("Confirm re-embed", width="large")
 def _reembed_dialog():
     st.warning(
         "Generating new embeddings will replace the uploaded embeddings. "
@@ -76,7 +76,7 @@ def _reembed_dialog():
             st.rerun()
 
 
-@st.dialog("Dimension weights")
+@st.dialog("Dimension weights", width="large")
 def _weights_dialog():
     st.caption("Increase the weight of dimensions that matter most for your clustering goal.")
     w = {}
@@ -249,7 +249,12 @@ st.divider()
 st.subheader("Step 2 · Cluster")
 
 if not has_embeddings:
-    st.info("Complete Step 1 first to generate or upload embeddings.")
+    _reason = (
+        "Add your Gemini API key on the Setup page, then click **⚡ Embed** above."
+        if not has_api_key
+        else "Click **⚡ Embed** above to generate embeddings, then come back here."
+    )
+    st.info(f"Embeddings not yet generated. {_reason}")
 else:
     # ── Clustering parameter controls ─────────────────────────────────────────
     _at = st.session_state.get("autotune_result")

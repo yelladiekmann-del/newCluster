@@ -24,24 +24,33 @@ st.divider()
 st.subheader("1 · API Key")
 
 # Prevent Chrome from suggesting to save this as a login credential.
-# The hidden username field before the password input confuses Chrome's heuristic.
 st.markdown(
     '<input type="text" style="display:none" autocomplete="username">',
     unsafe_allow_html=True,
 )
-st.text_input(
-    "Gemini API Key",
-    type="password",
-    placeholder="AIza…",
-    key="api_key",
-    help="Get your key from Google AI Studio (aistudio.google.com). Required for embeddings, naming, and chat.",
-)
+with st.form("api_key_form", border=False):
+    col_in, col_btn = st.columns([6, 1])
+    with col_in:
+        _key_input = st.text_input(
+            "Gemini API Key",
+            type="password",
+            placeholder="AIza…",
+            value=st.session_state.get("api_key", ""),
+            help="Get your key from Google AI Studio (aistudio.google.com). Required for embeddings, naming, and chat.",
+        )
+    with col_btn:
+        st.write("")
+        _key_submitted = st.form_submit_button("Save", use_container_width=True)
+    if _key_submitted:
+        st.session_state["api_key"] = _key_input
+        api_key = _key_input
+
 api_key = st.session_state.get("api_key", "")
 
 if api_key:
     st.success("✔ API key set.")
 else:
-    st.info("Enter your Gemini API key above to continue.")
+    st.info("Enter your Gemini API key above and click **Save** to continue.")
 
 st.divider()
 
@@ -53,6 +62,17 @@ uploaded = st.file_uploader("CSV or Excel file", type=["csv", "xlsx", "xls"])
 df_input    = None
 company_col = st.session_state.get("company_col", "name")
 desc_col    = st.session_state.get("desc_col", None)
+
+# Show persisted data status when returning to this page without re-uploading
+_df_persisted = st.session_state.get("df_clean")
+if not uploaded and _df_persisted is not None:
+    st.info(
+        f"✔ Data already loaded: **{len(_df_persisted)} companies** · "
+        f"Company column: `{company_col}`"
+        + (f" · Description column: `{desc_col}`" if desc_col else "")
+        + "  \nUpload a new file below to replace it."
+    )
+    df_input = _df_persisted
 
 if uploaded:
     try:
@@ -81,7 +101,7 @@ if uploaded:
             if st.button("👁 Preview", use_container_width=True):
                 st.session_state["_show_preview"] = True
 
-        @st.dialog("Data preview")
+        @st.dialog("Data preview", width="large")
         def _preview_dialog():
             st.dataframe(df_input.head(10), use_container_width=True, hide_index=True)
             if st.button("Close"):
