@@ -66,6 +66,9 @@ SESSION_DEFAULTS: dict = {
     "df_enriched":           None,
     "df_enriched_src":       None,
     "autotune_result":       None,
+    # workflow state
+    "npz_preloaded":         False,  # True when user uploaded .npz on Setup page
+    "clusters_confirmed":    False,  # True after user confirms clusters on Embed page
     # persisted UI selections
     "company_col":           "name",
     "desc_col":              None,
@@ -198,6 +201,60 @@ def name_all_clusters(cluster_profiles: dict, api_key: str) -> dict[int, str]:
         st.warning(f"Cluster naming returned invalid JSON: {e}")
     except Exception as e:
         st.warning(f"Cluster naming failed: {e}")
+    return {}
+
+
+def generate_cluster_descriptions(
+    cluster_profiles: dict,
+    cluster_names: dict[int, str],
+    api_key: str,
+) -> dict[str, str]:
+    """Generate 2-3 sentence LLM descriptions for each named cluster.
+
+    Args:
+        cluster_profiles: idx → (size, profile_str), same as name_all_clusters input
+        cluster_names: idx → name, output of name_all_clusters
+        api_key: Gemini API key
+
+    Returns:
+        cluster_name → description string
+    """
+    labels_ordered = sorted(cluster_profiles.keys())
+    block = ""
+    for label in labels_ordered:
+        name = cluster_names.get(label, f"Cluster {label}")
+        size, profile = cluster_profiles[label]
+        block += f'\n"{name}" ({size} companies):\n{profile}\n'
+
+    prompt = (
+        "You are a market intelligence analyst describing clusters of companies.\n\n"
+        f"Below are {len(labels_ordered)} clusters with their dominant characteristics.\n"
+        "For each cluster, write 2-3 sentences that:\n"
+        "- Explain what type of companies belong to this cluster\n"
+        "- Describe what sets this cluster apart from the others\n"
+        "- Are specific, concrete, and useful for a business analyst\n\n"
+        + block +
+        "\nReturn ONLY a JSON object mapping the exact cluster name to its description:\n"
+        '{"Cluster Name A": "Description here.", "Cluster Name B": "Description here.", ...}\n'
+        "No explanation, no markdown, just the JSON."
+    )
+    try:
+        resp = requests.post(
+            f"{GEN_URL}?key={api_key}",
+            json={"contents": [{"parts": [{"text": prompt}]}]},
+            timeout=30,
+        )
+        if resp.status_code == 200:
+            raw = resp.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
+            raw = re.sub(r"```json|```", "", raw).strip()
+            descs = json.loads(raw)
+            return {k: v for k, v in descs.items() if isinstance(k, str) and isinstance(v, str)}
+        else:
+            st.warning(f"Description API error {resp.status_code}: {resp.text[:200]}")
+    except json.JSONDecodeError as e:
+        st.warning(f"Cluster descriptions returned invalid JSON: {e}")
+    except Exception as e:
+        st.warning(f"Cluster description generation failed: {e}")
     return {}
 
 

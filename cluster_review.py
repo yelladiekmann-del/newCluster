@@ -67,9 +67,20 @@ def _render_named_cluster(
             st.session_state["cr_delete_target"] = _OUTLIER_LABEL
             st.rerun()
 
-    user_desc = st.session_state.get("cr_cluster_descriptions", {}).get(cluster_name, "")
-    if user_desc:
-        st.caption(f"_{user_desc}_")
+    # LLM-generated (or user-edited) description — shown prominently and editable
+    current_desc = st.session_state.get("cr_cluster_descriptions", {}).get(cluster_name, "")
+    new_desc = st.text_area(
+        "Description",
+        value=current_desc,
+        key=f"cr_desc_{cluster_name}",
+        placeholder="Describe what this cluster represents and what sets it apart…",
+        height=80,
+    )
+    # Persist edits immediately
+    if new_desc != current_desc:
+        descs = st.session_state.get("cr_cluster_descriptions") or {}
+        descs[cluster_name] = new_desc
+        st.session_state["cr_cluster_descriptions"] = descs
 
     col_name, col_core = st.columns([1, 2])
     with col_name:

@@ -3,29 +3,20 @@ from utils import SESSION_DEFAULTS
 
 st.set_page_config(page_title="Company Clustering", page_icon="🗂️", layout="wide")
 
-# ── Shared session state (runs on every navigation) ──────────────────────────
+# ── Shared session state ───────────────────────────────────────────────────────
 for k, v in SESSION_DEFAULTS.items():
     st.session_state.setdefault(k, v)
 
-# ── API key in sidebar (persists across all pages via widget key) ─────────────
-with st.sidebar:
-    st.text_input(
-        "Gemini API Key",
-        type="password",
-        placeholder="AIza…",
-        key="api_key",
-        help="Required for embeddings, cluster naming, chat, and re-sort.",
-    )
-
-# ── Navigation ────────────────────────────────────────────────────────────────
-_clustered = (
+# ── Routing logic ──────────────────────────────────────────────────────────────
+_confirmed = st.session_state.get("clusters_confirmed", False)
+_has_data  = (
     st.session_state.get("df_clean") is not None
-    and "Cluster" in getattr(st.session_state.get("df_clean"), "columns", [])
+    or st.session_state.get("feature_matrix") is not None
 )
 
-_setup_page    = st.Page("pages/setup.py",    title="Setup",    icon="⚙️",  default=not _clustered)
-_clusters_page = st.Page("pages/clusters.py", title="Clusters", icon="🗂️",  default=_clustered)
-_chat_page     = st.Page("pages/chat.py",     title="Chat",     icon="💬")
+_setup_page  = st.Page("pages/setup.py",         title="Setup",           icon="⚙️",  default=not _has_data)
+_embed_page  = st.Page("pages/embed_cluster.py", title="Embed & Cluster", icon="⚡",  default=_has_data and not _confirmed)
+_review_page = st.Page("pages/clusters.py",      title="Review & Edit",   icon="🗂️", default=_confirmed)
 
-pg = st.navigation([_setup_page, _clusters_page, _chat_page])
+pg = st.navigation([_setup_page, _embed_page, _review_page])
 pg.run()
