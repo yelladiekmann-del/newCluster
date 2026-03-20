@@ -1,7 +1,7 @@
 import streamlit as st
 from utils import SESSION_DEFAULTS
 
-st.set_page_config(page_title="Company Clustering", page_icon="🗂️", layout="wide")
+st.set_page_config(page_title="Yella's Cool Clustering TOol", page_icon="🗂️", layout="wide")
 
 # ── Shared session state ───────────────────────────────────────────────────────
 for k, v in SESSION_DEFAULTS.items():
