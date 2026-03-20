@@ -13,16 +13,44 @@ _CSS = """
 /* Page background */
 .stApp { background: #f7f9fc; font-family: 'IBM Plex Sans', sans-serif; }
 
-/* Sidebar */
+/* ── Sidebar ── */
 [data-testid="stSidebar"] {
   background: #001f2b !important;
   border-right: 1px solid #0a4e66;
 }
-[data-testid="stSidebar"] .stMarkdown p,
+/* Only plain paragraph text in sidebar (no !important — inline styles win) */
+[data-testid="stSidebar"] .stMarkdown p { color: #aac0d1; }
 [data-testid="stSidebar"] label,
 [data-testid="stSidebar"] .stRadio label { color: #aac0d1 !important; }
 
-/* Cards */
+/* Streamlit native nav links — dark-mode styling */
+[data-testid="stSidebarNavItems"] { padding: 4px 0 !important; }
+[data-testid="stSidebarNavLink"] {
+  border-radius: 8px !important;
+  color: #aac0d1 !important;
+  font-size: 12px !important;
+  font-weight: 500 !important;
+  padding: 8px 10px !important;
+}
+[data-testid="stSidebarNavLink"]:hover {
+  background: #0a4e66 !important;
+  color: #eef2f7 !important;
+}
+[data-testid="stSidebarNavLink"][aria-current="page"] {
+  background: #26B4D218 !important;
+  color: #26B4D2 !important;
+  font-weight: 600 !important;
+  border-left: 2px solid #26B4D2;
+}
+
+/* ── Cards — via st.container(border=True) ── */
+[data-testid="stVerticalBlockBorderWrapper"] {
+  border: 1px solid #e4eaf2 !important;
+  border-radius: 14px !important;
+  background: #ffffff !important;
+  margin-bottom: 12px !important;
+}
+/* Legacy .hy-card class (kept for any inline HTML usage) */
 .hy-card {
   background: #ffffff;
   border: 1px solid #e4eaf2;
@@ -31,7 +59,7 @@ _CSS = """
   margin-bottom: 12px;
 }
 
-/* Section labels */
+/* ── Section labels ── */
 .hy-step {
   display: inline-flex; align-items: center; gap: 10px;
   margin-bottom: 16px;
@@ -45,7 +73,7 @@ _CSS = """
 .hy-step-num.done { background: #26B4D2; box-shadow: 0 0 12px #26B4D244; }
 .hy-step-label { font-size: 14px; font-weight: 600; color: #0d1f2d; letter-spacing: -0.01em; }
 
-/* Chips */
+/* ── Chips ── */
 .hy-chip {
   display: inline-flex; align-items: center; gap: 5px;
   padding: 3px 9px;
@@ -56,47 +84,60 @@ _CSS = """
 .hy-chip-green { background: #22c55e14; border: 1px solid #22c55e30; color: #16a34a; }
 .hy-chip-red   { background: #ef444414; border: 1px solid #ef444430; color: #dc2626; }
 
-/* Primary buttons */
-.stButton > button {
-  background: #001f2b; color: #ffffff;
-  border: none; border-radius: 9px;
-  font-family: 'IBM Plex Sans', sans-serif;
-  font-size: 12px; font-weight: 600;
-  letter-spacing: 0.01em;
-  padding: 8px 18px;
-  box-shadow: 0 1px 3px #001f2b44;
-  transition: all 0.15s;
+/* ── Buttons — base style (all buttons) ── */
+.stButton button,
+[data-testid="stFormSubmitButton"] button {
+  background: #001f2b !important; color: #ffffff !important;
+  border: none !important; border-radius: 9px !important;
+  font-family: 'IBM Plex Sans', sans-serif !important;
+  font-size: 12px !important; font-weight: 600 !important;
+  letter-spacing: 0.01em !important;
+  padding: 8px 18px !important;
+  box-shadow: 0 1px 3px #001f2b44 !important;
+  transition: all 0.15s !important;
 }
-.stButton > button:hover { background: #0a4e66; }
+.stButton button:hover,
+[data-testid="stFormSubmitButton"] button:hover {
+  background: #0a4e66 !important;
+}
 
-/* CTA buttons (type="primary") */
-.stButton > button[kind="primary"] {
+/* CTA buttons (type="primary") — Streamlit 1.38 correct selector */
+[data-testid="baseButton-primary"] {
   background: #26B4D2 !important; color: #001f2b !important;
   box-shadow: 0 1px 8px #26B4D255 !important;
 }
-.stButton > button[kind="primary"]:hover { background: #1a8fa8 !important; }
+[data-testid="baseButton-primary"]:hover { background: #1a8fa8 !important; }
 
-/* Ghost buttons */
-.stButton > button[kind="secondary"] {
+/* Ghost buttons (type="secondary") */
+[data-testid="baseButton-secondary"] {
   background: transparent !important; color: #0d1f2d !important;
   border: 1px solid #d8e1ec !important; box-shadow: none !important;
 }
-
-/* Inputs and selects */
-.stTextInput > div > div > input,
-.stSelectbox > div > div {
-  background: #f7f9fc; border: 1px solid #e4eaf2;
-  border-radius: 9px; font-size: 13px; color: #0d1f2d;
+[data-testid="baseButton-secondary"]:hover {
+  background: #f7f9fc !important;
 }
 
-/* Upload zone */
+/* ── Inputs and selects ── */
+.stTextInput input {
+  background: #f7f9fc !important; border: 1px solid #e4eaf2 !important;
+  border-radius: 9px !important; font-size: 13px !important; color: #0d1f2d !important;
+}
+[data-baseweb="select"] {
+  background: #f7f9fc !important; border: 1px solid #e4eaf2 !important;
+  border-radius: 9px !important;
+}
+[data-baseweb="select"]:focus-within {
+  border-color: #26B4D2 !important;
+}
+
+/* ── Upload zone ── */
 [data-testid="stFileUploader"] {
   border: 1.5px dashed #d8e1ec;
   border-radius: 10px; background: #f7f9fc;
   padding: 8px;
 }
 
-/* Metric numbers — monospace */
+/* ── Metric numbers — monospace ── */
 [data-testid="stMetricValue"] {
   font-family: 'IBM Plex Mono', monospace !important;
   font-weight: 700 !important;
@@ -107,22 +148,22 @@ _CSS = """
   letter-spacing: 0.06em; color: #7496b2 !important;
 }
 
-/* Dataframes / tables */
+/* ── Dataframes / tables ── */
 [data-testid="stDataFrame"] { border-radius: 10px; overflow: hidden; }
 
-/* Section dividers */
+/* ── Section dividers ── */
 hr { border: none; border-top: 1px solid #e4eaf2; margin: 18px 0; }
 
-/* Expanders */
+/* ── Expanders ── */
 [data-testid="stExpander"] {
   border: 1px solid #e4eaf2 !important; border-radius: 10px !important;
   background: #ffffff;
 }
 
-/* Success / info / warning overrides */
+/* ── Success / info / warning overrides ── */
 [data-testid="stAlert"] { border-radius: 9px; }
 
-/* Page title style */
+/* ── Page title style ── */
 .hy-page-title {
   font-size: 20px; font-weight: 700; color: #0d1f2d;
   letter-spacing: -0.03em; margin-bottom: 3px;
@@ -131,7 +172,7 @@ hr { border: none; border-top: 1px solid #e4eaf2; margin: 18px 0; }
   font-size: 12px; color: #7496b2; margin-bottom: 20px;
 }
 
-/* Cluster cards (Review page) */
+/* ── Cluster cards (Review page) ── */
 .hy-cluster-card {
   background: #ffffff; border: 1px solid #e4eaf2;
   border-radius: 12px; padding: 14px 16px;
@@ -142,7 +183,7 @@ hr { border: none; border-top: 1px solid #e4eaf2; margin: 18px 0; }
   transform: translateY(-1px);
 }
 
-/* Analytics table group headers */
+/* ── Analytics table group headers ── */
 .hy-group-header {
   font-size: 9px; font-weight: 700; text-transform: uppercase;
   letter-spacing: 0.06em; color: #516e81;
@@ -158,7 +199,7 @@ def inject_global_css() -> None:
 
 
 def card(content_fn):
-    """Wrap content in a styled card div."""
+    """Wrap content in a styled card div (legacy helper — prefer st.container(border=True))."""
     st.markdown('<div class="hy-card">', unsafe_allow_html=True)
     content_fn()
     st.markdown('</div>', unsafe_allow_html=True)

@@ -90,8 +90,6 @@ def _weights_dialog():
 
 
 # ── STEP 1: Embed ─────────────────────────────────────────────────────────────
-st.markdown('<div class="hy-card">', unsafe_allow_html=True)
-
 _h1col, _h1chips = st.columns([3, 2])
 with _h1col:
     step_label(1, "Embed", done=has_embeddings)
@@ -246,10 +244,9 @@ else:
             st.session_state["npz_preloaded"]  = False
             st.rerun()
 
-st.markdown('</div>', unsafe_allow_html=True)
+st.divider()
 
 # ── STEP 2: Cluster ───────────────────────────────────────────────────────────
-st.markdown('<div class="hy-card">', unsafe_allow_html=True)
 step_label(2, "Cluster", done=_clustered)
 
 if not has_embeddings:
@@ -370,7 +367,6 @@ else:
         st.session_state["chat_deleted_cluster_indices"] = set()
         st.rerun()
 
-st.markdown('</div>', unsafe_allow_html=True)
 
 # ── Results (shown after clustering) ──────────────────────────────────────────
 if _clustered:
