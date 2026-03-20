@@ -72,6 +72,12 @@ with st.sidebar:
         unsafe_allow_html=True,
     )
 
+    # Nav links — ordered below progress bar (native nav hidden via CSS)
+    st.page_link(_setup_page,     label="Setup")
+    st.page_link(_embed_page,     label="Embed & Cluster")
+    st.page_link(_review_page,    label="Review & Edit")
+    st.page_link(_analytics_page, label="Analytics")
+
     # Status indicator at bottom
     _api_ok  = bool(st.session_state.get("api_key"))
     _row_count = len(st.session_state["df_clean"]) if st.session_state.get("df_clean") is not None else 0

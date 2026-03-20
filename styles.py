@@ -23,25 +23,27 @@ _CSS = """
 [data-testid="stSidebar"] label,
 [data-testid="stSidebar"] .stRadio label { color: #aac0d1 !important; }
 
-/* Streamlit native nav — branded 01/02/03/04 step style */
-[data-testid="stSidebarNavItems"] {
-  padding: 4px 0 !important;
-  margin-bottom: 8px !important;
-  counter-reset: nav-step;
-}
-[data-testid="stSidebarNavLink"] {
-  counter-increment: nav-step;
+/* Hide native nav — replaced by st.page_link() calls below the progress bar */
+[data-testid="stSidebarNavItems"] { display: none !important; }
+
+/* Custom page links — 01/02/03/04 step style via CSS counter on sidebar */
+[data-testid="stSidebar"] { counter-reset: page-nav; }
+[data-testid="stPageLink"] { margin: 1px 0 !important; }
+[data-testid="stPageLink"] a {
+  counter-increment: page-nav;
+  display: block !important;
   border-radius: 8px !important;
   padding: 8px 12px !important;
-  color: #aac0d1 !important;
+  color: #eef2f7 !important;
   font-size: 12px !important;
   font-weight: 600 !important;
   letter-spacing: -0.01em !important;
-  display: block !important;
+  text-decoration: none !important;
+  font-family: 'IBM Plex Sans', sans-serif !important;
   line-height: 1.3 !important;
 }
-[data-testid="stSidebarNavLink"]::before {
-  content: "0" counter(nav-step);
+[data-testid="stPageLink"] a::before {
+  content: "0" counter(page-nav);
   display: block;
   font-family: 'IBM Plex Mono', monospace;
   font-size: 9px;
@@ -50,19 +52,19 @@ _CSS = """
   letter-spacing: 0.08em;
   margin-bottom: 1px;
 }
-[data-testid="stSidebarNavLink"]:hover {
+[data-testid="stPageLink"] a:hover {
   background: #0a4e66 !important;
-  color: #eef2f7 !important;
+  color: #ffffff !important;
 }
-[data-testid="stSidebarNavLink"]:hover::before { color: #aac0d1 !important; }
-[data-testid="stSidebarNavLink"][aria-current="page"] {
+[data-testid="stPageLink"] a:hover::before { color: #aac0d1 !important; }
+[data-testid="stPageLink"] a[aria-current="page"] {
   background: #26B4D218 !important;
   color: #26B4D2 !important;
   font-weight: 700 !important;
   border-left: 2px solid #26B4D2 !important;
   padding-left: 10px !important;
 }
-[data-testid="stSidebarNavLink"][aria-current="page"]::before {
+[data-testid="stPageLink"] a[aria-current="page"]::before {
   color: #26B4D2 !important;
 }
 
