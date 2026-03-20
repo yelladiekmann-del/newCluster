@@ -35,12 +35,12 @@ GRAD_FINANCING_SUBSTRINGS = ("formerly", "private equity-backed")
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _to_year(series: pd.Series) -> pd.Series:
-    """Convert a column of dates or plain years to integer years (Int64)."""
+    """Convert a column of dates or plain years to float years (NaN for missing)."""
     dt = pd.to_datetime(series, errors="coerce", dayfirst=True)
-    years = dt.dt.year.astype("Int64")
+    years = dt.dt.year.astype(float)
     failed = years.isna()
     if failed.any():
-        numeric = pd.to_numeric(series[failed], errors="coerce").astype("Int64")
+        numeric = pd.to_numeric(series[failed], errors="coerce").astype(float)
         years = years.copy()
         years[failed] = numeric
     return years
