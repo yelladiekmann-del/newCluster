@@ -110,17 +110,14 @@ with st.container(border=True):
                 company_col = st.selectbox("Company column", df_input.columns.tolist(), index=idx)
                 st.session_state["company_col"] = company_col
             with col2:
-                desc_options = ["(none — use dimensions)"] + df_input.columns.tolist()
-                desc_default = (
-                    desc_options.index("Description") if "Description" in desc_options else 0
-                )
-                desc_sel = st.selectbox("Description column (optional)", desc_options, index=desc_default)
-                desc_col = None if desc_sel.startswith("(none") else desc_sel
+                desc_options = df_input.columns.tolist()
+                desc_default = desc_options.index("Description") if "Description" in desc_options else 0
+                desc_col = st.selectbox("Description column", desc_options, index=desc_default)
                 st.session_state["desc_col"] = desc_col
             with col_prev:
                 st.write("")
                 st.write("")
-                if st.button("👁 Preview", width="stretch", key="preview_btn", type="secondary"):
+                if st.button("Preview", width="stretch", key="preview_btn", type="secondary"):
                     st.session_state["_show_preview"] = True
 
             @st.dialog("Data preview", width="large")
@@ -271,9 +268,7 @@ with st.container(border=True):
                         io.StringIO(npz["df_json"].tobytes().decode())
                     )
             st.markdown(
-                f'<span class="hy-chip hy-chip-green">✓ Embeddings loaded</span>&nbsp;'
-                f'<span class="hy-chip hy-chip-cyan">{st.session_state["feature_matrix"].shape[0]} companies</span>&nbsp;'
-                f'<span class="hy-chip hy-chip-cyan">dim {st.session_state["feature_matrix"].shape[1]}</span>',
+                '<span class="hy-chip hy-chip-green">✓ Embeddings loaded</span>',
                 unsafe_allow_html=True,
             )
         except Exception as e:

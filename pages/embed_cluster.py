@@ -70,19 +70,7 @@ def _reembed_dialog():
 
 
 # ── STEP 1: Embed ─────────────────────────────────────────────────────────────
-_h1col, _h1chips = st.columns([3, 2])
-with _h1col:
-    step_label(1, "Embed", done=has_embeddings)
-with _h1chips:
-    if has_embeddings:
-        n_emb = st.session_state["feature_matrix"].shape[0]
-        st.markdown(
-            f'<div style="padding-top:10px;text-align:right">'
-            f'<span class="hy-chip hy-chip-cyan">dim {st.session_state["feature_matrix"].shape[1]}</span>&nbsp;'
-            f'<span class="hy-chip hy-chip-cyan">{_EMBED_WORKERS} workers</span>'
-            f'</div>',
-            unsafe_allow_html=True,
-        )
+step_label(1, "Embed", done=has_embeddings)
 
 available_dims = [d for d in DIMENSIONS if df_clean is not None and d in df_clean.columns]
 
@@ -92,12 +80,8 @@ if has_embeddings and npz_preloaded and not st.session_state.get("_reembed_confi
         f'<span class="hy-chip hy-chip-green">✓ Embeddings from uploaded file — {n_emb} companies</span>',
         unsafe_allow_html=True,
     )
-    col_skip, col_reembed = st.columns([2, 1])
-    with col_skip:
-        st.info("Ready to cluster. Scroll to Step 2, or re-embed if you want different embeddings.")
-    with col_reembed:
-        if st.button("↺ Re-embed from scratch", width="stretch"):
-            _reembed_dialog()
+    if st.button("↺ Re-embed from scratch", width="stretch"):
+        _reembed_dialog()
 
 elif has_embeddings and not npz_preloaded:
     n_emb = st.session_state["feature_matrix"].shape[0]
@@ -228,12 +212,13 @@ st.divider()
 
 # ── STEP 2: Cluster ───────────────────────────────────────────────────────────
 step_label(2, "Cluster", done=_clustered)
+st.caption("Adjust the parameters below and click Cluster. Re-run as many times as needed until you're happy with the result.")
 
 if not has_embeddings:
     _reason = (
-        "Add your Gemini API key on the Setup page, then click **⚡ Embed** above."
+        "Add your Gemini API key on the Setup page, then click **Embed** above."
         if not has_api_key
-        else "Click **⚡ Embed** above to generate embeddings, then come back here."
+        else "Click **Embed** above to generate embeddings, then come back here."
     )
     st.info(f"Embeddings not yet generated. {_reason}")
 else:
@@ -440,8 +425,8 @@ if _clustered:
         st.caption("Add a Gemini API key on the Setup page to enable Confirm.")
     st.markdown(
         '<div style="font-size:11px;color:#7496b2;margin-bottom:6px">'
-        'Name them with Gemini and move to the review page. '
-        'You can always come back to re-cluster.</div>',
+        'Gemini will name each cluster, generate descriptions, '
+        'and take you to the review page.</div>',
         unsafe_allow_html=True,
     )
     if st.button(

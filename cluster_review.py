@@ -35,18 +35,7 @@ def _build_auto_description(df_cluster: pd.DataFrame, dimensions: list[str], top
 
 def _cluster_header_line(cluster_name: str, df_cluster: pd.DataFrame, dimensions: list[str]) -> str:
     n = len(df_cluster)
-    top_parts = []
-    for d in dimensions[:2]:
-        if d not in df_cluster.columns:
-            continue
-        top = (
-            df_cluster[d].dropna().str.strip().replace("", pd.NA).dropna()
-            .value_counts().head(1).index.tolist()
-        )
-        if top:
-            top_parts.append(top[0])
-    suffix = "  ·  " + " / ".join(top_parts) if top_parts else ""
-    return f"{cluster_name}  ·  {n}{suffix}"
+    return f"{cluster_name}  ·  {n} {'company' if n == 1 else 'companies'}"
 
 
 def _render_named_cluster(
@@ -55,18 +44,18 @@ def _render_named_cluster(
     company_col: str,
     dimensions: list[str],
 ) -> None:
-    # Rename / Merge / Delete buttons
-    col_rename, col_merge, col_del, _ = st.columns([1, 1, 1, 7])
+    # Action buttons — right-aligned icon style
+    _, col_rename, col_merge, col_del = st.columns([7, 1, 1, 1])
     with col_rename:
-        if st.button("✏️ Rename", key=f"cr_rename_{cluster_name}", width="stretch"):
+        if st.button("✏️", key=f"cr_rename_{cluster_name}", width="stretch", help="Rename cluster"):
             st.session_state["cr_rename_pending"] = cluster_name
             st.rerun()
     with col_merge:
-        if st.button("↔ Merge", key=f"cr_merge_{cluster_name}", width="stretch"):
+        if st.button("↔", key=f"cr_merge_{cluster_name}", width="stretch", help="Merge into another cluster"):
             st.session_state["cr_merge_pending"] = cluster_name
             st.rerun()
     with col_del:
-        if st.button("🗑 Delete", key=f"cr_del_{cluster_name}", width="stretch"):
+        if st.button("🗑", key=f"cr_del_{cluster_name}", width="stretch", help="Delete cluster"):
             st.session_state["cr_delete_pending"] = cluster_name
             st.session_state["cr_delete_target"] = _OUTLIER_LABEL
             st.rerun()
@@ -448,76 +437,79 @@ def render_cluster_review(
         _add_cluster_dialog(df_clean, company_col)
 
     # ── Sort via Gemini ───────────────────────────────────────────────────────
-    st.divider()
-    st.markdown("**🔄 Sort companies via Gemini**")
-    st.caption(
-        "After renaming or restructuring clusters, have Gemini re-read each company's "
-        "description and re-assign it to the best-fitting cluster."
-    )
-
-    col_toggle, col_rerun = st.columns([3, 1])
-    with col_toggle:
-        st.toggle(
-            "Include outliers",
-            key="cr_include_outliers",
-            help="When ON, outlier companies are also sent to Gemini and may be sorted into a cluster.",
+    with st.container(border=True):
+        st.markdown(
+            '<div style="font-size:13px;font-weight:600;color:#0d1f2d;margin-bottom:2px">'
+            'Re-sort via Gemini</div>',
+            unsafe_allow_html=True,
         )
-    with col_rerun:
-        if st.button(
-            "▶ Sort now",
-            key="cr_rerun",
-            type="primary",
-            width="stretch",
-            help="Gemini reads each company's description and reassigns it to the best cluster.",
-            disabled=not api_key,
-        ):
-            named_now = sorted(
-                [c for c in df_clean["Cluster"].unique() if c != _OUTLIER_LABEL],
-                key=lambda c: -(df_clean["Cluster"] == c).sum(),
+        st.caption(
+            "After renaming or restructuring clusters, have Gemini re-read each company's "
+            "description and re-assign it to the best-fitting cluster."
+        )
+        col_toggle, col_rerun = st.columns([3, 1])
+        with col_toggle:
+            st.toggle(
+                "Include outliers",
+                key="cr_include_outliers",
+                help="When ON, outlier companies are also sent to Gemini and may be sorted into a cluster.",
             )
-            include_outliers = st.session_state.get("cr_include_outliers", False)
-            old_clusters = df_clean["Cluster"].copy()
+        with col_rerun:
+            if st.button(
+                "▶ Sort now",
+                key="cr_rerun",
+                type="primary",
+                width="stretch",
+                help="Gemini reads each company's description and reassigns it to the best cluster.",
+                disabled=not api_key,
+            ):
+                named_now = sorted(
+                    [c for c in df_clean["Cluster"].unique() if c != _OUTLIER_LABEL],
+                    key=lambda c: -(df_clean["Cluster"] == c).sum(),
+                )
+                include_outliers = st.session_state.get("cr_include_outliers", False)
+                old_clusters = df_clean["Cluster"].copy()
 
-            assignments, all_reasons = _llm_reassign_all(
-                df_clean, company_col, dimensions, named_now, include_outliers, api_key
-            )
+                assignments, all_reasons = _llm_reassign_all(
+                    df_clean, company_col, dimensions, named_now, include_outliers, api_key
+                )
 
-            if not assignments:
-                st.error("Reassignment returned no results. Check your API key and try again.")
-                return
+                if not assignments:
+                    st.error("Reassignment returned no results. Check your API key and try again.")
+                    return
 
-            df_out = df_clean.copy()
-            for row_idx, new_cluster in assignments.items():
-                df_out.at[row_idx, "Cluster"] = new_cluster
+                df_out = df_clean.copy()
+                for row_idx, new_cluster in assignments.items():
+                    df_out.at[row_idx, "Cluster"] = new_cluster
 
-            reassigned = set(assignments.keys()) & st.session_state.get("chat_deleted_cluster_indices", set())
-            st.session_state["chat_deleted_cluster_indices"] = (
-                st.session_state.get("chat_deleted_cluster_indices", set()) - reassigned
-            )
+                reassigned = set(assignments.keys()) & st.session_state.get("chat_deleted_cluster_indices", set())
+                st.session_state["chat_deleted_cluster_indices"] = (
+                    st.session_state.get("chat_deleted_cluster_indices", set()) - reassigned
+                )
 
-            before_counts = old_clusters.value_counts().to_dict()
-            after_counts  = df_out["Cluster"].value_counts().to_dict()
-            n_outliers_before = before_counts.get(_OUTLIER_LABEL, 0)
-            n_outliers_after  = after_counts.get(_OUTLIER_LABEL, 0)
+                before_counts = old_clusters.value_counts().to_dict()
+                after_counts  = df_out["Cluster"].value_counts().to_dict()
+                n_outliers_before = before_counts.get(_OUTLIER_LABEL, 0)
+                n_outliers_after  = after_counts.get(_OUTLIER_LABEL, 0)
 
-            switch_mask = old_clusters != df_out["Cluster"]
-            switches = []
-            for idx in df_out.index[switch_mask]:
-                company_name = str(df_out.at[idx, company_col]) if company_col in df_out.columns else str(idx)
-                reason = all_reasons.get(idx, "")
-                switches.append((company_name, old_clusters[idx], df_out.at[idx, "Cluster"], reason))
+                switch_mask = old_clusters != df_out["Cluster"]
+                switches = []
+                for idx in df_out.index[switch_mask]:
+                    company_name = str(df_out.at[idx, company_col]) if company_col in df_out.columns else str(idx)
+                    reason = all_reasons.get(idx, "")
+                    switches.append((company_name, old_clusters[idx], df_out.at[idx, "Cluster"], reason))
 
-            st.session_state["cr_rerun_report"] = {
-                "n_switched": len(switches),
-                "n_outliers_before": n_outliers_before,
-                "n_outliers_after": n_outliers_after,
-                "pulled_in": max(0, n_outliers_before - n_outliers_after),
-                "before": before_counts,
-                "after": after_counts,
-                "switches": switches,
-            }
-            st.session_state.df_clean = df_out
-            st.rerun()
+                st.session_state["cr_rerun_report"] = {
+                    "n_switched": len(switches),
+                    "n_outliers_before": n_outliers_before,
+                    "n_outliers_after": n_outliers_after,
+                    "pulled_in": max(0, n_outliers_before - n_outliers_after),
+                    "before": before_counts,
+                    "after": after_counts,
+                    "switches": switches,
+                }
+                st.session_state.df_clean = df_out
+                st.rerun()
 
     if not api_key:
         st.caption("Add a Gemini API key on the Setup page to enable sorting.")
