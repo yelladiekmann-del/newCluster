@@ -85,7 +85,7 @@ with _export_col:
     )
     st.markdown('</div>', unsafe_allow_html=True)
 
-# Top stat row: 3 metrics + quality badge
+# ── Stats row ─────────────────────────────────────────────────────────────────
 stat_col1, stat_col2, stat_col3, stat_qual = st.columns(4)
 with stat_col1:
     st.metric("Companies", n_comp)
@@ -122,107 +122,108 @@ fig.update_layout(
 )
 st.plotly_chart(fig, use_container_width=True)
 
-# ── Cluster cards (click to inspect companies) ─────────────────────────────────
+# ── SECTION 1: Cluster overview cards ─────────────────────────────────────────
+CLUSTER_COLORS = [
+    "#26B4D2", "#F76664", "#7A6ECC", "#F7D864",
+    "#4AC596", "#e8845c", "#516e81", "#7496b2",
+    "#a78bfa", "#34d399", "#fb923c", "#60a5fa",
+]
+
 named_clusters       = [c for c in df["Cluster"].unique() if c != "Outliers"]
 cluster_descriptions = st.session_state.get("cr_cluster_descriptions") or {}
-
-# Cluster color map from Plotly Bold palette
-_bold_colors = px.colors.qualitative.Bold
 _color_map = {
-    cname: _bold_colors[i % len(_bold_colors)]
+    cname: CLUSTER_COLORS[i % len(CLUSTER_COLORS)]
     for i, cname in enumerate(sorted(named_clusters))
 }
 
+st.markdown('<div class="hy-section-title">Cluster overview</div>', unsafe_allow_html=True)
+st.caption("Click any card to see all companies in that cluster.")
+
 if named_clusters:
-    n_card_cols = min(4, len(named_clusters))
-    card_rows = [
-        named_clusters[i:i + n_card_cols]
-        for i in range(0, len(named_clusters), n_card_cols)
-    ]
-    for card_row in card_rows:
-        cols = st.columns(n_card_cols)
-        for col_idx in range(n_card_cols):
-            if col_idx >= len(card_row):
-                break
-            cname = card_row[col_idx]
-            n = int((df["Cluster"] == cname).sum())
-            desc = cluster_descriptions.get(cname, "")
-            first_sentence = desc.split(".")[0].strip() + "." if desc else ""
-            border_color = _color_map.get(cname, "#26B4D2")
-            _is_selected = st.session_state.get("selected_cluster") == cname
-            _card_bg     = "#f0fbfe" if _is_selected else "#ffffff"
-            _border_w    = "2px" if _is_selected else "1px"
-            with cols[col_idx]:
+    _n_cols = 4
+    _card_rows = [named_clusters[i:i + _n_cols] for i in range(0, len(named_clusters), _n_cols)]
+    for _card_row in _card_rows:
+        _cols = st.columns(_n_cols)
+        for _ci, _cname in enumerate(_card_row):
+            _n   = int((df["Cluster"] == _cname).sum())
+            _desc = cluster_descriptions.get(_cname, "")
+            _first = _desc.split(".")[0].strip() + "." if _desc else ""
+            _color = _color_map.get(_cname, "#26B4D2")
+            with _cols[_ci]:
                 st.markdown(
-                    f"<div class='hy-cluster-card' style='"
-                    f"border-top:3px solid {border_color};"
-                    f"border-left:{_border_w} solid #e4eaf2;"
-                    f"border-right:{_border_w} solid #e4eaf2;"
-                    f"border-bottom:{_border_w} solid #e4eaf2;"
-                    f"background:{_card_bg};cursor:pointer'>"
-                    f"<div style='display:flex;justify-content:space-between;"
-                    f"align-items:flex-start;margin-bottom:6px'>"
-                    f"<b style='font-size:13px;color:#0d1f2d'>{cname}</b>"
-                    f"<span style='color:#aac0d1;font-size:13px'>→</span>"
-                    f"</div>"
-                    f"<span class='hy-chip hy-chip-cyan'>{n} companies</span>"
-                    f"<div style='margin-top:6px;color:#7496b2;font-size:11px;"
-                    f"display:-webkit-box;-webkit-line-clamp:2;"
-                    f"-webkit-box-orient:vertical;overflow:hidden;"
-                    f"line-height:1.5'>{first_sentence}</div>"
-                    f"</div>",
+                    f'<div class="hy-cl-card" style="border-top:3px solid {_color}">'
+                    f'<div class="hy-cl-name">{_cname}</div>'
+                    f'<span class="hy-cl-chip">{_n} companies</span>'
+                    f'<div class="hy-cl-desc">{_first}</div>'
+                    f'<div class="hy-cl-arrow">→</div>'
+                    f'</div>',
                     unsafe_allow_html=True,
                 )
-                if st.button("→", key=f"card_click_{cname}", use_container_width=True, type="secondary"):
-                    st.session_state["selected_cluster"] = cname
+                # Invisible full-card click button (overlaid via CSS)
+                if st.button(" ", key=f"card_{_cname}", use_container_width=True):
+                    st.session_state["selected_cluster"] = _cname
                     st.rerun()
 
-# ── Company list dialog for selected cluster ───────────────────────────────────
-_sel_cluster = st.session_state.get("selected_cluster")
-if _sel_cluster and _sel_cluster in named_clusters:
-    @st.dialog(f"{_sel_cluster}", width="large")
-    def _cluster_companies_dialog():
-        df_c = df[df["Cluster"] == _sel_cluster].reset_index(drop=True)
-        st.caption(f"{len(df_c)} companies · click column headers to sort")
-        show_cols = [c for c in [company_col, "Outlier score"] + dimensions if c in df_c.columns]
-        st.dataframe(df_c[show_cols], use_container_width=True, hide_index=True, height=400)
-        if st.button("Close", key="close_cluster_dialog"):
-            st.session_state["selected_cluster"] = None
-            st.rerun()
+# ── SECTION 2: Inline company list panel ──────────────────────────────────────
+_sel = st.session_state.get("selected_cluster")
+if _sel and _sel in named_clusters:
+    _sel_color = _color_map.get(_sel, "#26B4D2")
+    _n_sel     = int((df["Cluster"] == _sel).sum())
+    _companies = df[df["Cluster"] == _sel][company_col].tolist()
 
-    _cluster_companies_dialog()
+    st.markdown(
+        f'<div class="hy-co-panel">'
+        f'<div class="hy-co-panel-header">'
+        f'<div style="display:flex;align-items:center;gap:8px">'
+        f'<div style="width:10px;height:10px;border-radius:50%;'
+        f'background:{_sel_color};flex-shrink:0"></div>'
+        f'<span class="hy-co-panel-title">{_sel}</span>'
+        f'<span class="hy-cl-chip">{_n_sel} companies</span>'
+        f'</div></div></div>',
+        unsafe_allow_html=True,
+    )
+    _cells = "".join(
+        f'<div class="hy-co-row {"hy-co-row-alt" if i % 2 else ""}">'
+        f'<div class="hy-co-dot" style="background:{_sel_color}"></div>{name}</div>'
+        for i, name in enumerate(_companies)
+    )
+    st.markdown(f'<div class="hy-co-grid">{_cells}</div>', unsafe_allow_html=True)
+
+    if st.button("✕ Close", key="close_co_panel"):
+        st.session_state["selected_cluster"] = None
+        st.rerun()
 
 st.divider()
 
-# ── Edit (left) | AI Assistant (right) ────────────────────────────────────────
-col_edit, col_sep, col_chat = st.columns([3, 0.04, 2])
+# ── SECTION 3: Cluster editor (full width) ────────────────────────────────────
+st.markdown('<div class="hy-section-title">Cluster editor</div>', unsafe_allow_html=True)
+st.caption("Expand a cluster to edit its description or browse companies. Use Gemini to re-sort across clusters.")
+render_cluster_review(
+    df_clean=st.session_state.df_clean,
+    company_col=company_col,
+    dimensions=dimensions,
+    api_key=api_key,
+)
 
-with col_edit:
-    st.markdown(
-        '<div style="font-size:14px;font-weight:700;color:#0d1f2d;'
-        'letter-spacing:-0.01em;margin-bottom:2px">Cluster Editor</div>',
-        unsafe_allow_html=True,
-    )
-    st.caption("Expand a cluster to rename, merge, or delete it. Use Gemini to re-sort companies across clusters.")
-    render_cluster_review(
-        df_clean=st.session_state.df_clean,
-        company_col=company_col,
-        dimensions=dimensions,
-        api_key=api_key,
-    )
+# ── SECTION 4: AI Assistant toggle ────────────────────────────────────────────
+st.divider()
+st.session_state.setdefault("chat_open", False)
 
-with col_sep:
-    st.markdown(
-        '<div style="border-left:1px solid #e4eaf2;height:100%;min-height:400px"></div>',
-        unsafe_allow_html=True,
-    )
+_fab_l, _fab_r = st.columns([6, 1])
+with _fab_r:
+    _btn_label = "✕ Close assistant" if st.session_state["chat_open"] else "💬 AI Assistant"
+    if st.button(_btn_label, key="chat_toggle", type="primary", use_container_width=True):
+        st.session_state["chat_open"] = not st.session_state["chat_open"]
+        st.rerun()
 
-with col_chat:
+if st.session_state["chat_open"]:
+    st.markdown('<div class="hy-chat-float">', unsafe_allow_html=True)
     st.markdown(
-        '<div style="font-size:14px;font-weight:700;color:#0d1f2d;'
-        'letter-spacing:-0.01em;margin-bottom:2px">AI Assistant</div>'
-        f'<div style="font-size:11px;color:#7496b2;margin-bottom:12px">'
-        f'Full knowledge of {n_comp} companies across {n_clust} clusters</div>',
+        f'<div class="hy-chat-float-header">'
+        f'<div class="hy-chat-float-title">AI Assistant</div>'
+        f'<div class="hy-chat-float-sub">'
+        f'Full knowledge of {n_comp} companies across {n_clust} clusters'
+        f'</div></div>',
         unsafe_allow_html=True,
     )
     render_cluster_chat(
@@ -231,9 +232,11 @@ with col_chat:
         dimensions=dimensions,
         api_key=api_key,
     )
+    st.markdown('</div>', unsafe_allow_html=True)
 
+# ── SECTION 5: CTA ────────────────────────────────────────────────────────────
 st.divider()
-_cta_l, _cta_r = st.columns([3, 1])
+_cta_l, _cta_r = st.columns([4, 1])
 with _cta_r:
     if st.button("Continue to Analytics →", type="primary", use_container_width=True):
         st.switch_page("pages/analytics.py")

@@ -222,6 +222,165 @@ hr { border: none; border-top: 1px solid #e4eaf2; margin: 18px 0; }
   background: #26B4D218; border: 1px solid #26B4D218;
   border-radius: 5px; padding: 3px 6px; text-align: center;
 }
+
+/* ── Section titles (Review page) ── */
+.hy-section-title {
+  font-size: 13px; font-weight: 700; color: #0d1f2d;
+  letter-spacing: -0.01em; margin-bottom: 2px; margin-top: 4px;
+}
+
+/* ── Cluster overview cards ── */
+.hy-cl-card {
+  background: #fff;
+  border: 1px solid #e4eaf2;
+  border-radius: 11px;
+  padding: 14px 15px 12px;
+  cursor: pointer;
+  transition: box-shadow 0.15s, transform 0.12s;
+  position: relative;
+  margin-bottom: 4px;
+  min-height: 110px;
+}
+.hy-cl-card:hover {
+  box-shadow: 0 4px 16px rgba(0,30,50,0.10);
+  transform: translateY(-1px);
+}
+.hy-cl-name {
+  font-size: 12px; font-weight: 700;
+  color: #0d1f2d; letter-spacing: -0.01em;
+  line-height: 1.3; margin-bottom: 6px;
+  padding-right: 18px;
+}
+.hy-cl-chip {
+  display: inline-flex; align-items: center;
+  padding: 2px 8px;
+  background: #26B4D215; border: 1px solid #26B4D230;
+  border-radius: 20px; font-size: 10px;
+  font-weight: 600; color: #1a8fa8;
+  margin-bottom: 8px;
+}
+.hy-cl-desc {
+  font-size: 10.5px; color: #7496b2;
+  line-height: 1.55;
+}
+.hy-cl-arrow {
+  position: absolute; top: 13px; right: 12px;
+  width: 18px; height: 18px; border-radius: 5px;
+  border: 1px solid #e4eaf2;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 10px; color: #aac0d1;
+  opacity: 0.5;
+}
+
+/* Invisible full-card click button overlay */
+.element-container:has(.hy-cl-card) + .element-container .stButton button {
+  position: relative !important;
+  margin-top: -118px !important;
+  height: 118px !important;
+  opacity: 0 !important;
+  cursor: pointer !important;
+  z-index: 10 !important;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+/* ── Inline company list panel ── */
+.hy-co-panel {
+  background: #fff;
+  border: 1px solid #e4eaf2;
+  border-radius: 12px;
+  overflow: hidden;
+  margin-bottom: 20px;
+}
+.hy-co-panel-header {
+  padding: 12px 16px;
+  border-bottom: 1px solid #eef2f7;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.hy-co-panel-title {
+  font-size: 12px; font-weight: 700; color: #0d1f2d;
+}
+.hy-co-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  background: #eef2f7;
+  max-height: 280px;
+  overflow-y: auto;
+}
+.hy-co-row {
+  background: #fff;
+  padding: 8px 12px;
+  font-size: 11px;
+  color: #0d1f2d;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.hy-co-row-alt { background: #f7f9fc; }
+.hy-co-dot {
+  width: 5px; height: 5px;
+  border-radius: 50%; flex-shrink: 0;
+}
+
+/* ── Cluster editor row style ── */
+.hy-editor-row {
+  display: flex; align-items: center;
+  justify-content: space-between;
+  padding: 9px 13px;
+  border: 1px solid #eef2f7;
+  border-radius: 9px;
+  margin-bottom: 6px;
+  background: #f7f9fc;
+}
+.hy-editor-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%; flex-shrink: 0;
+}
+.hy-editor-name {
+  font-size: 12px; font-weight: 600; color: #0d1f2d;
+}
+.hy-editor-count {
+  font-size: 11px; color: #aac0d1; margin-left: 4px;
+}
+
+/* ── Re-sort box ── */
+.hy-resort-box {
+  background: #f7f9fc;
+  border: 1px solid #e4eaf2;
+  border-radius: 9px;
+  padding: 14px 16px;
+  margin-top: 14px;
+}
+
+/* ── AI Assistant floating panel ── */
+.hy-chat-float {
+  background: #fff;
+  border: 1px solid #e4eaf2;
+  border-radius: 14px;
+  overflow: hidden;
+  margin-top: 16px;
+  box-shadow: 0 8px 32px rgba(0,30,50,0.12);
+}
+.hy-chat-float-header {
+  padding: 14px 18px 10px;
+  border-bottom: 1px solid #eef2f7;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  background: #001f2b;
+}
+.hy-chat-float-title {
+  font-size: 13px; font-weight: 700;
+  color: #fff; letter-spacing: -0.01em;
+}
+.hy-chat-float-sub {
+  font-size: 10px; color: #7496b2; margin-top: 2px;
+}
+[data-testid="stElementToolbar"] { display: none !important; }
 """
 
 
