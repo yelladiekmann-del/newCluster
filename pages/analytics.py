@@ -207,12 +207,14 @@ def _compute(
             dd = cmap.get("deal_date")
             if ds and ds in de.columns:
                 deal_vals = pd.to_numeric(de[ds], errors="coerce")
+                # Only include rows where deal size is actually present
+                valid_size = deal_vals.notna()
 
                 if dd and dd in de.columns:
                     yrs = _to_year(de[dd])
-                    mask_4yr  = (yrs >= Y - 3) & (yrs <= Y)
-                    mask_rec  = (yrs >= Y - 1) & (yrs <= Y)
-                    mask_prev = (yrs >= Y - 3) & (yrs <= Y - 2)
+                    mask_4yr  = (yrs >= Y - 3) & (yrs <= Y) & valid_size
+                    mask_rec  = (yrs >= Y - 1) & (yrs <= Y) & valid_size
+                    mask_prev = (yrs >= Y - 3) & (yrs <= Y - 2) & valid_size
                     r["Σ Invested (4 J.)"] = round(float(deal_vals[mask_4yr].sum()), 1)
                     rec_sum  = deal_vals[mask_rec].sum()
                     prev_sum = deal_vals[mask_prev].sum()
