@@ -9,6 +9,7 @@ import plotly.express as px
 import streamlit as st
 from sklearn.preprocessing import normalize
 
+from styles import inject_global_css, page_header, step_label
 from utils import (
     DIMENSION_WEIGHTS,
     DIMENSIONS,
@@ -23,6 +24,8 @@ from utils import (
     run_clustering,
 )
 
+inject_global_css()
+
 # ── Gate ─────────────────────────────────────────────────────────────────────
 api_key     = st.session_state.get("api_key", "")
 df_clean    = st.session_state.get("df_clean")
@@ -30,13 +33,13 @@ company_col = st.session_state.get("company_col", "name")
 desc_col    = st.session_state.get("desc_col", None)
 
 if df_clean is None and st.session_state.get("feature_matrix") is None:
-    st.title("⚡ Embed & Cluster")
+    page_header("Embed & Cluster", "Generate vector embeddings and run HDBSCAN clustering.")
     st.info("Upload your data first — go to **Setup** to get started.")
     if st.button("Go to Setup →", type="primary"):
         st.switch_page("pages/setup.py")
     st.stop()
 
-st.title("⚡ Embed & Cluster")
+page_header("Embed & Cluster", "Generate vector embeddings and run HDBSCAN clustering.")
 
 has_api_key    = bool(api_key)
 has_embeddings = st.session_state.get("feature_matrix") is not None
@@ -48,11 +51,7 @@ _clustered     = (
 
 custom_weights = st.session_state.get("custom_weights") or dict(DIMENSION_WEIGHTS)
 
-# ── STEP 1: Embed ─────────────────────────────────────────────────────────────
-st.subheader("Step 1 · Embed")
-
-available_dims = [d for d in DIMENSIONS if df_clean is not None and d in df_clean.columns]
-
+# ── Dialogs ───────────────────────────────────────────────────────────────────
 
 @st.dialog("Confirm re-embed", width="large")
 def _reembed_dialog():
@@ -90,9 +89,31 @@ def _weights_dialog():
         st.rerun()
 
 
+# ── STEP 1: Embed ─────────────────────────────────────────────────────────────
+st.markdown('<div class="hy-card">', unsafe_allow_html=True)
+
+_h1col, _h1chips = st.columns([3, 2])
+with _h1col:
+    step_label(1, "Embed", done=has_embeddings)
+with _h1chips:
+    if has_embeddings:
+        n_emb = st.session_state["feature_matrix"].shape[0]
+        st.markdown(
+            f'<div style="padding-top:10px;text-align:right">'
+            f'<span class="hy-chip hy-chip-cyan">dim {st.session_state["feature_matrix"].shape[1]}</span>&nbsp;'
+            f'<span class="hy-chip hy-chip-cyan">{_EMBED_WORKERS} workers</span>'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+
+available_dims = [d for d in DIMENSIONS if df_clean is not None and d in df_clean.columns]
+
 if has_embeddings and npz_preloaded and not st.session_state.get("_reembed_confirmed"):
     n_emb = st.session_state["feature_matrix"].shape[0]
-    st.success(f"✔ Embeddings loaded from uploaded file — {n_emb} companies, dim {st.session_state['feature_matrix'].shape[1]}.")
+    st.markdown(
+        f'<span class="hy-chip hy-chip-green">✓ Embeddings from uploaded file — {n_emb} companies</span>',
+        unsafe_allow_html=True,
+    )
     col_skip, col_reembed = st.columns([2, 1])
     with col_skip:
         st.info("Ready to cluster. Scroll to Step 2, or re-embed if you want different embeddings.")
@@ -102,8 +123,11 @@ if has_embeddings and npz_preloaded and not st.session_state.get("_reembed_confi
 
 elif has_embeddings and not npz_preloaded:
     n_emb = st.session_state["feature_matrix"].shape[0]
-    st.success(f"✔ {n_emb} companies embedded (dim {st.session_state['feature_matrix'].shape[1]}). Ready to cluster.")
-    col_dl, col_reembed = st.columns([2, 1])
+    st.markdown(
+        f'<span class="hy-chip hy-chip-green">✓ {n_emb} companies embedded</span>',
+        unsafe_allow_html=True,
+    )
+    col_dl, col_wt, col_reembed = st.columns([2, 1, 1])
     with col_dl:
         _buf = io.BytesIO()
         np.savez_compressed(
@@ -116,11 +140,15 @@ elif has_embeddings and not npz_preloaded:
         )
         _buf.seek(0)
         st.download_button(
-            "⬇ Save embeddings (.npz)",
+            "↓ Save .npz",
             _buf, "embeddings.npz", "application/octet-stream",
             width="stretch",
             key="dl_emb_step1",
+            type="secondary",
         )
+    with col_wt:
+        if st.button("⚙ Dimension weights", width="stretch", key="wt_btn_top", type="secondary"):
+            st.session_state["_show_weights"] = True
     with col_reembed:
         if st.button("↺ Re-embed", width="stretch"):
             if _clustered:
@@ -129,10 +157,12 @@ elif has_embeddings and not npz_preloaded:
                 st.session_state["_reembed_confirmed"] = True
                 st.rerun()
 
+    if st.session_state.pop("_show_weights", False):
+        _weights_dialog()
+
 else:
     # No embeddings yet (or re-embed confirmed)
     if st.session_state.pop("_reembed_confirmed", False):
-        # Clear old embeddings and clustering
         st.session_state["feature_matrix"]    = None
         st.session_state["embedded_2d"]       = None
         st.session_state["npz_preloaded"]     = False
@@ -151,7 +181,7 @@ else:
     else:
         col_emb, col_wt = st.columns([4, 1])
         with col_wt:
-            if st.button("⚙ Weights…"):
+            if st.button("⚙ Dimension weights", key="wt_btn_embed", type="secondary"):
                 st.session_state["_show_weights"] = True
 
         if st.session_state.pop("_show_weights", False):
@@ -216,10 +246,11 @@ else:
             st.session_state["npz_preloaded"]  = False
             st.rerun()
 
-st.divider()
+st.markdown('</div>', unsafe_allow_html=True)
 
 # ── STEP 2: Cluster ───────────────────────────────────────────────────────────
-st.subheader("Step 2 · Cluster")
+st.markdown('<div class="hy-card">', unsafe_allow_html=True)
+step_label(2, "Cluster", done=_clustered)
 
 if not has_embeddings:
     _reason = (
@@ -229,7 +260,16 @@ if not has_embeddings:
     )
     st.info(f"Embeddings not yet generated. {_reason}")
 else:
-    # ── Clustering parameter controls ─────────────────────────────────────────
+    # Cyan info banner with tip about Suggest optimal
+    st.markdown(
+        '<div style="background:#26B4D218;border:1px solid #26B4D230;border-radius:9px;'
+        'padding:10px 14px;margin-bottom:14px;font-size:12px;color:#0d1f2d">'
+        '💡 <strong>Tip:</strong> Click <em>✨ Suggest optimal</em> to auto-tune HDBSCAN '
+        'parameters for your dataset. Then fine-tune manually if needed.'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+
     _at = st.session_state.get("autotune_result")
     if _at and _at.get("n_clusters", 0) > 0:
         st.success(
@@ -249,20 +289,48 @@ else:
             "Min cluster size", 2, 30, _at_mcs,
             help="Minimum companies to form a cluster. Lower → more, smaller clusters.",
         )
+        st.markdown(
+            f'<div style="text-align:right;margin-top:-8px">'
+            f'<span style="font-family:IBM Plex Mono,monospace;font-size:10px;'
+            f'background:#001f2b;color:#fff;padding:1px 6px;border-radius:4px">'
+            f'{min_cluster_size}</span></div>',
+            unsafe_allow_html=True,
+        )
     with col2:
         min_samples = st.slider(
             "Min samples", 1, 20, _at_ms,
             help="HDBSCAN conservatism. Higher → stricter, more outliers.",
+        )
+        st.markdown(
+            f'<div style="text-align:right;margin-top:-8px">'
+            f'<span style="font-family:IBM Plex Mono,monospace;font-size:10px;'
+            f'background:#001f2b;color:#fff;padding:1px 6px;border-radius:4px">'
+            f'{min_samples}</span></div>',
+            unsafe_allow_html=True,
         )
     with col3:
         cluster_epsilon = st.slider(
             "Cluster epsilon", 0.0, 2.0, _at_eps, step=0.1,
             help="Merges clusters within this distance. 0 = pure HDBSCAN.",
         )
+        st.markdown(
+            f'<div style="text-align:right;margin-top:-8px">'
+            f'<span style="font-family:IBM Plex Mono,monospace;font-size:10px;'
+            f'background:#001f2b;color:#fff;padding:1px 6px;border-radius:4px">'
+            f'{cluster_epsilon}</span></div>',
+            unsafe_allow_html=True,
+        )
     with col4:
         umap_cluster_dims = st.slider(
             "UMAP cluster dims", 5, 50, 15,
             help="Dimensions used for HDBSCAN. Higher = more signal preserved.",
+        )
+        st.markdown(
+            f'<div style="text-align:right;margin-top:-8px">'
+            f'<span style="font-family:IBM Plex Mono,monospace;font-size:10px;'
+            f'background:#001f2b;color:#fff;padding:1px 6px;border-radius:4px">'
+            f'{umap_cluster_dims}</span></div>',
+            unsafe_allow_html=True,
         )
 
     col_cluster, col_autotune = st.columns([2, 1])
@@ -298,169 +366,179 @@ else:
         st.session_state["df_clean"]        = df_result
         st.session_state["embedded_2d"]     = embedded_2d
         st.session_state["cluster_metrics"] = metrics
-        st.session_state["clusters_confirmed"] = False  # reset on re-cluster
+        st.session_state["clusters_confirmed"] = False
         st.session_state["chat_deleted_cluster_indices"] = set()
         st.rerun()
 
-    # ── Results (shown after clustering) ──────────────────────────────────────
-    if _clustered:
-        df      = st.session_state["df_clean"]
-        metrics = st.session_state.get("cluster_metrics") or {}
+st.markdown('</div>', unsafe_allow_html=True)
 
-        # Slim header: quality indicator
-        sil = metrics.get("silhouette")
-        db  = metrics.get("davies_bouldin")
+# ── Results (shown after clustering) ──────────────────────────────────────────
+if _clustered:
+    df      = st.session_state["df_clean"]
+    metrics = st.session_state.get("cluster_metrics") or {}
 
-        def _quality_signal(sil, db):
-            signals = []
-            if sil is not None:
-                signals.append("good" if sil >= 0.5 else ("fair" if sil >= 0.3 else "poor"))
-            if db is not None:
-                signals.append("good" if db < 1.0 else ("fair" if db < 1.5 else "poor"))
-            if not signals:
-                return "n/a", "#888"
-            if "poor" in signals:
-                return "Poor", "#d9534f"
-            if "fair" in signals:
-                return "Fair", "#f0ad4e"
-            return "Good", "#5cb85c"
+    sil = metrics.get("silhouette")
+    db  = metrics.get("davies_bouldin")
 
-        q_label, q_color = _quality_signal(sil, db)
-        sil_str = f"{sil:.3f}" if sil is not None else "n/a"
-        db_str  = f"{db:.3f}" if db is not None else "n/a"
-        n_comp  = len(df)
-        n_clust = df["Cluster"].nunique() - (1 if "Outliers" in df["Cluster"].values else 0)
-        n_out   = int((df["Cluster"] == "Outliers").sum())
+    def _quality_signal(sil, db):
+        signals = []
+        if sil is not None:
+            signals.append("good" if sil >= 0.5 else ("fair" if sil >= 0.3 else "poor"))
+        if db is not None:
+            signals.append("good" if db < 1.0 else ("fair" if db < 1.5 else "poor"))
+        if not signals:
+            return "n/a", "#888"
+        if "poor" in signals:
+            return "Poor", "#d9534f"
+        if "fair" in signals:
+            return "Fair", "#f0ad4e"
+        return "Good", "#5cb85c"
 
-        col_stats, col_quality = st.columns([3, 2])
-        with col_stats:
-            st.markdown(
-                f"<span style='color:#888'>{n_comp} companies · "
-                f"{n_clust} clusters · {n_out} outliers</span>",
-                unsafe_allow_html=True,
-            )
-        with col_quality:
-            st.markdown(
-                f"<span style='color:{q_color}; font-size:1.1em'>●</span> "
-                f"**Quality: {q_label}** "
-                f"<span style='color:#888; font-size:0.85em'>(Sil {sil_str} · DB {db_str})</span>",
-                unsafe_allow_html=True,
-            )
+    q_label, q_color = _quality_signal(sil, db)
+    sil_str = f"{sil:.3f}" if sil is not None else "n/a"
+    db_str  = f"{db:.3f}" if db is not None else "n/a"
+    n_comp  = len(df)
+    n_clust = df["Cluster"].nunique() - (1 if "Outliers" in df["Cluster"].values else 0)
+    n_out   = int((df["Cluster"] == "Outliers").sum())
 
-        # UMAP scatter
-        hover_cols = [c for c in [company_col, "Outlier score"] + DIMENSIONS if c in df.columns]
-        fig = px.scatter(
-            df, x="_x", y="_y", color="Cluster",
-            hover_data=hover_cols,
-            color_discrete_sequence=px.colors.qualitative.Bold,
-            height=480,
-        )
-        fig.update_traces(marker=dict(size=7, opacity=0.80))
-        fig.update_layout(
-            margin=dict(l=0, r=0, t=20, b=0),
-            xaxis=dict(title="", showticklabels=False, showgrid=False, zeroline=False),
-            yaxis=dict(title="", showticklabels=False, showgrid=False, zeroline=False),
-            dragmode="lasso",
-        )
-        st.plotly_chart(fig, use_container_width=True)
-
-        # Inspect tabs (non-core)
-        dims_present   = [d for d in DIMENSIONS if d in df.columns]
-        named_clusters = [c for c in df["Cluster"].unique() if c != "Outliers"]
-
-        with st.expander("🔍 Inspect: Profiles & Outliers"):
-            tab_profiles, tab_outliers = st.tabs(["Profiles", "Outliers"])
-
-            with tab_profiles:
-                if dims_present and named_clusters:
-                    profile_rows = []
-                    for dim in dims_present:
-                        row_data = {"Dimension": dim}
-                        for cname in sorted(named_clusters):
-                            top = (
-                                df.loc[df["Cluster"] == cname, dim]
-                                .dropna().str.strip().replace("", pd.NA).dropna()
-                                .value_counts().head(1).index.tolist()
-                            )
-                            row_data[cname] = top[0] if top else "—"
-                        profile_rows.append(row_data)
-                    st.dataframe(
-                        pd.DataFrame(profile_rows).set_index("Dimension"),
-                        use_container_width=True,
-                    )
-                else:
-                    st.info("No dimension data available.")
-
-            with tab_outliers:
-                if "Outlier score" in df.columns:
-                    fig_out = px.histogram(
-                        df[df["Cluster"] != "Outliers"],
-                        x="Outlier score", color="Cluster",
-                        nbins=30, barmode="overlay", opacity=0.7, height=260,
-                        color_discrete_sequence=px.colors.qualitative.Bold,
-                    )
-                    fig_out.update_layout(
-                        margin=dict(l=0, r=0, t=10, b=0), showlegend=False
-                    )
-                    st.plotly_chart(fig_out, use_container_width=True)
-                df_out_tab = df[df["Cluster"] == "Outliers"]
-                if len(df_out_tab) > 0:
-                    show_out = [
-                        c for c in [company_col, "Outlier score"] + dims_present
-                        if c in df.columns
-                    ]
-                    st.dataframe(
-                        df_out_tab[show_out], use_container_width=True,
-                        hide_index=True, height=300,
-                    )
-                else:
-                    st.info("No outliers.")
-
-        # Downloads
-        show_cols_dl = [
-            c for c in [company_col, "Cluster", "Outlier score"] + DIMENSIONS
-            if c in df.columns
-        ]
-        col_dl1, col_dl2 = st.columns(2)
-        with col_dl1:
-            st.download_button(
-                "⬇ Download cluster CSV",
-                df[show_cols_dl].to_csv(index=False),
-                "clusters_preview.csv", "text/csv",
-                width="stretch",
-                key="dl_cluster_csv",
-            )
-        with col_dl2:
-            if st.session_state.get("feature_matrix") is not None:
-                _buf2 = io.BytesIO()
-                np.savez_compressed(
-                    _buf2,
-                    embedded_2d=st.session_state["embedded_2d"],
-                    feature_matrix=st.session_state["feature_matrix"],
-                    df_json=np.frombuffer(
-                        st.session_state["df_clean"].to_json().encode(), dtype=np.uint8
-                    ),
-                )
-                _buf2.seek(0)
-                st.download_button(
-                    "⬇ Save embeddings (.npz)",
-                    _buf2, "embeddings.npz", "application/octet-stream",
-                    width="stretch",
-                    key="dl_emb_step2",
-                )
-
-        st.divider()
-
-        # ── Confirm CTA ────────────────────────────────────────────────────────
+    col_stats, col_quality = st.columns([3, 2])
+    with col_stats:
         st.markdown(
-            "Happy with these clusters? Click **Confirm** to name them and move to the "
-            "review page. You can always come back to re-cluster."
+            f"<span style='color:#7496b2'>{n_comp} companies · "
+            f"{n_clust} clusters · {n_out} outliers</span>",
+            unsafe_allow_html=True,
+        )
+    with col_quality:
+        st.markdown(
+            f"<span style='color:{q_color}; font-size:1.1em'>●</span> "
+            f"<strong>Quality: {q_label}</strong> "
+            f"<span style='font-family:IBM Plex Mono,monospace;font-size:0.82em;color:#7496b2'>"
+            f"Sil {sil_str} · DB {db_str}</span>",
+            unsafe_allow_html=True,
         )
 
+    # UMAP scatter — completely unchanged
+    hover_cols = [c for c in [company_col, "Outlier score"] + DIMENSIONS if c in df.columns]
+    fig = px.scatter(
+        df, x="_x", y="_y", color="Cluster",
+        hover_data=hover_cols,
+        color_discrete_sequence=px.colors.qualitative.Bold,
+        height=480,
+    )
+    fig.update_traces(marker=dict(size=7, opacity=0.80))
+    fig.update_layout(
+        margin=dict(l=0, r=0, t=20, b=0),
+        xaxis=dict(title="", showticklabels=False, showgrid=False, zeroline=False),
+        yaxis=dict(title="", showticklabels=False, showgrid=False, zeroline=False),
+        dragmode="lasso",
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+    # Inspect tabs
+    dims_present   = [d for d in DIMENSIONS if d in df.columns]
+    named_clusters = [c for c in df["Cluster"].unique() if c != "Outliers"]
+
+    with st.expander("🔍 Inspect: Profiles & Outliers"):
+        tab_profiles, tab_outliers = st.tabs(["Profiles", "Outliers"])
+
+        with tab_profiles:
+            if dims_present and named_clusters:
+                profile_rows = []
+                for dim in dims_present:
+                    row_data = {"Dimension": dim}
+                    for cname in sorted(named_clusters):
+                        top = (
+                            df.loc[df["Cluster"] == cname, dim]
+                            .dropna().str.strip().replace("", pd.NA).dropna()
+                            .value_counts().head(1).index.tolist()
+                        )
+                        row_data[cname] = top[0] if top else "—"
+                    profile_rows.append(row_data)
+                st.dataframe(
+                    pd.DataFrame(profile_rows).set_index("Dimension"),
+                    use_container_width=True,
+                    hide_index=True,
+                )
+            else:
+                st.info("No dimension data available.")
+
+        with tab_outliers:
+            if "Outlier score" in df.columns:
+                fig_out = px.histogram(
+                    df[df["Cluster"] != "Outliers"],
+                    x="Outlier score", color="Cluster",
+                    nbins=30, barmode="overlay", opacity=0.7, height=260,
+                    color_discrete_sequence=px.colors.qualitative.Bold,
+                )
+                fig_out.update_layout(
+                    margin=dict(l=0, r=0, t=10, b=0), showlegend=False
+                )
+                st.plotly_chart(fig_out, use_container_width=True)
+            df_out_tab = df[df["Cluster"] == "Outliers"]
+            if len(df_out_tab) > 0:
+                show_out = [
+                    c for c in [company_col, "Outlier score"] + dims_present
+                    if c in df.columns
+                ]
+                st.dataframe(
+                    df_out_tab[show_out], use_container_width=True,
+                    hide_index=True, height=300,
+                )
+            else:
+                st.info("No outliers.")
+
+    # Downloads
+    show_cols_dl = [
+        c for c in [company_col, "Cluster", "Outlier score"] + DIMENSIONS
+        if c in df.columns
+    ]
+    col_dl1, col_dl2 = st.columns(2)
+    with col_dl1:
+        st.download_button(
+            "⬇ Download cluster CSV",
+            df[show_cols_dl].to_csv(index=False),
+            "clusters_preview.csv", "text/csv",
+            width="stretch",
+            key="dl_cluster_csv",
+        )
+    with col_dl2:
+        if st.session_state.get("feature_matrix") is not None:
+            _buf2 = io.BytesIO()
+            np.savez_compressed(
+                _buf2,
+                embedded_2d=st.session_state["embedded_2d"],
+                feature_matrix=st.session_state["feature_matrix"],
+                df_json=np.frombuffer(
+                    st.session_state["df_clean"].to_json().encode(), dtype=np.uint8
+                ),
+            )
+            _buf2.seek(0)
+            st.download_button(
+                "⬇ Save embeddings (.npz)",
+                _buf2, "embeddings.npz", "application/octet-stream",
+                width="stretch",
+                key="dl_emb_step2",
+            )
+
+    # ── Confirm CTA banner ────────────────────────────────────────────────────
+    _banner_l, _banner_r = st.columns([3, 1])
+    with _banner_l:
+        st.markdown(
+            '<div style="background:#001f2b;border-radius:12px;padding:20px 24px;">'
+            '<div style="color:#ffffff;font-size:15px;font-weight:700;'
+            'letter-spacing:-0.01em">Happy with these clusters?</div>'
+            '<div style="color:#7496b2;font-size:12px;margin-top:3px">'
+            'Name them with Gemini and move to the review page. '
+            'You can always come back to re-cluster.</div>'
+            '</div>',
+            unsafe_allow_html=True,
+        )
+    with _banner_r:
+        if not has_api_key:
+            st.caption("Add a Gemini API key on the Setup page to enable Confirm.")
         if st.button(
-            "✓ Confirm clusters",
+            "Confirm & name clusters →",
             type="primary",
-            width="content",
             disabled=not has_api_key,
             help="Names all clusters via Gemini, generates descriptions, then opens Review & Edit.",
             key="confirm_btn",
@@ -495,7 +573,6 @@ else:
                         _profiles, _llm_names, api_key
                     )
 
-                # Pre-populate cr_cluster_descriptions with LLM-generated descriptions
                 _existing_descs = st.session_state.get("cr_cluster_descriptions") or {}
                 for _idx, _name in _llm_names.items():
                     if _name not in _existing_descs and _name in _descriptions:
@@ -508,6 +585,3 @@ else:
                     "Naming failed — keeping numeric labels. "
                     "Check your API key and try again."
                 )
-
-        if not has_api_key:
-            st.caption("Add a Gemini API key on the Setup page to enable Confirm.")

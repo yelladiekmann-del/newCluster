@@ -11,17 +11,36 @@ from dimension_extraction import (
     _BATCH_SIZE as _DIM_BATCH_SIZE,
     extract_dimensions,
 )
+from styles import inject_global_css, page_header, step_label, chip
+
+inject_global_css()
 
 # ── Read shared state ─────────────────────────────────────────────────────────
 api_key = st.session_state.get("api_key", "")
 
-st.title("⚙️ Setup")
-st.caption("Connect your API key, upload your data, and prepare dimensions.")
+# ── Page header ───────────────────────────────────────────────────────────────
+_hcol, _status_col = st.columns([4, 1])
+with _hcol:
+    page_header(
+        "Setup",
+        "Connect your API key, upload company data, and extract AI dimensions.",
+    )
+with _status_col:
+    _df_c = st.session_state.get("df_clean")
+    _fm   = st.session_state.get("feature_matrix")
+    _all_ready = bool(api_key) and (_df_c is not None or _fm is not None)
+    if _all_ready:
+        st.markdown(
+            '<div style="text-align:right;padding-top:14px">'
+            '<span class="hy-chip hy-chip-green">✓ Ready to embed</span>'
+            '</div>',
+            unsafe_allow_html=True,
+        )
 
-st.divider()
+st.markdown('<div class="hy-card">', unsafe_allow_html=True)
 
 # ── Step 1: API Key ───────────────────────────────────────────────────────────
-st.subheader("1 · API Key")
+step_label(1, "Gemini API Key", done=bool(api_key))
 
 # Prevent Chrome from suggesting to save this as a login credential.
 st.markdown(
@@ -48,14 +67,18 @@ with st.form("api_key_form", border=False):
 api_key = st.session_state.get("api_key", "")
 
 if api_key:
-    st.success("✔ API key set.")
+    st.markdown(
+        '<span class="hy-chip hy-chip-green">✓ Verified · Gemini 2.5 Flash accessible</span>',
+        unsafe_allow_html=True,
+    )
 else:
     st.info("Enter your Gemini API key above and click **Save** to continue.")
 
-st.divider()
+st.markdown('</div>', unsafe_allow_html=True)
 
 # ── Step 2: Data Upload ───────────────────────────────────────────────────────
-st.subheader("2 · Data")
+st.markdown('<div class="hy-card">', unsafe_allow_html=True)
+step_label(2, "Company Data", done=st.session_state.get("df_clean") is not None)
 
 uploaded = st.file_uploader("CSV or Excel file", type=["csv", "xlsx", "xls"])
 
@@ -66,11 +89,13 @@ desc_col    = st.session_state.get("desc_col", None)
 # Show persisted data status when returning to this page without re-uploading
 _df_persisted = st.session_state.get("df_clean")
 if not uploaded and _df_persisted is not None:
-    st.info(
-        f"✔ Data already loaded: **{len(_df_persisted)} companies** · "
-        f"Company column: `{company_col}`"
-        + (f" · Description column: `{desc_col}`" if desc_col else "")
-        + "  \nUpload a new file below to replace it."
+    st.markdown(
+        f'<span class="hy-chip hy-chip-cyan">✓ Data loaded</span>&nbsp;'
+        f'<span class="hy-chip hy-chip-cyan">{len(_df_persisted)} rows</span>&nbsp;'
+        f'<span class="hy-chip hy-chip-cyan">Company: {company_col}</span>'
+        + (f'&nbsp;<span class="hy-chip hy-chip-cyan">Description: {desc_col}</span>' if desc_col else "")
+        + '<br><small style="color:#7496b2;font-size:11px">Upload a new file below to replace it.</small>',
+        unsafe_allow_html=True,
     )
     df_input = _df_persisted
 
@@ -80,7 +105,13 @@ if uploaded:
             pd.read_csv(uploaded) if uploaded.name.endswith(".csv")
             else pd.read_excel(uploaded)
         )
-        st.success(f"✔ {len(df_input)} rows · {len(df_input.columns)} columns loaded")
+        # Inline chips: filename, row count, col count
+        st.markdown(
+            f'<span class="hy-chip hy-chip-cyan">{uploaded.name}</span>&nbsp;'
+            f'<span class="hy-chip hy-chip-green">{len(df_input)} rows</span>&nbsp;'
+            f'<span class="hy-chip hy-chip-cyan">{len(df_input.columns)} columns</span>',
+            unsafe_allow_html=True,
+        )
 
         col1, col2, col_prev = st.columns([2, 2, 1])
         with col1:
@@ -98,7 +129,7 @@ if uploaded:
         with col_prev:
             st.write("")
             st.write("")
-            if st.button("👁 Preview", width="stretch"):
+            if st.button("👁 Preview", width="stretch", key="preview_btn", type="secondary"):
                 st.session_state["_show_preview"] = True
 
         @st.dialog("Data preview", width="large")
@@ -111,8 +142,9 @@ if uploaded:
             _preview_dialog()
 
         # ── Dimension extraction ──────────────────────────────────────────────
-        st.divider()
-        st.subheader("3 · Dimensions")
+        st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown('<div class="hy-card">', unsafe_allow_html=True)
+        step_label(3, "AI Dimensions", done=all(d in df_input.columns for d in EXTRACTED_DIMENSIONS))
 
         _fresh = (
             st.session_state["df_enriched"] is not None
@@ -124,8 +156,9 @@ if uploaded:
             df_input = st.session_state["df_enriched"]
             col_msg, col_regen, col_dl = st.columns([4, 1, 1])
             with col_msg:
-                st.success(
-                    f"✔ Dimensions extracted — {len(EXTRACTED_DIMENSIONS)} columns ready."
+                st.markdown(
+                    f'<span class="hy-chip hy-chip-green">✓ {len(EXTRACTED_DIMENSIONS)} dimensions extracted</span>',
+                    unsafe_allow_html=True,
                 )
             with col_regen:
                 if st.button("↺ Regenerate", key="regen_dims"):
@@ -141,9 +174,9 @@ if uploaded:
                 )
 
         elif _dims_in_csv:
-            st.success(
-                f"✔ All {len(EXTRACTED_DIMENSIONS)} dimension columns found in file — "
-                "no extraction needed."
+            st.markdown(
+                f'<span class="hy-chip hy-chip-green">✓ {len(EXTRACTED_DIMENSIONS)} dimension columns in file</span>',
+                unsafe_allow_html=True,
             )
 
         elif desc_col:
@@ -152,8 +185,13 @@ if uploaded:
                 f"company description (~{max(1, len(df_input) // _DIM_BATCH_SIZE)} API calls for "
                 f"{len(df_input)} companies). Save the enriched CSV afterwards to skip this next time."
             )
-            dim_pills = "  ·  ".join(f"`{d}`" for d in EXTRACTED_DIMENSIONS)
-            st.markdown(dim_pills)
+            # Pill-style dimension tags
+            pills_html = " ".join(
+                f'<span class="hy-chip hy-chip-cyan">{d}</span>'
+                for d in EXTRACTED_DIMENSIONS
+            )
+            st.markdown(pills_html, unsafe_allow_html=True)
+            st.write("")
             if st.button(
                 "⚡ Generate dimensions",
                 key="gen_dims",
@@ -177,10 +215,12 @@ if uploaded:
     except Exception as e:
         st.error(f"Could not load file: {e}")
 
-st.divider()
+st.markdown('</div>', unsafe_allow_html=True)
 
 # ── Step 3: Deals Data (optional) ─────────────────────────────────────────────
-st.subheader("3 · Deals Data (optional)")
+st.markdown('<div class="hy-card">', unsafe_allow_html=True)
+_deals_loaded = st.session_state.get("df_deals") is not None
+step_label(3, "Deals Data (optional)", done=_deals_loaded)
 st.caption(
     "Upload a **Deals CSV** to unlock the Analytics page. "
     "The file must contain one row per deal and a Company ID column to link deals to companies."
@@ -194,10 +234,12 @@ deals_uploaded = st.file_uploader(
 )
 
 if not deals_uploaded and _deals_persisted is not None:
-    st.info(
-        f"✔ Deals already loaded: **{len(_deals_persisted)} rows** · "
-        f"{len(_deals_persisted.columns)} columns.  \n"
-        "Upload a new file below to replace it."
+    st.markdown(
+        f'<span class="hy-chip hy-chip-green">✓ Deals loaded</span>&nbsp;'
+        f'<span class="hy-chip hy-chip-cyan">{len(_deals_persisted)} rows</span>&nbsp;'
+        f'<span class="hy-chip hy-chip-cyan">{len(_deals_persisted.columns)} columns</span>'
+        '<br><small style="color:#7496b2;font-size:11px">Upload a new file below to replace it.</small>',
+        unsafe_allow_html=True,
     )
 
 if deals_uploaded:
@@ -208,14 +250,21 @@ if deals_uploaded:
             else pd.read_excel(deals_uploaded)
         )
         st.session_state["df_deals"] = df_deals_input
-        st.success(f"✔ {len(df_deals_input)} deal rows · {len(df_deals_input.columns)} columns loaded")
+        st.markdown(
+            f'<span class="hy-chip hy-chip-green">✓ Deals loaded</span>&nbsp;'
+            f'<span class="hy-chip hy-chip-cyan">{len(df_deals_input)} rows</span>&nbsp;'
+            f'<span class="hy-chip hy-chip-cyan">{len(df_deals_input.columns)} columns</span>',
+            unsafe_allow_html=True,
+        )
     except Exception as e:
         st.error(f"Could not load deals file: {e}")
 
-st.divider()
+st.markdown('</div>', unsafe_allow_html=True)
 
 # ── Step 4: Embeddings upload (optional) ──────────────────────────────────────
-st.subheader("4 · Embeddings (optional)")
+st.markdown('<div class="hy-card">', unsafe_allow_html=True)
+_emb_loaded = st.session_state.get("feature_matrix") is not None
+step_label(4, "Embeddings (optional)", done=_emb_loaded)
 st.caption(
     "If you ran embeddings before, upload the saved `.npz` file to skip re-embedding. "
     "You can still re-embed on the next page if you want."
@@ -236,14 +285,16 @@ if emb_file:
                 st.session_state["df_clean"] = pd.read_json(
                     io.StringIO(npz["df_json"].tobytes().decode())
                 )
-        st.success(
-            f"✔ Embeddings loaded — {st.session_state['feature_matrix'].shape[0]} companies, "
-            f"dim {st.session_state['feature_matrix'].shape[1]}."
+        st.markdown(
+            f'<span class="hy-chip hy-chip-green">✓ Embeddings loaded</span>&nbsp;'
+            f'<span class="hy-chip hy-chip-cyan">{st.session_state["feature_matrix"].shape[0]} companies</span>&nbsp;'
+            f'<span class="hy-chip hy-chip-cyan">dim {st.session_state["feature_matrix"].shape[1]}</span>',
+            unsafe_allow_html=True,
         )
     except Exception as e:
         st.error(f"Error loading embeddings: {e}")
 
-st.divider()
+st.markdown('</div>', unsafe_allow_html=True)
 
 # ── CTA ───────────────────────────────────────────────────────────────────────
 has_data = df_input is not None or st.session_state.get("feature_matrix") is not None
@@ -251,15 +302,20 @@ has_data = df_input is not None or st.session_state.get("feature_matrix") is not
 if df_input is not None:
     # Persist df_clean with current column selections so Page 2 can use it
     _existing = st.session_state.get("df_clean")
-    # Re-save whenever the source file changes or df_clean is None
     if _existing is None or (
         hasattr(_existing, "__len__") and len(_existing) != len(df_input)
     ):
         st.session_state["df_clean"] = df_input.copy()
 
-if has_data:
-    if st.button("Next: Embed & Cluster →", type="primary", width="content"):
-        st.switch_page("pages/embed_cluster.py")
-else:
-    st.button("Next: Embed & Cluster →", type="primary", disabled=True,
-              help="Upload a CSV file first.")
+_cta_col1, _cta_col2 = st.columns([3, 1])
+with _cta_col2:
+    if has_data:
+        if st.button("Continue to Embed & Cluster →", type="primary"):
+            st.switch_page("pages/embed_cluster.py")
+    else:
+        st.button(
+            "Continue to Embed & Cluster →",
+            type="primary",
+            disabled=True,
+            help="Upload a CSV file first.",
+        )

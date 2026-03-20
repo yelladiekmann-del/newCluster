@@ -6,6 +6,10 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
+from styles import inject_global_css, page_header, chip
+
+inject_global_css()
+
 # ── Constants ─────────────────────────────────────────────────────────────────
 
 SERIES_SCORE: dict[str, float] = {
@@ -352,7 +356,7 @@ def _compute_ranking(df: pd.DataFrame) -> pd.DataFrame:
 
 # ── Page ──────────────────────────────────────────────────────────────────────
 
-st.title("📊 Analytics")
+page_header("Analytics", "Cluster metrics, rankings, and export.")
 
 _confirmed = st.session_state.get("clusters_confirmed", False)
 _clustered = (
@@ -409,6 +413,18 @@ def _sel(label, options, key, candidates=None):
         idx = 0
     return st.selectbox(label, options, index=idx, key=f"cmap_{key}")
 
+
+_map_header_col, _map_status_col = st.columns([3, 1])
+with _map_header_col:
+    pass  # expander title serves as header
+with _map_status_col:
+    if _saved_map:
+        st.markdown(
+            '<div style="text-align:right;padding-top:6px">'
+            '<span class="hy-chip hy-chip-green">✓ Mapping applied</span>'
+            '</div>',
+            unsafe_allow_html=True,
+        )
 
 with st.expander("⚙️ Column Mapping", expanded=not bool(_saved_map)):
     st.caption("Map CSV columns to analytics fields. Unmapped fields show as N/A.")
@@ -492,6 +508,39 @@ if df_analytics.empty:
     st.warning("No clusters found (Outliers excluded).")
     st.stop()
 
+# ── Summary stat cards ────────────────────────────────────────────────────────
+
+_n_companies_total = int(df_co["Cluster"].notna().sum()) if "Cluster" in df_co.columns else len(df_co)
+_n_clusters        = len(df_analytics)
+_tr_col = _cmap.get("total_raised")
+_total_capital = (
+    pd.to_numeric(df_co[_tr_col], errors="coerce").sum()
+    if _tr_col and _tr_col in df_co.columns
+    else None
+)
+_peak_momentum = None
+if "Deal Momentum" in df_analytics.columns:
+    _mom_vals = pd.to_numeric(df_analytics["Deal Momentum"], errors="coerce").dropna()
+    if len(_mom_vals):
+        _peak_momentum = _mom_vals.max()
+
+_sc1, _sc2, _sc3, _sc4 = st.columns(4)
+with _sc1:
+    st.metric("Total Companies", _n_companies_total)
+with _sc2:
+    st.metric("Active Clusters", _n_clusters)
+with _sc3:
+    if _total_capital is not None:
+        st.metric("Total Capital Raised", f"{_total_capital:,.0f} m€")
+    else:
+        st.metric("Total Capital Raised", "N/A")
+with _sc4:
+    if _peak_momentum is not None:
+        _sign = "+" if _peak_momentum >= 0 else ""
+        st.metric("Peak Deal Momentum", f"{_sign}{_peak_momentum:.0f}%")
+    else:
+        st.metric("Peak Deal Momentum", "N/A")
+
 st.caption(
     f"Reference year **Y = {_ref_year}** (max deal year in Deals CSV) · "
     f"Recent window: {_ref_year - 1}–{_ref_year} · "
@@ -521,8 +570,7 @@ group_cols[0].markdown("")
 for i, (gname, gcols) in enumerate(GROUPS.items()):
     if any(c in df_analytics.columns for c in gcols):
         group_cols[i + 1].markdown(
-            f"<div style='text-align:center;background:#e8f4f8;border-radius:4px;"
-            f"padding:2px 4px;font-size:0.75em;font-weight:600;color:#1a6080'>{gname}</div>",
+            f"<div class='hy-group-header'>{gname}</div>",
             unsafe_allow_html=True,
         )
 
@@ -563,7 +611,7 @@ col_cfg = {
 st.dataframe(
     _style(df_analytics),
     column_config=col_cfg,
-    width="stretch",
+    use_container_width=True,
     hide_index=True,
     height=min(60 + 35 * (len(df_analytics) + 1), 700),
 )
@@ -574,7 +622,11 @@ st.divider()
 
 # ── Ranking ───────────────────────────────────────────────────────────────────
 
-st.subheader("🏆 Cluster Ranking")
+st.markdown(
+    '<div style="font-size:15px;font-weight:700;color:#0d1f2d;letter-spacing:-0.02em;'
+    'margin-bottom:4px">Cluster Ranking</div>',
+    unsafe_allow_html=True,
+)
 st.caption(
     "Each metric is normalised 0–1 (best = 1, worst = 0) per column and averaged. "
     "Excludes size/neutral columns (Gesamt, ⌀ Year Founded)."
@@ -593,7 +645,7 @@ if not df_rank.empty:
                        max_value=100,
                    ),
     }
-    st.dataframe(df_rank, column_config=rank_cfg, hide_index=True, width="stretch")
+    st.dataframe(df_rank, column_config=rank_cfg, hide_index=True, use_container_width=True)
 
 st.divider()
 
@@ -606,11 +658,13 @@ if not df_rank.empty:
         on="Cluster", how="left",
     )
 
-st.download_button(
-    "⬇ Download analytics CSV",
-    export_df.to_csv(index=False),
-    "cluster_analytics.csv",
-    "text/csv",
-    type="primary",
-    width="content",
-)
+_exp_col1, _exp_col2 = st.columns([3, 1])
+with _exp_col2:
+    st.download_button(
+        "⬇ Download analytics CSV",
+        export_df.to_csv(index=False),
+        "cluster_analytics.csv",
+        "text/csv",
+        type="primary",
+        use_container_width=True,
+    )
