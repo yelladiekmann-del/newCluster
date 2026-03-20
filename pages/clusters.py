@@ -204,29 +204,46 @@ if _sel and _sel in named_clusters:
     )
 
 st.markdown('<div class="hy-section-title">Cluster overview</div>', unsafe_allow_html=True)
-st.caption("Click any card to see all companies in that cluster.")
+st.caption("Click a cluster to see all companies inside it.")
 
 if named_clusters:
     _n_cols = 4
     _card_rows = [named_clusters[i:i + _n_cols] for i in range(0, len(named_clusters), _n_cols)]
     for _card_row in _card_rows:
-        _cols = st.columns(_n_cols)
-        for _ci, _cname in enumerate(_card_row):
-            _n    = int((df["Cluster"] == _cname).sum())
-            _desc = cluster_descriptions.get(_cname, "")
+        n_in_row = len(_card_row)
+
+        # ── All cards in this row rendered as one CSS grid ─────────────────────
+        # CSS grid makes every cell the height of the tallest cell automatically.
+        # No fixed heights, no overflow:hidden, no truncation.
+        _cells = []
+        for _cname in _card_row:
+            _n     = int((df["Cluster"] == _cname).sum())
+            _desc  = cluster_descriptions.get(_cname, "")
             _first = _desc.split(".")[0].strip() + "." if _desc else ""
             _color = _color_map.get(_cname, "#26B4D2")
-            with _cols[_ci]:
-                st.markdown(
-                    f'<div class="hy-cl-card" style="border-top:3px solid {_color}">'
-                    f'<div class="hy-cl-name">{_cname}</div>'
-                    f'<span class="hy-cl-chip">{_n} companies</span>'
-                    f'<div class="hy-cl-desc">{_first}</div>'
-                    f'<div class="hy-cl-arrow">→</div>'
-                    f'</div>',
-                    unsafe_allow_html=True,
-                )
-                if st.button(" ", key=f"card_{_cname}", use_container_width=True):
+            _cells.append(
+                f'<div class="hy-cl-card" style="border-top:3px solid {_color}">'
+                f'<div class="hy-cl-name">{_cname}</div>'
+                f'<span class="hy-cl-chip">{_n} companies</span>'
+                f'<div class="hy-cl-desc">{_first}</div>'
+                f'</div>'
+            )
+        # Pad incomplete last row with invisible placeholders so card widths stay consistent
+        _cells += ['<div></div>'] * (_n_cols - n_in_row)
+
+        st.markdown(
+            f'<div class="hy-cl-grid" style="display:grid;grid-template-columns:repeat({_n_cols},1fr);'
+            f'gap:12px;margin-bottom:0">' + "".join(_cells) + '</div>',
+            unsafe_allow_html=True,
+        )
+
+        # ── "View" buttons sit flush below each card ────────────────────────────
+        # CSS targets .element-container:has(.hy-cl-grid) + .element-container
+        # to style these buttons as flush tab-like elements below the cards.
+        _btn_cols = st.columns(_n_cols)
+        for _ci, _cname in enumerate(_card_row):
+            with _btn_cols[_ci]:
+                if st.button("View companies →", key=f"card_{_cname}", use_container_width=True):
                     st.session_state["selected_cluster"] = _cname
 
 # ── SECTION 2: AI Assistant ────────────────────────────────────────────────────

@@ -139,13 +139,14 @@ _CSS = """
 }
 [data-testid="baseButton-primary"]:hover { background: #1a8fa8 !important; }
 
-/* Ghost buttons (type="secondary") */
-[data-testid="baseButton-secondary"] {
-  background: transparent !important; color: #0d1f2d !important;
+/* Ghost buttons (type="secondary") — higher specificity than base .stButton button rule */
+.stButton [data-testid="baseButton-secondary"] {
+  background: transparent !important; color: #516e81 !important;
   border: 1px solid #d8e1ec !important; box-shadow: none !important;
+  font-weight: 500 !important;
 }
-[data-testid="baseButton-secondary"]:hover {
-  background: #f7f9fc !important;
+.stButton [data-testid="baseButton-secondary"]:hover {
+  background: #f7f9fc !important; color: #0d1f2d !important;
 }
 
 /* ── Inputs and selects ── */
@@ -234,22 +235,16 @@ hr { border: none; border-top: 1px solid #e4eaf2; margin: 18px 0; }
   background: #fff;
   border: 1px solid #e4eaf2;
   border-radius: 11px;
-  padding: 14px 15px 12px;
-  cursor: pointer;
-  transition: box-shadow 0.15s, transform 0.12s;
-  position: relative;
-  margin-bottom: 4px;
-  min-height: 110px;
+  padding: 14px 15px 10px;
+  transition: box-shadow 0.15s;
 }
 .hy-cl-card:hover {
-  box-shadow: 0 4px 16px rgba(0,30,50,0.10);
-  transform: translateY(-1px);
+  box-shadow: 0 4px 16px rgba(0,30,50,0.09);
 }
 .hy-cl-name {
-  font-size: 12px; font-weight: 700;
+  font-size: 13px; font-weight: 700;
   color: #0d1f2d; letter-spacing: -0.01em;
-  line-height: 1.3; margin-bottom: 6px;
-  padding-right: 18px;
+  line-height: 1.3; margin-bottom: 7px;
 }
 .hy-cl-chip {
   display: inline-flex; align-items: center;
@@ -257,59 +252,30 @@ hr { border: none; border-top: 1px solid #e4eaf2; margin: 18px 0; }
   background: #26B4D215; border: 1px solid #26B4D230;
   border-radius: 20px; font-size: 10px;
   font-weight: 600; color: #1a8fa8;
-  margin-bottom: 8px;
+  margin-bottom: 9px;
 }
 .hy-cl-desc {
   font-size: 10.5px; color: #7496b2;
   line-height: 1.55;
 }
-.hy-cl-arrow {
-  position: absolute; top: 13px; right: 12px;
-  width: 18px; height: 18px; border-radius: 5px;
-  border: 1px solid #e4eaf2;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 10px; color: #aac0d1;
-  opacity: 0.5;
-}
 
-/* Equal-height columns for card rows + invisible full-card click overlay */
-[data-testid="stHorizontalBlock"]:has(.hy-cl-card) {
-  align-items: stretch !important;
-}
-[data-testid="stHorizontalBlock"]:has(.hy-cl-card) [data-testid="column"],
-[data-testid="stHorizontalBlock"]:has(.hy-cl-card) [data-testid="stVerticalBlock"] {
-  display: flex !important;
-  flex-direction: column !important;
-  flex: 1 !important;
-  position: relative !important;
-}
-[data-testid="stHorizontalBlock"]:has(.hy-cl-card) .hy-cl-card {
-  flex: 1 !important;
-  height: auto !important;
-}
-.element-container:has(.hy-cl-card) + .element-container {
-  position: absolute !important;
-  inset: 0 !important;
-  z-index: 10 !important;
-  height: 100% !important;
-  width: 100% !important;
-  margin: 0 !important;
-  padding: 0 !important;
-}
-.element-container:has(.hy-cl-card) + .element-container .stButton {
-  height: 100% !important;
-}
-.element-container:has(.hy-cl-card) + .element-container .stButton button {
-  position: absolute !important;
-  inset: 0 !important;
-  height: 100% !important;
-  width: 100% !important;
-  margin: 0 !important;
-  opacity: 0 !important;
-  cursor: pointer !important;
-  background: transparent !important;
-  border: none !important;
+/* ── Card view buttons — the st.columns() row immediately after the card grid ── */
+.element-container:has(.hy-cl-grid) + .element-container .stButton button {
+  border-top-left-radius: 0 !important;
+  border-top-right-radius: 0 !important;
+  border-top: none !important;
+  margin-top: -1px !important;
+  background: #f7f9fc !important;
+  color: #516e81 !important;
+  font-size: 11px !important;
+  font-weight: 500 !important;
   box-shadow: none !important;
+  border: 1px solid #e4eaf2 !important;
+  padding: 6px 12px !important;
+}
+.element-container:has(.hy-cl-grid) + .element-container .stButton button:hover {
+  background: #eef2f7 !important;
+  color: #0d1f2d !important;
 }
 
 /* ── Inline company list panel ── */
