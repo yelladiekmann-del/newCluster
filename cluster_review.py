@@ -291,7 +291,8 @@ def _merge_dialog(merge_pending: str, named_clusters: list[str], df_clean: pd.Da
             descs.pop(merge_pending, None)
             st.session_state["cr_cluster_descriptions"] = descs
             st.session_state.df_clean = df_clean
-            st.session_state["cr_merge_pending"] = None            st.rerun()
+            st.session_state["cr_merge_pending"] = None
+            st.rerun()
     with col_no:
         if st.button("Cancel", width="stretch", key="merge_cancel"):
             st.session_state["cr_merge_pending"] = None
