@@ -67,7 +67,7 @@ n_out    = int((df["Cluster"] == "Outliers").sum())
 # ── Header ─────────────────────────────────────────────────────────────────────
 st.title("🗂️ Review & Edit")
 
-col_stats, col_quality, col_export = st.columns([3, 2, 1])
+col_stats, col_quality = st.columns([3, 2])
 with col_stats:
     st.markdown(
         f"<span style='color:#888'>{n_comp} companies · {n_clust} clusters · {n_out} outliers</span>",
@@ -79,17 +79,6 @@ with col_quality:
         f"**Quality: {q_label}** "
         f"<span style='color:#888; font-size:0.85em'>(Sil {sil_str} · DB {db_str})</span>",
         unsafe_allow_html=True,
-    )
-with col_export:
-    show_cols_dl = [
-        c for c in [company_col, "Cluster", "Outlier score"] + DIMENSIONS if c in df.columns
-    ]
-    st.download_button(
-        "⬇ Export CSV",
-        df[show_cols_dl].to_csv(index=False),
-        "cluster_results.csv", "text/csv",
-        width="stretch",
-        type="primary",
     )
 
 # ── UMAP scatter ───────────────────────────────────────────────────────────────
@@ -109,7 +98,7 @@ fig.update_layout(
 )
 st.plotly_chart(fig, use_container_width=True)
 
-# ── Cluster cards (LLM descriptions as legend) ────────────────────────────────
+# ── Cluster cards ──────────────────────────────────────────────────────────────
 named_clusters       = [c for c in df["Cluster"].unique() if c != "Outliers"]
 cluster_descriptions = st.session_state.get("cr_cluster_descriptions") or {}
 
@@ -124,75 +113,40 @@ if named_clusters:
         for col, cname in zip(cols, card_row):
             n = int((df["Cluster"] == cname).sum())
             desc = cluster_descriptions.get(cname, "")
-            # Show first sentence only for the card
             first_sentence = desc.split(".")[0].strip() + "." if desc else "—"
             with col:
                 st.markdown(
                     f"<div style='border:1px solid #e0e0e0;border-radius:8px;"
-                    f"padding:10px 12px;margin:2px 0'>"
+                    f"padding:10px 12px;margin:2px 0;min-height:110px'>"
                     f"<b>{cname}</b><br>"
                     f"<span style='color:#888'>{n} companies</span><br>"
-                    f"<small style='color:#555'>{first_sentence}</small>"
+                    f"<small style='color:#555;display:-webkit-box;-webkit-line-clamp:3;"
+                    f"-webkit-box-orient:vertical;overflow:hidden'>{first_sentence}</small>"
                     f"</div>",
                     unsafe_allow_html=True,
                 )
 
 st.divider()
 
-# ── Chat action approval (if any pending) ─────────────────────────────────────
-pending_actions = st.session_state.get("chat_pending_actions")
-if pending_actions:
-    n_act = len(pending_actions)
-    st.info(
-        f"🤖 **{n_act} suggested action{'s' if n_act != 1 else ''} from Chat** — "
-        "review and execute below."
-    )
-    with st.expander("Review suggested actions", expanded=True):
-        for i, action in enumerate(pending_actions):
-            t = action.get("type")
-            if t == "delete":
-                label = f"🗑 Delete: **{action.get('cluster', '')}**"
-            elif t == "merge":
-                sources = action.get("sources", [])
-                label = f"↔ Merge: **{' + '.join(sources)}** → **{action.get('new_name', '')}**"
-            elif t == "add":
-                companies = action.get("companies", [])
-                label = f"➕ Add: **{action.get('name', '')}** ({len(companies)} companies)"
-            else:
-                continue
+# ── Export (prominent) ─────────────────────────────────────────────────────────
+show_cols_dl = [
+    c for c in [company_col, "Cluster", "Outlier score"] + DIMENSIONS if c in df.columns
+]
+st.download_button(
+    "⬇ Download cluster results",
+    df[show_cols_dl].to_csv(index=False),
+    "cluster_results.csv", "text/csv",
+    width="stretch",
+    type="primary",
+    key="export_dl",
+)
 
-            col_lbl, col_btn = st.columns([8, 2])
-            with col_lbl:
-                st.markdown(label)
-            with col_btn:
-                if st.button("Execute", key=f"cl_action_exec_{i}"):
-                    from cluster_chat import _execute_actions
-                    _execute_actions([action], df, company_col, dimensions)
-                    remaining = [a for j, a in enumerate(pending_actions) if j != i]
-                    st.session_state["chat_pending_actions"] = remaining if remaining else None
-                    st.rerun()
+st.divider()
 
-        col_all, col_dismiss = st.columns(2)
-        with col_all:
-            if st.button(
-                "✅ Execute all", type="primary",
-                key="cl_action_exec_all", width="stretch",
-            ):
-                from cluster_chat import _execute_actions
-                _execute_actions(pending_actions, df, company_col, dimensions)
-                st.session_state["chat_pending_actions"] = None
-                st.rerun()
-        with col_dismiss:
-            if st.button("✕ Dismiss", key="cl_action_dismiss", width="stretch"):
-                st.session_state["chat_pending_actions"] = None
-                st.rerun()
+# ── Edit (left) | Chat (right) ─────────────────────────────────────────────────
+col_edit, col_chat = st.columns([3, 2])
 
-    st.divider()
-
-# ── Edit / Chat tabs ───────────────────────────────────────────────────────────
-tab_edit, tab_chat = st.tabs(["✏️ Edit clusters", "💬 Chat"])
-
-with tab_edit:
+with col_edit:
     render_cluster_review(
         df_clean=st.session_state.df_clean,
         company_col=company_col,
@@ -200,7 +154,7 @@ with tab_edit:
         api_key=api_key,
     )
 
-with tab_chat:
+with col_chat:
     render_cluster_chat(
         df_clean=st.session_state.df_clean,
         company_col=company_col,
