@@ -18,7 +18,6 @@ from utils import (
     build_cluster_profile,
     find_optimal_params,
     generate_cluster_descriptions,
-    get_description_embedding,
     get_per_dimension_embedding,
     name_all_clusters,
     run_clustering,
@@ -47,17 +46,12 @@ _clustered     = (
     and "Cluster" in getattr(df_clean, "columns", [])
 )
 
-embed_mode     = st.session_state.get("embed_mode", "Per-dimension (recommended)")
 custom_weights = st.session_state.get("custom_weights") or dict(DIMENSION_WEIGHTS)
 
 # ── STEP 1: Embed ─────────────────────────────────────────────────────────────
 st.subheader("Step 1 · Embed")
 
 available_dims = [d for d in DIMENSIONS if df_clean is not None and d in df_clean.columns]
-use_desc = bool(
-    desc_col and df_clean is not None and desc_col in df_clean.columns
-    and df_clean[desc_col].astype(str).str.strip().ne("").any()
-)
 
 
 @st.dialog("Confirm re-embed", width="large")
@@ -68,11 +62,11 @@ def _reembed_dialog():
     )
     col_ok, col_no = st.columns(2)
     with col_ok:
-        if st.button("Yes, re-embed", type="primary", use_container_width=True):
+        if st.button("Yes, re-embed", type="primary", width="stretch"):
             st.session_state["_reembed_confirmed"] = True
             st.rerun()
     with col_no:
-        if st.button("Cancel", use_container_width=True):
+        if st.button("Cancel", width="stretch", key="reembed_cancel"):
             st.rerun()
 
 
@@ -103,7 +97,7 @@ if has_embeddings and npz_preloaded and not st.session_state.get("_reembed_confi
     with col_skip:
         st.info("Ready to cluster. Scroll to Step 2, or re-embed if you want different embeddings.")
     with col_reembed:
-        if st.button("↺ Re-embed from scratch", use_container_width=True):
+        if st.button("↺ Re-embed from scratch", width="stretch"):
             _reembed_dialog()
 
 elif has_embeddings and not npz_preloaded:
@@ -124,10 +118,11 @@ elif has_embeddings and not npz_preloaded:
         st.download_button(
             "⬇ Save embeddings (.npz)",
             _buf, "embeddings.npz", "application/octet-stream",
-            use_container_width=True,
+            width="stretch",
+            key="dl_emb_step1",
         )
     with col_reembed:
-        if st.button("↺ Re-embed", use_container_width=True):
+        if st.button("↺ Re-embed", width="stretch"):
             if _clustered:
                 _reembed_dialog()
             else:
@@ -148,42 +143,28 @@ else:
                 st.session_state["df_clean"] = df_clean.drop(columns=cols_to_drop)
         st.rerun()
 
-    if not available_dims and not use_desc:
+    if not available_dims:
         st.warning(
-            "No dimension columns or description column found in your data. "
-            "Go back to Setup to extract dimensions or select a description column."
+            "No dimension columns found in your data. "
+            "Go back to Setup to extract dimensions."
         )
     else:
-        col_strat, col_adv = st.columns([3, 1])
-        with col_strat:
-            embed_mode = st.radio(
-                "Embedding strategy",
-                ["Per-dimension (recommended)", "Description column", "All dimensions joined"],
-                horizontal=True,
-                index=["Per-dimension (recommended)", "Description column", "All dimensions joined"].index(
-                    st.session_state.get("embed_mode", "Per-dimension (recommended)")
-                ),
-            )
-            st.session_state["embed_mode"] = embed_mode
-        with col_adv:
-            st.write("")
-            if st.button("⚙ Weights…", disabled=(embed_mode != "Per-dimension (recommended)")):
+        col_emb, col_wt = st.columns([4, 1])
+        with col_wt:
+            if st.button("⚙ Weights…"):
                 st.session_state["_show_weights"] = True
 
         if st.session_state.pop("_show_weights", False):
             _weights_dialog()
 
-        _embed_disabled = (
-            not has_api_key
-            or df_clean is None
-            or (embed_mode == "Per-dimension (recommended)" and not available_dims)
-            or (embed_mode == "Description column" and not use_desc)
-        )
+        _embed_disabled = not has_api_key or df_clean is None or not available_dims
+
+        if not has_api_key:
+            st.caption("Add a Gemini API key on the Setup page to enable embedding.")
 
         if st.button("⚡ Embed", type="primary", disabled=_embed_disabled, key="embed_btn"):
             total = len(df_clean)
-            _secs_per = 0.35 if embed_mode == "Per-dimension (recommended)" else 0.5
-            _eta = max(1, int((total * _secs_per) / _EMBED_WORKERS))
+            _eta = max(1, int((total * 0.35) / _EMBED_WORKERS))
             st.info(
                 f"{total} companies — est. {_fmt_secs(_eta)} ({_EMBED_WORKERS} parallel workers)"
             )
@@ -196,17 +177,9 @@ else:
 
             def _embed_one(i):
                 row = df_clean.iloc[i]
-                if embed_mode == "Per-dimension (recommended)":
-                    return i, get_per_dimension_embedding(
-                        row, available_dims, api_key, dim_per_field=256, weights=_weights
-                    )
-                elif embed_mode == "Description column" and use_desc:
-                    return i, get_description_embedding(
-                        str(row.get(desc_col, "")).strip() or "unknown", api_key
-                    )
-                else:
-                    text = " | ".join(str(row.get(d, "")) for d in available_dims)
-                    return i, get_description_embedding(text, api_key)
+                return i, get_per_dimension_embedding(
+                    row, available_dims, api_key, dim_per_field=256, weights=_weights
+                )
 
             indexed = {}
             errors  = 0
@@ -294,11 +267,11 @@ else:
 
     col_cluster, col_autotune = st.columns([2, 1])
     with col_cluster:
-        cluster_btn = st.button("▶ Cluster", type="primary", use_container_width=True)
+        cluster_btn = st.button("▶ Cluster", type="primary", width="stretch")
     with col_autotune:
         autotune_btn = st.button(
             "✨ Suggest optimal",
-            use_container_width=True,
+            width="stretch",
             help="Sweeps HDBSCAN params to maximise silhouette (~10–20s)",
         )
 
@@ -454,7 +427,8 @@ else:
                 "⬇ Download cluster CSV",
                 df[show_cols_dl].to_csv(index=False),
                 "clusters_preview.csv", "text/csv",
-                use_container_width=True,
+                width="stretch",
+                key="dl_cluster_csv",
             )
         with col_dl2:
             if st.session_state.get("feature_matrix") is not None:
@@ -471,7 +445,8 @@ else:
                 st.download_button(
                     "⬇ Save embeddings (.npz)",
                     _buf2, "embeddings.npz", "application/octet-stream",
-                    use_container_width=True,
+                    width="stretch",
+                    key="dl_emb_step2",
                 )
 
         st.divider()
@@ -485,7 +460,7 @@ else:
         if st.button(
             "✓ Confirm clusters",
             type="primary",
-            use_container_width=False,
+            width="content",
             disabled=not has_api_key,
             help="Names all clusters via Gemini, generates descriptions, then opens Review & Edit.",
             key="confirm_btn",

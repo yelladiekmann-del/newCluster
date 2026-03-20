@@ -23,10 +23,10 @@ if not _confirmed or not _clustered:
     )
     col_a, col_b = st.columns(2)
     with col_a:
-        if st.button("Go to Setup →", use_container_width=True):
+        if st.button("Go to Setup →", width="stretch"):
             st.switch_page("pages/setup.py")
     with col_b:
-        if st.button("Go to Embed & Cluster →", type="primary", use_container_width=True):
+        if st.button("Go to Embed & Cluster →", type="primary", width="stretch"):
             st.switch_page("pages/embed_cluster.py")
     st.stop()
 
@@ -88,7 +88,7 @@ with col_export:
         "⬇ Export CSV",
         df[show_cols_dl].to_csv(index=False),
         "cluster_results.csv", "text/csv",
-        use_container_width=True,
+        width="stretch",
         type="primary",
     )
 
@@ -176,14 +176,14 @@ if pending_actions:
         with col_all:
             if st.button(
                 "✅ Execute all", type="primary",
-                key="cl_action_exec_all", use_container_width=True,
+                key="cl_action_exec_all", width="stretch",
             ):
                 from cluster_chat import _execute_actions
                 _execute_actions(pending_actions, df, company_col, dimensions)
                 st.session_state["chat_pending_actions"] = None
                 st.rerun()
         with col_dismiss:
-            if st.button("✕ Dismiss", key="cl_action_dismiss", use_container_width=True):
+            if st.button("✕ Dismiss", key="cl_action_dismiss", width="stretch"):
                 st.session_state["chat_pending_actions"] = None
                 st.rerun()
 

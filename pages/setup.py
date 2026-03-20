@@ -40,7 +40,7 @@ with st.form("api_key_form", border=False):
         )
     with col_btn:
         st.write("")
-        _key_submitted = st.form_submit_button("Save", use_container_width=True)
+        _key_submitted = st.form_submit_button("Save", width="stretch")
     if _key_submitted:
         st.session_state["api_key"] = _key_input
         api_key = _key_input
@@ -98,7 +98,7 @@ if uploaded:
         with col_prev:
             st.write("")
             st.write("")
-            if st.button("👁 Preview", use_container_width=True):
+            if st.button("👁 Preview", width="stretch"):
                 st.session_state["_show_preview"] = True
 
         @st.dialog("Data preview", width="large")
@@ -223,7 +223,7 @@ if df_input is not None:
         st.session_state["df_clean"] = df_input.copy()
 
 if has_data:
-    if st.button("Next: Embed & Cluster →", type="primary", use_container_width=False):
+    if st.button("Next: Embed & Cluster →", type="primary", width="content"):
         st.switch_page("pages/embed_cluster.py")
 else:
     st.button("Next: Embed & Cluster →", type="primary", disabled=True,

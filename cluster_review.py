@@ -58,11 +58,11 @@ def _render_named_cluster(
     # Merge + Delete buttons at top of expanded panel
     col_merge, col_del, _ = st.columns([1, 1, 8])
     with col_merge:
-        if st.button("↔ Merge", key=f"cr_merge_{cluster_name}", use_container_width=True):
+        if st.button("↔ Merge", key=f"cr_merge_{cluster_name}", width="stretch"):
             st.session_state["cr_merge_pending"] = cluster_name
             st.rerun()
     with col_del:
-        if st.button("🗑 Delete", key=f"cr_del_{cluster_name}", use_container_width=True):
+        if st.button("🗑 Delete", key=f"cr_del_{cluster_name}", width="stretch"):
             st.session_state["cr_delete_pending"] = cluster_name
             st.session_state["cr_delete_target"] = _OUTLIER_LABEL
             st.rerun()
@@ -320,7 +320,7 @@ def _merge_dialog(merge_pending: str, named_clusters: list[str], df_clean: pd.Da
     merge_target = st.selectbox("Target cluster", options=other_clusters, label_visibility="collapsed")
     col_ok, col_no = st.columns(2)
     with col_ok:
-        if st.button("Confirm merge", type="primary", use_container_width=True):
+        if st.button("Confirm merge", type="primary", width="stretch"):
             df_clean.loc[df_clean["Cluster"] == merge_pending, "Cluster"] = merge_target
             descs = st.session_state.get("cr_cluster_descriptions", {})
             descs.pop(merge_pending, None)
@@ -330,7 +330,7 @@ def _merge_dialog(merge_pending: str, named_clusters: list[str], df_clean: pd.Da
             st.session_state["cr_name_edits"] = {}
             st.rerun()
     with col_no:
-        if st.button("Cancel", use_container_width=True):
+        if st.button("Cancel", width="stretch", key="merge_cancel"):
             st.session_state["cr_merge_pending"] = None
             st.rerun()
 
@@ -346,14 +346,14 @@ def _delete_dialog(delete_pending: str, named_clusters: list[str], df_clean: pd.
     target = st.selectbox("Destination", options=other_destinations, label_visibility="collapsed")
     col_ok, col_no = st.columns(2)
     with col_ok:
-        if st.button("Confirm delete", type="primary", use_container_width=True):
+        if st.button("Confirm delete", type="primary", width="stretch"):
             df_clean.loc[df_clean["Cluster"] == delete_pending, "Cluster"] = target
             st.session_state.df_clean = df_clean
             st.session_state["cr_delete_pending"] = None
             st.session_state["cr_name_edits"] = {}
             st.rerun()
     with col_no:
-        if st.button("Cancel", use_container_width=True):
+        if st.button("Cancel", width="stretch", key="delete_cancel"):
             st.session_state["cr_delete_pending"] = None
             st.rerun()
 
@@ -371,7 +371,7 @@ def _add_cluster_dialog(df_clean: pd.DataFrame, company_col: str):
 
     col_ok, col_no = st.columns(2)
     with col_ok:
-        if st.button("Create cluster", type="primary", use_container_width=True):
+        if st.button("Create cluster", type="primary", width="stretch"):
             new_name_clean = (new_name or "").strip()
             existing_names = set(df_clean["Cluster"].unique().tolist())
             if not new_name_clean:
@@ -390,7 +390,7 @@ def _add_cluster_dialog(df_clean: pd.DataFrame, company_col: str):
                 st.session_state["cr_name_edits"] = {}
                 st.rerun()
     with col_no:
-        if st.button("Cancel", use_container_width=True):
+        if st.button("Cancel", width="stretch", key="add_cancel"):
             st.rerun()
 
 
@@ -439,7 +439,7 @@ def render_cluster_review(
     col_apply, col_rerun = st.columns([1, 1])
 
     with col_apply:
-        if st.button("Apply edits", key="cr_apply", use_container_width=True):
+        if st.button("Apply edits", key="cr_apply", width="stretch"):
             updated = _apply_name_edits(df_clean, name_edits)
             st.session_state.df_clean = updated
             st.session_state["cr_name_edits"] = {}
@@ -449,7 +449,7 @@ def render_cluster_review(
     with col_rerun:
         include_outliers = st.session_state.get("cr_include_outliers", False)
         if st.button(
-            "Rerun via Gemini", key="cr_rerun", type="primary", use_container_width=True,
+            "Rerun via Gemini", key="cr_rerun", type="primary", width="stretch",
             help="Gemini reads each company's description and reassigns it to the best cluster.",
             disabled=not api_key,
         ):
@@ -557,7 +557,7 @@ def render_cluster_review(
     # ── Add cluster + Include outliers toggle ─────────────────────────────────
     col_add, col_toggle = st.columns([1, 2])
     with col_add:
-        if st.button("➕ Add cluster", key="cr_add_btn", use_container_width=True):
+        if st.button("➕ Add cluster", key="cr_add_btn", width="stretch"):
             _add_cluster_dialog(df_clean, company_col)
     with col_toggle:
         st.toggle(
