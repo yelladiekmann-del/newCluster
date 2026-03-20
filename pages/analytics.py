@@ -6,8 +6,6 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
-CURRENT_YEAR = datetime.date.today().year
-
 # Series stage → numeric score (Marktreife)
 SERIES_SCORE: dict[str, float] = {
     "pre-seed": 0, "pre seed": 0, "preseed": 0,
@@ -24,7 +22,6 @@ SERIES_SCORE: dict[str, float] = {
 # Ownership Status values that indicate graduation
 GRAD_OWNERSHIP = {
     "acquired/merged",
-    "acquired/merged (operating subsidiary)",
     "publicly held",
 }
 
@@ -46,14 +43,25 @@ def _to_year(series: pd.Series) -> pd.Series:
     return years
 
 
+def _get_reference_year(df_de, dd_col: str | None) -> int:
+    """Return max deal year from Deals CSV, fallback to current year."""
+    import datetime
+    fallback = datetime.date.today().year
+    if df_de is None or not dd_col or dd_col not in df_de.columns:
+        return fallback
+    years = _to_year(df_de[dd_col])
+    max_yr = years.dropna().max()
+    return int(max_yr) if (not pd.isna(max_yr) and max_yr > 0) else fallback
+
+
 def _vc_grad_flag(row: pd.Series, bs_col, os_col, cfs_col) -> int:
     """Return 1 (graduated) or 0 (not) for a single company row."""
     bs  = str(row[bs_col]).strip().lower()  if bs_col  else ""
     os  = str(row[os_col]).strip().lower()  if os_col  else ""
     cfs = str(row[cfs_col]).strip().lower() if cfs_col else ""
 
-    # Hard override: bankrupt or out of business → 0
-    if bs == "out of business" or bs.startswith("bankruptcy"):
+    # Hard override: bankrupt or out of business → 0 (exact match)
+    if bs == "out of business" or bs == "bankruptcy":
         return 0
     # Ownership status → 1
     if os in GRAD_OWNERSHIP:
@@ -79,8 +87,8 @@ def _compute(
     df_de: pd.DataFrame | None,
     cluster_col: str,
     cmap: dict,
-) -> pd.DataFrame:
-    """Compute per-cluster analytics.
+) -> tuple[pd.DataFrame, int]:
+    """Compute per-cluster analytics. Returns (DataFrame, reference_year Y).
 
     cmap keys (all optional):
         co_id, de_co_id,
@@ -90,6 +98,9 @@ def _compute(
     """
     co_id    = cmap.get("co_id")
     de_co_id = cmap.get("de_co_id")
+
+    # ── Reference year Y = max year in Deal Date column ───────────────────────
+    Y = _get_reference_year(df_de, cmap.get("deal_date"))
 
     clusters = sorted([c for c in df_co[cluster_col].unique() if c != "Outliers"])
 
@@ -123,7 +134,7 @@ def _compute(
         if yf and yf in co.columns:
             vals = pd.to_numeric(co[yf], errors="coerce").dropna()
             r["⌀ Year Founded"]    = int(round(vals.mean())) if len(vals) else None
-            r["% Recently Founded"] = round((vals >= 2020).sum() / len(vals) * 100, 1) if len(vals) else None
+            r["% Recently Founded"] = round((vals >= (Y - 5)).sum() / len(vals) * 100, 1) if len(vals) else None
         else:
             r["⌀ Year Founded"]    = None
             r["% Recently Founded"] = None
@@ -136,10 +147,10 @@ def _compute(
             dd = cmap.get("deal_date")
             if dd and dd in de.columns:
                 yrs = _to_year(de[dd])
-                # Deal Momentum: Count(2024-2025) / Count(2022-2023), displayed as % change
-                recent_n = int(((yrs >= CURRENT_YEAR - 2) & (yrs <= CURRENT_YEAR - 1)).sum())
-                prev_n   = int(((yrs >= CURRENT_YEAR - 4) & (yrs <= CURRENT_YEAR - 3)).sum())
-                r["Deal Momentum"] = round((recent_n / prev_n - 1) * 100, 0) if prev_n > 0 else None
+                # Deal Momentum: Count(Y & Y-1) / Count(Y-2 & Y-3)
+                recent_n = int(((yrs >= Y - 1) & (yrs <= Y)).sum())
+                prev_n   = int(((yrs >= Y - 3) & (yrs <= Y - 2)).sum())
+                r["Deal Momentum"] = round(recent_n / prev_n, 3) if prev_n > 0 else None
             else:
                 r["Deal Momentum"] = None
         else:
@@ -164,14 +175,14 @@ def _compute(
 
                 if dd and dd in de.columns:
                     yrs = _to_year(de[dd])
-                    mask_4yr  = (yrs >= CURRENT_YEAR - 4) & (yrs <= CURRENT_YEAR - 1)
-                    mask_rec  = (yrs >= CURRENT_YEAR - 2) & (yrs <= CURRENT_YEAR - 1)
-                    mask_prev = (yrs >= CURRENT_YEAR - 4) & (yrs <= CURRENT_YEAR - 3)
+                    mask_4yr  = (yrs >= Y - 3) & (yrs <= Y)
+                    mask_rec  = (yrs >= Y - 1) & (yrs <= Y)
+                    mask_prev = (yrs >= Y - 3) & (yrs <= Y - 2)
                     r["Σ Invested (4 J.)"] = round(float(deal_vals[mask_4yr].sum()), 1)
                     rec_sum  = deal_vals[mask_rec].sum()
                     prev_sum = deal_vals[mask_prev].sum()
-                    # Funding Momentum: Sum(last 2 yrs) / Sum(prev 2 yrs), displayed as % change
-                    r["Funding Momentum"] = round((rec_sum / prev_sum - 1) * 100, 0) if prev_sum > 0 else None
+                    # Funding Momentum: (Sum Y & Y-1) / (Sum Y-2 & Y-3) - 1
+                    r["Funding Momentum"] = round(float(rec_sum / prev_sum - 1), 4) if prev_sum > 0 else None
                 else:
                     r["Σ Invested (4 J.)"] = None
                     r["Funding Momentum"]   = None
@@ -204,7 +215,7 @@ def _compute(
         # ── VC Graduation Rate — from Companies ───────────────────────────────
         # Flag logic (in priority order):
         #   0  if Business Status is "Out of Business" or starts with "Bankruptcy"
-        #   1  if Ownership Status is Acquired/Merged, Acquired/Merged (Operating Subsidiary), or Publicly Held
+        #   1  if Ownership Status is Acquired/Merged or Publicly Held
         #   1  if Company Financing Status contains "Formerly" or "Private Equity-Backed"
         #   else 0
         bs_col  = cmap.get("business_status")
@@ -253,7 +264,7 @@ def _compute(
 
         rows.append(r)
 
-    return pd.DataFrame(rows)
+    return pd.DataFrame(rows), Y
 
 
 # ── Styling ───────────────────────────────────────────────────────────────────
@@ -292,7 +303,11 @@ def _style(df: pd.DataFrame):
 
     s = df.style
     for col in df.columns:
-        if "Momentum" in col:
+        if col == "Deal Momentum":
+            # Deal Momentum is a ratio: >1 good (green), <1 bad (red)
+            s = s.map(lambda v: _momentum_color(v - 1) if (v is not None and not pd.isna(v)) else "", subset=[col])
+        elif col == "Funding Momentum":
+            # Funding Momentum is already (ratio-1), same sign convention as before
             s = s.map(_momentum_color, subset=[col])
         if col == "Mortality Rate":
             s = s.map(_risk_color, subset=[col])
@@ -443,7 +458,12 @@ if not _cmap:
     st.stop()
 
 with st.spinner("Computing cluster analytics…"):
-    df_analytics = _compute(df_co, df_de, "Cluster", _cmap)
+    df_analytics, _ref_year = _compute(df_co, df_de, "Cluster", _cmap)
+
+st.caption(f"Reference year Y = **{_ref_year}** (max deal year in Deals CSV). "
+           f"Time windows: Y & Y-1 = {_ref_year-1}–{_ref_year}, "
+           f"Y-2 & Y-3 = {_ref_year-2}–{_ref_year-3}. "
+           f"Recently Founded threshold: ≥ {_ref_year - 5}.")
 
 if df_analytics.empty:
     st.warning("No clusters found (Outliers excluded).")
@@ -480,19 +500,20 @@ col_cfg = {
     "# Companies":           st.column_config.NumberColumn("# Companies", format="%d"),
     "⌀ Angestellte":         st.column_config.NumberColumn("⌀ Angestellte", format="%.1f"),
     "⌀ Year Founded":        st.column_config.NumberColumn("⌀ Year Founded", format="%d"),
-    "% Recently Founded":    st.column_config.NumberColumn("% Recently Founded", format="%.1f %%"),
+    "% Recently Founded":    st.column_config.NumberColumn("% Recently Founded", format="%.1f %%",
+                                help="% of companies with Year Founded ≥ Y-5"),
     "# Deals":               st.column_config.NumberColumn("# Deals", format="%d"),
     "Deal Momentum":         st.column_config.NumberColumn(
-                                "Deal Momentum", format="%+.0f %%",
-                                help="Count(2024–2025 deals) / Count(2022–2023 deals) − 1"),
+                                "Deal Momentum", format="%.2f×",
+                                help="Count(Y & Y-1 deals) / Count(Y-2 & Y-3 deals)"),
     "⌀ Total Raised (m€)":  st.column_config.NumberColumn("⌀ Total Raised", format="%.1f m€"),
     "Σ Total Raised (m€)":  st.column_config.NumberColumn("Σ Total Raised", format="%.1f m€"),
     "Σ Invested (4 J.)":    st.column_config.NumberColumn(
                                 "Σ Invested (4 J.)", format="%.1f m€",
                                 help="Sum of deal sizes over the last 4 years"),
     "Funding Momentum":      st.column_config.NumberColumn(
-                                "Funding Momentum", format="%+.0f %%",
-                                help="Sum(deal size last 2 yrs) / Sum(deal size prev. 2 yrs) − 1"),
+                                "Funding Momentum", format="%+.1f %%",
+                                help="(Sum deal size Y & Y-1) / (Sum deal size Y-2 & Y-3) − 1"),
     "Capital Invested Mean":   st.column_config.NumberColumn("Invested Mean",   format="%.2f m€"),
     "Capital Invested Median": st.column_config.NumberColumn("Invested Median", format="%.2f m€"),
     "Abweichung M/M":        st.column_config.NumberColumn(
