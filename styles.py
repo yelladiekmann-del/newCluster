@@ -42,6 +42,12 @@ _CSS = """
   font-family: 'IBM Plex Sans', sans-serif !important;
   line-height: 1.3 !important;
 }
+[data-testid="stPageLink"] a span,
+[data-testid="stPageLink"] a p {
+  color: #eef2f7 !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+}
 [data-testid="stPageLink"] a::before {
   content: "0" counter(page-nav);
   display: block;
