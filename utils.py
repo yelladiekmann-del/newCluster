@@ -204,7 +204,7 @@ def name_all_clusters(cluster_profiles: dict, api_key: str) -> dict[int, str]:
     return {}
 
 
-def generate_cluster_descriptions(
+def generate_cluster_descriptions(  # noqa: E302
     cluster_profiles: dict,
     cluster_names: dict[int, str],
     api_key: str,
