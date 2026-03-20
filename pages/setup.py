@@ -179,7 +179,42 @@ if uploaded:
 
 st.divider()
 
-# ── Step 3: Embeddings upload (optional) ──────────────────────────────────────
+# ── Step 3: Deals Data (optional) ─────────────────────────────────────────────
+st.subheader("3 · Deals Data (optional)")
+st.caption(
+    "Upload a **Deals CSV** to unlock the Analytics page. "
+    "The file must contain one row per deal and a Company ID column to link deals to companies."
+)
+
+_deals_persisted = st.session_state.get("df_deals")
+deals_uploaded = st.file_uploader(
+    "Deals CSV or Excel file",
+    type=["csv", "xlsx", "xls"],
+    key="deals_upload",
+)
+
+if not deals_uploaded and _deals_persisted is not None:
+    st.info(
+        f"✔ Deals already loaded: **{len(_deals_persisted)} rows** · "
+        f"{len(_deals_persisted.columns)} columns.  \n"
+        "Upload a new file below to replace it."
+    )
+
+if deals_uploaded:
+    try:
+        df_deals_input = (
+            pd.read_csv(deals_uploaded)
+            if deals_uploaded.name.endswith(".csv")
+            else pd.read_excel(deals_uploaded)
+        )
+        st.session_state["df_deals"] = df_deals_input
+        st.success(f"✔ {len(df_deals_input)} deal rows · {len(df_deals_input.columns)} columns loaded")
+    except Exception as e:
+        st.error(f"Could not load deals file: {e}")
+
+st.divider()
+
+# ── Step 4: Embeddings upload (optional) ──────────────────────────────────────
 st.subheader("4 · Embeddings (optional)")
 st.caption(
     "If you ran embeddings before, upload the saved `.npz` file to skip re-embedding. "

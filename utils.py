@@ -74,6 +74,9 @@ SESSION_DEFAULTS: dict = {
     "desc_col":              None,
     "embed_mode":            "Per-dimension (recommended)",
     "custom_weights":        None,   # None → use DIMENSION_WEIGHTS defaults
+    # analytics
+    "df_deals":              None,
+    "analytics_col_map":     {},     # persisted column mapping for analytics page
 }
 
 

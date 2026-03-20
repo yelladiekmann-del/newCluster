@@ -14,9 +14,10 @@ _has_data  = (
     or st.session_state.get("feature_matrix") is not None
 )
 
-_setup_page  = st.Page("pages/setup.py",         title="Setup",           icon="⚙️",  default=not _has_data)
-_embed_page  = st.Page("pages/embed_cluster.py", title="Embed & Cluster", icon="⚡",  default=_has_data and not _confirmed)
-_review_page = st.Page("pages/clusters.py",      title="Review & Edit",   icon="🗂️", default=_confirmed)
+_setup_page     = st.Page("pages/setup.py",         title="Setup",           icon="⚙️",  default=not _has_data)
+_embed_page     = st.Page("pages/embed_cluster.py", title="Embed & Cluster", icon="⚡",  default=_has_data and not _confirmed)
+_review_page    = st.Page("pages/clusters.py",      title="Review & Edit",   icon="🗂️", default=_confirmed)
+_analytics_page = st.Page("pages/analytics.py",     title="Analytics",       icon="📊")
 
-pg = st.navigation([_setup_page, _embed_page, _review_page])
+pg = st.navigation([_setup_page, _embed_page, _review_page, _analytics_page])
 pg.run()
