@@ -51,7 +51,7 @@ def _render_named_cluster(
         value=current_desc,
         key=f"cr_desc_{cluster_name}",
         placeholder="Describe what this cluster represents and what sets it apart…",
-        height=80,
+        height=160,
     )
     if new_desc != current_desc:
         descs = st.session_state.get("cr_cluster_descriptions") or {}
@@ -64,7 +64,7 @@ def _render_named_cluster(
         placeholder="Search by name…",
         label_visibility="collapsed",
     )
-    show_cols = [c for c in [company_col, _DESC_COL, "Outlier score"] + dimensions if c in df_cluster.columns]
+    show_cols = [c for c in [company_col, _DESC_COL] + dimensions if c in df_cluster.columns]
     df_show = df_cluster
     if search:
         mask = df_cluster[company_col].astype(str).str.contains(search, case=False, na=False)
@@ -410,7 +410,7 @@ def render_cluster_review(
             desc_preview = (first_sent[:110] + "…") if len(first_sent) > 110 else (first_sent + ".")
 
         with st.container(border=True):
-            _left, _right = st.columns([7, 3])
+            _left, _right = st.columns([5, 4])
             with _left:
                 st.markdown(
                     f'<div style="display:flex;align-items:center;gap:10px;padding:2px 0 2px">'
@@ -451,7 +451,7 @@ def render_cluster_review(
             f"Outliers  ·  {n_out} {'company' if n_out == 1 else 'companies'}  (read-only)",
             expanded=False,
         ):
-            show_cols = [c for c in [company_col, "Outlier score"] + dimensions if c in df_outliers.columns]
+            show_cols = [c for c in [company_col] + dimensions if c in df_outliers.columns]
             st.dataframe(
                 df_outliers.reset_index(drop=True)[show_cols],
                 use_container_width=True, hide_index=True, height=300,

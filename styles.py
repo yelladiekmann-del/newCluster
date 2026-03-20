@@ -239,9 +239,7 @@ hr { border: none; border-top: 1px solid #e4eaf2; margin: 18px 0; }
   transition: box-shadow 0.15s, transform 0.12s;
   position: relative;
   margin-bottom: 4px;
-  height: 130px;
-  box-sizing: border-box;
-  overflow: hidden;
+  min-height: 110px;
 }
 .hy-cl-card:hover {
   box-shadow: 0 4px 16px rgba(0,30,50,0.10);
@@ -264,10 +262,6 @@ hr { border: none; border-top: 1px solid #e4eaf2; margin: 18px 0; }
 .hy-cl-desc {
   font-size: 10.5px; color: #7496b2;
   line-height: 1.55;
-  overflow: hidden;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
 }
 .hy-cl-arrow {
   position: absolute; top: 13px; right: 12px;
@@ -278,14 +272,41 @@ hr { border: none; border-top: 1px solid #e4eaf2; margin: 18px 0; }
   opacity: 0.5;
 }
 
-/* Invisible full-card click button overlay */
-.element-container:has(.hy-cl-card) + .element-container .stButton button {
+/* Equal-height columns for card rows + invisible full-card click overlay */
+[data-testid="stHorizontalBlock"]:has(.hy-cl-card) {
+  align-items: stretch !important;
+}
+[data-testid="stHorizontalBlock"]:has(.hy-cl-card) [data-testid="column"],
+[data-testid="stHorizontalBlock"]:has(.hy-cl-card) [data-testid="stVerticalBlock"] {
+  display: flex !important;
+  flex-direction: column !important;
+  flex: 1 !important;
   position: relative !important;
-  margin-top: -130px !important;
-  height: 130px !important;
+}
+[data-testid="stHorizontalBlock"]:has(.hy-cl-card) .hy-cl-card {
+  flex: 1 !important;
+  height: auto !important;
+}
+.element-container:has(.hy-cl-card) + .element-container {
+  position: absolute !important;
+  inset: 0 !important;
+  z-index: 10 !important;
+  height: 100% !important;
+  width: 100% !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+.element-container:has(.hy-cl-card) + .element-container .stButton {
+  height: 100% !important;
+}
+.element-container:has(.hy-cl-card) + .element-container .stButton button {
+  position: absolute !important;
+  inset: 0 !important;
+  height: 100% !important;
+  width: 100% !important;
+  margin: 0 !important;
   opacity: 0 !important;
   cursor: pointer !important;
-  z-index: 10 !important;
   background: transparent !important;
   border: none !important;
   box-shadow: none !important;

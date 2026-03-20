@@ -138,10 +138,12 @@ _color_map = {
 
 
 @st.dialog("Companies", width="large")
-def _companies_dialog(cname, companies, color):
-    n = len(companies)
+def _companies_dialog(cname, df_cluster, cluster_company_col, color):
+    n = len(df_cluster)
+    df_cluster = df_cluster.reset_index(drop=True)
+
     st.markdown(
-        f'<div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">'
+        f'<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">'
         f'<div style="width:12px;height:12px;border-radius:50%;background:{color}"></div>'
         f'<span style="font-size:15px;font-weight:700;color:#0d1f2d">{cname}</span>'
         f'<span style="font-size:11px;color:#7496b2;background:#f7f9fc;border:1px solid #e4eaf2;'
@@ -149,20 +151,43 @@ def _companies_dialog(cname, companies, color):
         f'</div>',
         unsafe_allow_html=True,
     )
-    _cells = "".join(
-        f'<div style="padding:7px 10px;font-size:12px;color:#0d1f2d;'
-        f'border-radius:6px;display:flex;align-items:center;gap:8px;'
-        f'background:{"#f7f9fc" if i % 2 == 0 else "#ffffff"}">'
-        f'<div style="width:5px;height:5px;border-radius:50%;background:{color};flex-shrink:0"></div>'
-        f'{name}</div>'
-        for i, name in enumerate(companies)
+
+    _desc_col = "Description" if "Description" in df_cluster.columns else None
+    _url_cols = ["website", "url", "URL", "Website", "web", "Website URL", "homepage", "Homepage"]
+    _url_col  = next((c for c in _url_cols if c in df_cluster.columns), None)
+    _has_details = bool(_desc_col or _url_col)
+
+    st.caption("Click a row to view description and website." if _has_details else "")
+    event = st.dataframe(
+        df_cluster[[cluster_company_col]],
+        use_container_width=True,
+        hide_index=True,
+        on_select="rerun",
+        selection_mode="single-row",
+        height=min(320, max(80, 35 * n + 38)),
+        key="co_dlg_df",
     )
-    st.markdown(
-        f'<div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));'
-        f'gap:4px;max-height:420px;overflow-y:auto">{_cells}</div>',
-        unsafe_allow_html=True,
-    )
-    st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
+
+    if _has_details and event.selection.rows:
+        row = df_cluster.iloc[event.selection.rows[0]]
+        st.markdown(
+            f'<div style="margin-top:12px;padding:14px 16px;background:#f7f9fc;'
+            f'border:1px solid #e4eaf2;border-radius:10px">',
+            unsafe_allow_html=True,
+        )
+        st.markdown(f"**{row[cluster_company_col]}**")
+        if _desc_col:
+            desc = str(row.get(_desc_col, "") or "").strip()
+            if desc and desc.lower() not in ("nan", "none"):
+                st.markdown(desc)
+        if _url_col:
+            raw_url = str(row.get(_url_col, "") or "").strip()
+            if raw_url and raw_url.lower() not in ("nan", "none", ""):
+                href = raw_url if raw_url.startswith(("http://", "https://")) else f"https://{raw_url}"
+                st.markdown(f"[Visit website →]({href})")
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
     if st.button("Close", key="co_dlg_close"):
         st.session_state["selected_cluster"] = None
         st.rerun()
@@ -173,7 +198,8 @@ _sel = st.session_state.get("selected_cluster")
 if _sel and _sel in named_clusters:
     _companies_dialog(
         _sel,
-        df[df["Cluster"] == _sel][company_col].tolist(),
+        df[df["Cluster"] == _sel],
+        company_col,
         _color_map.get(_sel, "#26B4D2"),
     )
 
@@ -202,7 +228,6 @@ if named_clusters:
                 )
                 if st.button(" ", key=f"card_{_cname}", use_container_width=True):
                     st.session_state["selected_cluster"] = _cname
-                    st.rerun()
 
 # ── SECTION 2: AI Assistant ────────────────────────────────────────────────────
 st.divider()
