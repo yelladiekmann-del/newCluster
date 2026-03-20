@@ -313,7 +313,8 @@ def _delete_dialog(delete_pending: str, named_clusters: list[str], df_clean: pd.
         if st.button("Confirm delete", type="primary", width="stretch"):
             df_clean.loc[df_clean["Cluster"] == delete_pending, "Cluster"] = target
             st.session_state.df_clean = df_clean
-            st.session_state["cr_delete_pending"] = None            st.rerun()
+            st.session_state["cr_delete_pending"] = None
+            st.rerun()
     with col_no:
         if st.button("Cancel", width="stretch", key="delete_cancel"):
             st.session_state["cr_delete_pending"] = None
