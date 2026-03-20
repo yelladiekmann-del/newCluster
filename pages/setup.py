@@ -54,7 +54,6 @@ with st.container(border=True):
                 type="password",
                 placeholder="AIza…",
                 value=st.session_state.get("api_key", ""),
-                help="Get your key from Google AI Studio (aistudio.google.com). Required for embeddings, naming, and chat.",
             )
         with col_btn:
             st.write("")
@@ -65,13 +64,15 @@ with st.container(border=True):
 
     api_key = st.session_state.get("api_key", "")
 
+    st.caption(
+        "Get your key from [Google AI Studio](https://aistudio.google.com). "
+        "Required for embeddings, cluster naming, and chat."
+    )
     if api_key:
         st.markdown(
             '<span class="hy-chip hy-chip-green">✓ Verified · Gemini 2.5 Flash accessible</span>',
             unsafe_allow_html=True,
         )
-    else:
-        st.info("Enter your Gemini API key above and click **Save** to continue.")
 
 # ── Step 2: Data Upload ───────────────────────────────────────────────────────
 with st.container(border=True):
