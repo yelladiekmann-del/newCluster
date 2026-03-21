@@ -180,28 +180,36 @@ if named_clusters:
                 if st.button("View companies →", key=f"card_{_cname}", use_container_width=True):
                     show_companies_dialog(_cname, df[df["Cluster"] == _cname], company_col, _color_map.get(_cname, "#26B4D2"))
 
-# ── SECTION 2: AI Assistant ────────────────────────────────────────────────────
-st.divider()
-st.markdown('<div class="hy-section-title">AI Assistant</div>', unsafe_allow_html=True)
-st.caption(f"Ask anything about your {n_comp} companies across {n_clust} clusters.")
-render_cluster_chat(
-    df_clean=st.session_state.df_clean,
-    company_col=company_col,
-    dimensions=dimensions,
-    api_key=api_key,
+# ── SECTIONS 2 & 3: Editor + AI Assistant — two equal columns, no implied order
+st.markdown(
+    '<div style="font-size:10px;font-weight:600;color:#7496b2;'
+    'text-transform:uppercase;letter-spacing:0.06em;margin:20px 0 12px">'
+    'Edit &amp; Refine — use either tool, in any order</div>',
+    unsafe_allow_html=True,
 )
 
-# ── SECTION 3: Cluster editor ──────────────────────────────────────────────────
-st.divider()
-st.markdown('<div class="hy-section-title">Cluster editor</div>', unsafe_allow_html=True)
-st.caption("Review and refine each cluster — rename, merge, delete, or reassign companies with Gemini.")
-render_cluster_review(
-    df_clean=st.session_state.df_clean,
-    company_col=company_col,
-    dimensions=dimensions,
-    api_key=api_key,
-    color_map=_color_map,
-)
+_editor_col, _chat_col = st.columns(2, gap="medium")
+
+with _editor_col:
+    st.markdown('<div class="hy-section-title">Cluster editor</div>', unsafe_allow_html=True)
+    st.caption("Rename, merge, delete, or add clusters manually.")
+    render_cluster_review(
+        df_clean=st.session_state.df_clean,
+        company_col=company_col,
+        dimensions=dimensions,
+        api_key=api_key,
+        color_map=_color_map,
+    )
+
+with _chat_col:
+    st.markdown('<div class="hy-section-title">AI Assistant</div>', unsafe_allow_html=True)
+    st.caption(f"Ask anything about your {n_comp} companies across {n_clust} clusters.")
+    render_cluster_chat(
+        df_clean=st.session_state.df_clean,
+        company_col=company_col,
+        dimensions=dimensions,
+        api_key=api_key,
+    )
 
 # ── CTA ────────────────────────────────────────────────────────────────────────
 st.divider()
