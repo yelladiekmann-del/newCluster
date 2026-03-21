@@ -439,27 +439,34 @@ def render_cluster_chat(
     if pending_actions:
         st.divider()
         n_actions = len(pending_actions)
-        with st.expander(f"🤖 {n_actions} suggested action{'s' if n_actions != 1 else ''} — click to review", expanded=True):
+        with st.expander(f"{n_actions} suggested action{'s' if n_actions != 1 else ''}", expanded=True):
             for i, action in enumerate(pending_actions):
                 t = action.get("type")
                 if t == "delete":
-                    label = f"🗑 Delete: **{action.get('cluster', '')}**"
+                    badge = '<span class="hy-chip hy-chip-red">Delete</span>'
+                    desc  = f"<strong>{action.get('cluster', '')}</strong>"
                 elif t == "merge":
                     sources = action.get("sources", [])
-                    label = f"↔ Merge: **{' + '.join(sources)}** → **{action.get('new_name', '')}**"
+                    badge = '<span class="hy-chip hy-chip-cyan">Merge</span>'
+                    desc  = f"<strong>{' + '.join(sources)}</strong> → <strong>{action.get('new_name', '')}</strong>"
                 elif t == "add":
                     companies = action.get("companies", [])
-                    label = f"➕ Add: **{action.get('name', '')}** ({len(companies)} companies)"
+                    badge = '<span class="hy-chip hy-chip-green">Add</span>'
+                    desc  = (f"<strong>{action.get('name', '')}</strong>"
+                             f"<span style='color:#7496b2;font-size:11px'> ({len(companies)} companies)</span>")
                 else:
                     continue
 
                 col_lbl, col_btn = st.columns([8, 2])
                 with col_lbl:
-                    st.markdown(label)
+                    st.markdown(
+                        f'<div style="display:flex;align-items:center;gap:10px;padding:4px 0">'
+                        f'{badge}<span style="font-size:13px;color:#0d1f2d">{desc}</span></div>',
+                        unsafe_allow_html=True,
+                    )
                 with col_btn:
-                    if st.button("Execute", key=f"action_exec_{i}"):
+                    if st.button("Apply", key=f"action_exec_{i}", type="secondary"):
                         _execute_actions([action], df_clean, company_col, dimensions)
-                        # Remove this action from pending list
                         remaining = [a for j, a in enumerate(pending_actions) if j != i]
                         st.session_state["chat_pending_actions"] = remaining if remaining else None
                         st.rerun()
@@ -467,11 +474,11 @@ def render_cluster_chat(
             st.markdown("")
             col_all, col_dismiss = st.columns([1, 1])
             with col_all:
-                if st.button("✅ Execute all", type="primary", key="action_exec_all"):
+                if st.button("Apply all", type="primary", key="action_exec_all"):
                     _execute_actions(pending_actions, df_clean, company_col, dimensions)
                     st.session_state["chat_pending_actions"] = None
                     st.rerun()
             with col_dismiss:
-                if st.button("✕ Dismiss", key="action_dismiss"):
+                if st.button("Dismiss", type="secondary", key="action_dismiss"):
                     st.session_state["chat_pending_actions"] = None
                     st.rerun()
