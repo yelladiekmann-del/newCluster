@@ -391,7 +391,7 @@ def show_companies_dialog(cname: str, df_cluster: pd.DataFrame, cluster_company_
         if _desc_col:
             raw = str(row.get(_desc_col, "") or "").strip()
             if raw and raw.lower() not in ("nan", "none"):
-                desc = raw[:120] + ("…" if len(raw) > 120 else "")
+                desc = raw
         url_raw = ""
         if _url_col:
             raw_url = str(row.get(_url_col, "") or "").strip()

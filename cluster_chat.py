@@ -371,34 +371,7 @@ def render_cluster_chat(
     pending = st.session_state.get("chat_pending_msg")
     display_pending = st.session_state.get("chat_pending_display") or pending
 
-    # Messages in a bounded scrollable container
-    with st.container(height=430):
-        for msg in st.session_state["chat_history"]:
-            with st.chat_message(msg["role"], avatar=":material/person:" if msg["role"] == "user" else ":material/auto_awesome:"):
-                st.markdown(msg["content"])
-
-        # Render the in-flight exchange inside the same container so it stays visible
-        if pending:
-            with st.chat_message("user", avatar=":material/person:"):
-                st.markdown(display_pending)
-            with st.chat_message("assistant", avatar=":material/auto_awesome:"):
-                with st.spinner("Thinking… (~5–15s)"):
-                    raw_response = _call_gemini(
-                        pending,
-                        st.session_state["chat_context"],
-                        st.session_state["chat_history"],
-                        api_key,
-                    )
-                display_text, actions = _extract_actions(raw_response)
-                st.markdown(display_text)
-            st.session_state["chat_history"].append({"role": "user", "content": display_pending})
-            st.session_state["chat_history"].append({"role": "assistant", "content": display_text})
-            if actions is not None:
-                st.session_state["chat_pending_actions"] = actions
-            st.session_state["chat_pending_msg"] = None
-            st.session_state["chat_pending_display"] = None
-
-    # Pre-written cluster review prompt
+    # Pre-written cluster review prompt — sits above the chat window
     _REVIEW_PROMPT = (
         "Please review all clusters in this analysis and provide structured recommendations:\n\n"
         "**1. KEEP** — List clusters that are well-defined and should remain exactly as they are. "
@@ -429,28 +402,37 @@ def render_cluster_chat(
         st.session_state["chat_pending_display"] = "📋 Please review all clusters and provide structured recommendations (KEEP / DELETE / MERGE / ADD)."
         st.rerun()
 
-    # Input row sits below the container
-    st.session_state.setdefault("chat_msg_input", "")
-    col_input, col_btn = st.columns([9, 1])
-    with col_input:
-        st.text_input(
-            "",
-            key="chat_msg_input",
-            placeholder="Ask anything about the clusters or companies…",
-            label_visibility="collapsed",
-            disabled=not api_key,
-        )
-    with col_btn:
-        send = st.button(
-            "↑", key="chat_send", type="primary",
-            disabled=not api_key or not st.session_state.get("chat_msg_input", "").strip(),
-            use_container_width=True,
-        )
-    if send:
-        msg = st.session_state["chat_msg_input"].strip()
-        st.session_state["chat_msg_input"] = ""
-        st.session_state["chat_pending_msg"] = msg
-        st.rerun()
+    # Chat window — messages + native input anchored at the bottom
+    with st.container(height=520, border=True):
+        for msg in st.session_state["chat_history"]:
+            with st.chat_message(msg["role"], avatar=":material/person:" if msg["role"] == "user" else ":material/auto_awesome:"):
+                st.markdown(msg["content"])
+
+        # Render the in-flight exchange inside the same container so it stays visible
+        if pending:
+            with st.chat_message("user", avatar=":material/person:"):
+                st.markdown(display_pending)
+            with st.chat_message("assistant", avatar=":material/auto_awesome:"):
+                with st.spinner("Thinking… (~5–15s)"):
+                    raw_response = _call_gemini(
+                        pending,
+                        st.session_state["chat_context"],
+                        st.session_state["chat_history"],
+                        api_key,
+                    )
+                display_text, actions = _extract_actions(raw_response)
+                st.markdown(display_text)
+            st.session_state["chat_history"].append({"role": "user", "content": display_pending})
+            st.session_state["chat_history"].append({"role": "assistant", "content": display_text})
+            if actions is not None:
+                st.session_state["chat_pending_actions"] = actions
+            st.session_state["chat_pending_msg"] = None
+            st.session_state["chat_pending_display"] = None
+
+        user_input = st.chat_input("Ask anything about the clusters or companies…", disabled=not api_key)
+        if user_input:
+            st.session_state["chat_pending_msg"] = user_input.strip()
+            st.rerun()
 
     # ── PENDING ACTIONS APPROVAL UI ─────────────────────────────
     pending_actions = st.session_state.get("chat_pending_actions")

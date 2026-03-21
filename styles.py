@@ -381,16 +381,14 @@ hr { border: none; border-top: 1px solid #e4eaf2; margin: 18px 0; }
   border: 1px solid #e4eaf2; border-radius: 10px; margin-top: 8px;
 }
 .hy-co-item {
-  display: flex; align-items: baseline; gap: 12px;
+  display: grid; grid-template-columns: 220px 1fr auto;
+  align-items: baseline; gap: 12px;
   padding: 10px 14px; border-bottom: 1px solid #f0f4f8;
 }
 .hy-co-item:last-child { border-bottom: none; }
 .hy-co-item:nth-child(even) { background: #f7f9fc; }
-.hy-co-item-name {
-  font-size: 13px; font-weight: 600; color: #0d1f2d;
-  min-width: 160px; flex-shrink: 0;
-}
-.hy-co-item-desc { font-size: 11.5px; color: #7496b2; flex: 1; line-height: 1.4; }
+.hy-co-item-name { font-size: 13px; font-weight: 600; color: #0d1f2d; }
+.hy-co-item-desc { font-size: 11.5px; color: #7496b2; line-height: 1.4; }
 .hy-co-item-url  {
   font-size: 11px; color: #26B4D2; text-decoration: none;
   flex-shrink: 0; white-space: nowrap;
