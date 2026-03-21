@@ -344,10 +344,14 @@ def render_cluster_chat(
     n_companies = len(df_clean)
     n_clusters = df_clean["Cluster"].nunique() - (1 if _OUTLIER_LABEL in df_clean["Cluster"].values else 0)
 
-    col_title, col_clear = st.columns([5, 1])
-    with col_title:
-        st.markdown('<div style="font-size:15px;font-weight:700;color:#0d1f2d;letter-spacing:-0.01em;margin-bottom:2px">Ask about your clusters</div>', unsafe_allow_html=True)
-    with col_clear:
+    analysis_label = st.session_state.get("chat_analysis_context", "")
+    _ctx_col, _clr_col = st.columns([5, 1])
+    with _ctx_col:
+        st.caption(
+            (f"Analysis context: _{analysis_label}_ · " if analysis_label else "")
+            + f"Full knowledge of {n_companies} companies across {n_clusters} clusters."
+        )
+    with _clr_col:
         st.button(
             "Clear",
             key="chat_clear",
@@ -355,13 +359,6 @@ def render_cluster_chat(
             disabled=not st.session_state["chat_history"],
             on_click=lambda: st.session_state.update({"chat_history": []}),
         )
-
-    analysis_label = st.session_state.get("chat_analysis_context", "")
-    st.caption(
-        (f"Analysis context: _{analysis_label}_ · " if analysis_label else "")
-        + f"Full knowledge of {n_companies} companies across {n_clusters} clusters. "
-        "Ask anything — comparisons, company lookups, market gaps, where a new company fits."
-    )
 
     if st.session_state.get("chat_reset_notice"):
         st.info("Chat history was reset because cluster assignments changed.")
@@ -371,7 +368,7 @@ def render_cluster_chat(
     pending = st.session_state.get("chat_pending_msg")
     display_pending = st.session_state.get("chat_pending_display") or pending
 
-    # Pre-written cluster review prompt — sits above the chat window
+    # ── Suggested prompt chips — shown above the chat window ──────────────────
     _REVIEW_PROMPT = (
         "Please review all clusters in this analysis and provide structured recommendations:\n\n"
         "**1. KEEP** — List clusters that are well-defined and should remain exactly as they are. "
@@ -397,9 +394,45 @@ def render_cluster_chat(
         "Only include delete, merge, and add actions — omit KEEP entries entirely. "
         "Use exact cluster and company names as they appear in the data."
     )
-    if st.button("📋 Request cluster review", type="secondary", disabled=not api_key):
+
+    st.markdown(
+        '<div style="font-size:10px;font-weight:600;color:#7496b2;'
+        'text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px">Suggested</div>',
+        unsafe_allow_html=True,
+    )
+    # Featured chip — triggers full cluster review with actionable output
+    if st.button(
+        "✦  Request cluster review",
+        key="chat_review_chip",
+        use_container_width=True,
+        disabled=not api_key,
+        help="Gemini analyses all clusters and suggests merges, splits, and additions",
+    ):
         st.session_state["chat_pending_msg"] = _REVIEW_PROMPT
         st.session_state["chat_pending_display"] = "📋 Please review all clusters and provide structured recommendations (KEEP / DELETE / MERGE / ADD)."
+        st.rerun()
+    # Quick-ask chips
+    if st.button(
+        "Which clusters overlap the most?",
+        key="chat_chip_overlap",
+        type="secondary",
+        use_container_width=True,
+        disabled=not api_key,
+        help="Identify the most ambiguous cluster boundaries",
+    ):
+        st.session_state["chat_pending_msg"] = "Which clusters overlap the most? Identify the most ambiguous boundaries and any companies that could plausibly belong to multiple clusters."
+        st.session_state["chat_pending_display"] = "Which clusters overlap the most?"
+        st.rerun()
+    if st.button(
+        "Compare cluster sizes and gaps",
+        key="chat_chip_sizes",
+        type="secondary",
+        use_container_width=True,
+        disabled=not api_key,
+        help="Spot under- or over-represented segments",
+    ):
+        st.session_state["chat_pending_msg"] = "Compare cluster sizes and identify any significant gaps or imbalances — are any segments over- or under-represented given the portfolio?"
+        st.session_state["chat_pending_display"] = "Compare cluster sizes and gaps."
         st.rerun()
 
     # Chat window — messages + native input anchored at the bottom
