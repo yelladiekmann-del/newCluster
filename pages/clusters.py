@@ -137,24 +137,6 @@ _color_map = {
 }
 
 
-# Trigger company list dialog if a card was clicked.
-# Guard: skip if any cluster-editor dialog is already pending — Streamlit only
-# allows one @st.dialog to open per run, and render_cluster_review() will open
-# its own dialog (rename/merge/delete) later in the same script execution.
-_sel = st.session_state.get("selected_cluster")
-_editor_dialog_pending = bool(
-    st.session_state.get("cr_rename_pending")
-    or st.session_state.get("cr_merge_pending")
-    or st.session_state.get("cr_delete_pending")
-)
-if _sel and _sel in named_clusters and not _editor_dialog_pending:
-    show_companies_dialog(
-        _sel,
-        df[df["Cluster"] == _sel],
-        company_col,
-        _color_map.get(_sel, "#26B4D2"),
-    )
-
 st.markdown('<div class="hy-section-title">Cluster overview</div>', unsafe_allow_html=True)
 st.caption("Click a cluster to see all companies inside it.")
 
@@ -196,8 +178,7 @@ if named_clusters:
         for _ci, _cname in enumerate(_card_row):
             with _btn_cols[_ci]:
                 if st.button("View companies →", key=f"card_{_cname}", use_container_width=True):
-                    st.session_state["selected_cluster"] = _cname
-                    st.rerun()
+                    show_companies_dialog(_cname, df[df["Cluster"] == _cname], company_col, _color_map.get(_cname, "#26B4D2"))
 
 # ── SECTION 2: AI Assistant ────────────────────────────────────────────────────
 st.divider()
