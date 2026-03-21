@@ -5,7 +5,7 @@ import plotly.express as px
 import streamlit as st
 
 from cluster_chat import render_cluster_chat
-from cluster_review import render_cluster_review
+from cluster_review import render_cluster_review, show_companies_dialog
 from styles import inject_global_css, page_header
 from utils import DIMENSIONS
 
@@ -137,62 +137,6 @@ _color_map = {
 }
 
 
-@st.dialog("Companies", width="large")
-def _companies_dialog(cname, df_cluster, cluster_company_col, color):
-    n = len(df_cluster)
-    df_cluster = df_cluster.reset_index(drop=True)
-
-    st.markdown(
-        f'<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">'
-        f'<div style="width:12px;height:12px;border-radius:50%;background:{color}"></div>'
-        f'<span style="font-size:15px;font-weight:700;color:#0d1f2d">{cname}</span>'
-        f'<span style="font-size:11px;color:#7496b2;background:#f7f9fc;border:1px solid #e4eaf2;'
-        f'border-radius:20px;padding:2px 10px">{n} companies</span>'
-        f'</div>',
-        unsafe_allow_html=True,
-    )
-
-    _desc_col = "Description" if "Description" in df_cluster.columns else None
-    _url_cols = ["website", "url", "URL", "Website", "web", "Website URL", "homepage", "Homepage"]
-    _url_col  = next((c for c in _url_cols if c in df_cluster.columns), None)
-    _has_details = bool(_desc_col or _url_col)
-
-    st.caption("Click a row to view description and website." if _has_details else "")
-    event = st.dataframe(
-        df_cluster[[cluster_company_col]],
-        use_container_width=True,
-        hide_index=True,
-        on_select="rerun",
-        selection_mode="single-row",
-        height=min(320, max(80, 35 * n + 38)),
-        key="co_dlg_df",
-    )
-
-    if _has_details and event.selection.rows:
-        row = df_cluster.iloc[event.selection.rows[0]]
-        st.markdown(
-            f'<div style="margin-top:12px;padding:14px 16px;background:#f7f9fc;'
-            f'border:1px solid #e4eaf2;border-radius:10px">',
-            unsafe_allow_html=True,
-        )
-        st.markdown(f"**{row[cluster_company_col]}**")
-        if _desc_col:
-            desc = str(row.get(_desc_col, "") or "").strip()
-            if desc and desc.lower() not in ("nan", "none"):
-                st.markdown(desc)
-        if _url_col:
-            raw_url = str(row.get(_url_col, "") or "").strip()
-            if raw_url and raw_url.lower() not in ("nan", "none", ""):
-                href = raw_url if raw_url.startswith(("http://", "https://")) else f"https://{raw_url}"
-                st.markdown(f"[Visit website →]({href})")
-        st.markdown("</div>", unsafe_allow_html=True)
-
-    st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
-    if st.button("Close", key="co_dlg_close"):
-        st.session_state["selected_cluster"] = None
-        st.rerun()
-
-
 # Trigger company list dialog if a card was clicked.
 # Guard: skip if any cluster-editor dialog is already pending — Streamlit only
 # allows one @st.dialog to open per run, and render_cluster_review() will open
@@ -204,7 +148,7 @@ _editor_dialog_pending = bool(
     or st.session_state.get("cr_delete_pending")
 )
 if _sel and _sel in named_clusters and not _editor_dialog_pending:
-    _companies_dialog(
+    show_companies_dialog(
         _sel,
         df[df["Cluster"] == _sel],
         company_col,

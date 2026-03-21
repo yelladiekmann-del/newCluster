@@ -308,18 +308,21 @@ def render_cluster_chat(
             "Tell us who this analysis is for — this shapes the market intelligence web search "
             "and helps the assistant answer gap-analysis questions more precisely."
         )
-        with st.form("chat_onboarding_form", clear_on_submit=False):
-            analysis_ctx = st.text_input(
-                "Who is this analysis for?",
-                placeholder="e.g. a regional bank exploring fintech partnerships",
-                disabled=not api_key,
-            )
-            ob_submitted = st.form_submit_button(
-                "Start analysis →", type="primary", disabled=not api_key
-            )
+        analysis_ctx = st.text_input(
+            "Who is this analysis for?",
+            key="chat_ob_input",
+            placeholder="e.g. a regional bank exploring fintech partnerships",
+            disabled=not api_key,
+        )
+        ob_clicked = st.button(
+            "Start analysis →",
+            key="chat_ob_submit",
+            type="primary",
+            disabled=not api_key or not st.session_state.get("chat_ob_input", "").strip(),
+        )
 
-        if ob_submitted and analysis_ctx.strip():
-            ctx = analysis_ctx.strip()
+        if ob_clicked:
+            ctx = st.session_state["chat_ob_input"].strip()
             st.session_state["chat_analysis_context"] = ctx
             named_clusters = [c for c in df_clean["Cluster"].unique() if c != _OUTLIER_LABEL]
             with st.spinner("Researching market landscape… (~5–10s)"):
