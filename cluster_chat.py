@@ -346,11 +346,12 @@ def render_cluster_chat(
 
     col_title, col_clear = st.columns([5, 1])
     with col_title:
-        st.subheader("Ask about your clusters")
+        st.markdown('<div style="font-size:15px;font-weight:700;color:#0d1f2d;letter-spacing:-0.01em;margin-bottom:2px">Ask about your clusters</div>', unsafe_allow_html=True)
     with col_clear:
         st.button(
             "Clear",
             key="chat_clear",
+            type="secondary",
             disabled=not st.session_state["chat_history"],
             on_click=lambda: st.session_state.update({"chat_history": []}),
         )
@@ -373,14 +374,14 @@ def render_cluster_chat(
     # Messages in a bounded scrollable container
     with st.container(height=430):
         for msg in st.session_state["chat_history"]:
-            with st.chat_message(msg["role"]):
+            with st.chat_message(msg["role"], avatar=":material/person:" if msg["role"] == "user" else ":material/auto_awesome:"):
                 st.markdown(msg["content"])
 
         # Render the in-flight exchange inside the same container so it stays visible
         if pending:
-            with st.chat_message("user"):
+            with st.chat_message("user", avatar=":material/person:"):
                 st.markdown(display_pending)
-            with st.chat_message("assistant"):
+            with st.chat_message("assistant", avatar=":material/auto_awesome:"):
                 with st.spinner("Thinking… (~5–15s)"):
                     raw_response = _call_gemini(
                         pending,
@@ -423,26 +424,32 @@ def render_cluster_chat(
         "Only include delete, merge, and add actions — omit KEEP entries entirely. "
         "Use exact cluster and company names as they appear in the data."
     )
-    if st.button("📋 Request cluster review", disabled=not api_key):
+    if st.button("📋 Request cluster review", type="secondary", disabled=not api_key):
         st.session_state["chat_pending_msg"] = _REVIEW_PROMPT
         st.session_state["chat_pending_display"] = "📋 Please review all clusters and provide structured recommendations (KEEP / DELETE / MERGE / ADD)."
         st.rerun()
 
-    # Input row sits below the container — not sticky, not overlapping messages
-    with st.form("chat_form", clear_on_submit=True):
-        col_input, col_btn = st.columns([9, 1])
-        with col_input:
-            user_input = st.text_input(
-                "",
-                placeholder="Ask anything about the clusters or companies…",
-                label_visibility="collapsed",
-                disabled=not api_key,
-            )
-        with col_btn:
-            submitted = st.form_submit_button("↑", disabled=not api_key)
-
-    if submitted and user_input.strip():
-        st.session_state["chat_pending_msg"] = user_input.strip()
+    # Input row sits below the container
+    st.session_state.setdefault("chat_msg_input", "")
+    col_input, col_btn = st.columns([9, 1])
+    with col_input:
+        st.text_input(
+            "",
+            key="chat_msg_input",
+            placeholder="Ask anything about the clusters or companies…",
+            label_visibility="collapsed",
+            disabled=not api_key,
+        )
+    with col_btn:
+        send = st.button(
+            "↑", key="chat_send", type="primary",
+            disabled=not api_key or not st.session_state.get("chat_msg_input", "").strip(),
+            use_container_width=True,
+        )
+    if send:
+        msg = st.session_state["chat_msg_input"].strip()
+        st.session_state["chat_msg_input"] = ""
+        st.session_state["chat_pending_msg"] = msg
         st.rerun()
 
     # ── PENDING ACTIONS APPROVAL UI ─────────────────────────────

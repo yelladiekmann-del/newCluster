@@ -374,6 +374,29 @@ hr { border: none; border-top: 1px solid #e4eaf2; margin: 18px 0; }
   font-size: 10px; color: #7496b2; margin-top: 2px;
 }
 [data-testid="stElementToolbar"] { display: none !important; }
+
+/* ── Company list in dialog ── */
+.hy-co-list {
+  max-height: 460px; overflow-y: auto;
+  border: 1px solid #e4eaf2; border-radius: 10px; margin-top: 8px;
+}
+.hy-co-item {
+  display: flex; align-items: baseline; gap: 12px;
+  padding: 10px 14px; border-bottom: 1px solid #f0f4f8;
+}
+.hy-co-item:last-child { border-bottom: none; }
+.hy-co-item:nth-child(even) { background: #f7f9fc; }
+.hy-co-item-name {
+  font-size: 13px; font-weight: 600; color: #0d1f2d;
+  min-width: 160px; flex-shrink: 0;
+}
+.hy-co-item-desc { font-size: 11.5px; color: #7496b2; flex: 1; line-height: 1.4; }
+.hy-co-item-url  {
+  font-size: 11px; color: #26B4D2; text-decoration: none;
+  flex-shrink: 0; white-space: nowrap;
+}
+.hy-co-item-url:hover { text-decoration: underline; }
+.hy-co-empty { padding: 20px 14px; font-size: 12px; color: #aac0d1; text-align: center; }
 """
 
 

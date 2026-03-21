@@ -376,42 +376,40 @@ def show_companies_dialog(cname: str, df_cluster: pd.DataFrame, cluster_company_
     _desc_col = "Description" if "Description" in df_cluster.columns else None
     _url_cols = ["website", "url", "URL", "Website", "web", "Website URL", "homepage", "Homepage"]
     _url_col  = next((c for c in _url_cols if c in df_cluster.columns), None)
-    _has_details = bool(_desc_col or _url_col)
 
-    st.caption("Click a row to view description and website." if _has_details else "")
-    event = st.dataframe(
-        df_cluster[[cluster_company_col]],
-        use_container_width=True,
-        hide_index=True,
-        on_select="rerun",
-        selection_mode="single-row",
-        height=min(320, max(80, 35 * n + 38)),
-        key="co_dlg_df",
-    )
+    search = st.text_input("", placeholder="Search companies…", key="co_dlg_search", label_visibility="collapsed")
 
-    if _has_details and event.selection.rows:
-        row = df_cluster.iloc[event.selection.rows[0]]
-        st.markdown(
-            f'<div style="margin-top:12px;padding:14px 16px;background:#f7f9fc;'
-            f'border:1px solid #e4eaf2;border-radius:10px">',
-            unsafe_allow_html=True,
-        )
-        st.markdown(f"**{row[cluster_company_col]}**")
+    df_show = df_cluster
+    if search:
+        mask = df_cluster[cluster_company_col].astype(str).str.contains(search, case=False, na=False)
+        df_show = df_cluster[mask]
+
+    rows_html = []
+    for _, row in df_show.iterrows():
+        name = str(row[cluster_company_col])
+        desc = ""
         if _desc_col:
-            desc = str(row.get(_desc_col, "") or "").strip()
-            if desc and desc.lower() not in ("nan", "none"):
-                st.markdown(desc)
+            raw = str(row.get(_desc_col, "") or "").strip()
+            if raw and raw.lower() not in ("nan", "none"):
+                desc = raw[:120] + ("…" if len(raw) > 120 else "")
+        url_raw = ""
         if _url_col:
             raw_url = str(row.get(_url_col, "") or "").strip()
             if raw_url and raw_url.lower() not in ("nan", "none", ""):
-                href = raw_url if raw_url.startswith(("http://", "https://")) else f"https://{raw_url}"
-                st.markdown(f"[Visit website →]({href})")
-        st.markdown("</div>", unsafe_allow_html=True)
+                url_raw = raw_url if raw_url.startswith(("http://", "https://")) else f"https://{raw_url}"
+        row_html = f'<div class="hy-co-item"><span class="hy-co-item-name">{name}</span>'
+        if desc:
+            row_html += f'<span class="hy-co-item-desc">{desc}</span>'
+        if url_raw:
+            display_url = url_raw.replace("https://", "").replace("http://", "").rstrip("/")[:30]
+            row_html += f'<a class="hy-co-item-url" href="{url_raw}" target="_blank">↗ {display_url}</a>'
+        row_html += '</div>'
+        rows_html.append(row_html)
 
-    st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
-    if st.button("Close", key="co_dlg_close"):
-        st.session_state["selected_cluster"] = None
-        st.rerun()
+    if rows_html:
+        st.markdown('<div class="hy-co-list">' + "".join(rows_html) + '</div>', unsafe_allow_html=True)
+    else:
+        st.markdown('<div class="hy-co-list"><div class="hy-co-empty">No companies match your search.</div></div>', unsafe_allow_html=True)
 
 
 # ============================================================
