@@ -506,6 +506,13 @@ div[data-testid="stVerticalBlock"]:has(> .element-container .hy-cr-co-list-marke
   display: flex !important;
   align-items: center !important;
 }
+/* Collapse the stVerticalBlock wrapper Streamlit inserts inside button columns —
+   it inherits gap:1rem which inflates the wrapper height and shifts buttons up */
+div[data-testid="stVerticalBlock"]:has(> .element-container .hy-cr-co-list-marker) [data-testid="stColumn"] > [data-testid="stVerticalBlock"] {
+  gap: 0 !important;
+  padding: 0 !important;
+  margin: 0 !important;
+}
 div[data-testid="stVerticalBlock"]:has(> .element-container .hy-cr-co-list-marker) > [data-testid="stHorizontalBlock"]:last-child {
   border-bottom: none;
 }
