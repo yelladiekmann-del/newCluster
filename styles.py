@@ -168,14 +168,8 @@ _CSS = """
 }
 
 /* ── Sliders ── */
-/* Filled track: catch all formats Streamlit/base-web might use for the primary red */
-[data-testid="stSlider"] [data-baseweb="slider"] *[style*="255, 75, 75"],
-[data-testid="stSlider"] [data-baseweb="slider"] *[style*="255,75,75"],
-[data-testid="stSlider"] [data-baseweb="slider"] *[style*="FF4B4B"],
-[data-testid="stSlider"] [data-baseweb="slider"] *[style*="ff4b4b"] {
-  background-color: #26B4D2 !important;
-  background:       #26B4D2 !important;
-}
+/* Track fill color comes from Streamlit's primaryColor theme (.streamlit/config.toml).
+   Only the thumb and label need explicit overrides here. */
 /* Value label (number above thumb) */
 [data-testid="stSlider"] [role="slider"] > div {
   color: #26B4D2 !important;
