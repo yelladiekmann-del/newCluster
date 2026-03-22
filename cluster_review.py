@@ -464,7 +464,7 @@ def render_cluster_review(
             desc_preview = (first_sent[:110] + "…") if len(first_sent) > 110 else (first_sent + ".")
 
         with st.container(border=True):
-            _left, _right = st.columns([5, 4])
+            _left, _right = st.columns([3, 4])
             with _left:
                 st.markdown(
                     f'<div style="display:flex;align-items:center;gap:10px;padding:2px 0 2px">'
