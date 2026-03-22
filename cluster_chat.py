@@ -345,20 +345,10 @@ def render_cluster_chat(
     n_clusters = df_clean["Cluster"].nunique() - (1 if _OUTLIER_LABEL in df_clean["Cluster"].values else 0)
 
     analysis_label = st.session_state.get("chat_analysis_context", "")
-    _ctx_col, _clr_col = st.columns([5, 1])
-    with _ctx_col:
-        st.caption(
-            (f"Analysis context: _{analysis_label}_ · " if analysis_label else "")
-            + f"Full knowledge of {n_companies} companies across {n_clusters} clusters."
-        )
-    with _clr_col:
-        st.button(
-            "Clear",
-            key="chat_clear",
-            type="secondary",
-            disabled=not st.session_state["chat_history"],
-            on_click=lambda: st.session_state.update({"chat_history": []}),
-        )
+    st.caption(
+        (f"Analysis context: _{analysis_label}_ · " if analysis_label else "")
+        + f"Full knowledge of {n_companies} companies across {n_clusters} clusters."
+    )
 
     if st.session_state.get("chat_reset_notice"):
         st.info("Chat history was reset because cluster assignments changed.")

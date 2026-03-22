@@ -44,32 +44,103 @@ def _render_named_cluster(
     company_col: str,
     dimensions: list[str],
 ) -> None:
-    # LLM-generated (or user-edited) description — editable inline
+    df_full = st.session_state.get("df_clean", pd.DataFrame())
+
+    # ── Inline cluster name editing ───────────────────────────────────────────
+    _ncol, _scol = st.columns([5, 1])
+    with _ncol:
+        new_name = st.text_input(
+            "Cluster name",
+            value=cluster_name,
+            key=f"cr_name_{cluster_name}",
+            placeholder="Cluster name…",
+            label_visibility="collapsed",
+        )
+    with _scol:
+        st.write("")
+        name_changed = new_name.strip() != cluster_name
+        if st.button("Save", key=f"cr_name_save_{cluster_name}", type="primary", disabled=not name_changed):
+            new_name_clean = new_name.strip()
+            existing = set(df_full["Cluster"].unique()) - {cluster_name}
+            if not new_name_clean:
+                st.error("Name cannot be empty.")
+            elif new_name_clean in existing:
+                st.error(f'"{new_name_clean}" already exists.')
+            else:
+                df_out = df_full.copy()
+                df_out.loc[df_out["Cluster"] == cluster_name, "Cluster"] = new_name_clean
+                descs = st.session_state.get("cr_cluster_descriptions") or {}
+                if cluster_name in descs:
+                    descs[new_name_clean] = descs.pop(cluster_name)
+                    st.session_state["cr_cluster_descriptions"] = descs
+                st.session_state.df_clean = df_out
+                st.rerun()
+
+    # ── Description ───────────────────────────────────────────────────────────
     current_desc = st.session_state.get("cr_cluster_descriptions", {}).get(cluster_name, "")
     new_desc = st.text_area(
         "Description",
         value=current_desc,
         key=f"cr_desc_{cluster_name}",
         placeholder="Describe what this cluster represents and what sets it apart…",
-        height=160,
+        height=100,
+        label_visibility="collapsed",
     )
     if new_desc != current_desc:
         descs = st.session_state.get("cr_cluster_descriptions") or {}
         descs[cluster_name] = new_desc
         st.session_state["cr_cluster_descriptions"] = descs
 
-    search = st.text_input(
-        "Filter companies",
-        key=f"cr_search_{cluster_name}",
-        placeholder="Search by name…",
-        label_visibility="collapsed",
+    st.divider()
+
+    # ── Companies table ───────────────────────────────────────────────────────
+    n = len(df_cluster)
+    _noun = "company" if n == 1 else "companies"
+    _hcol, _acol = st.columns([4, 1])
+    with _hcol:
+        st.markdown(
+            f'<div style="font-size:12px;font-weight:700;color:#0d1f2d;letter-spacing:-0.01em;'
+            f'padding:4px 0 6px">Companies ({n})</div>',
+            unsafe_allow_html=True,
+        )
+    with _acol:
+        if st.button("Add Companies", key=f"cr_add_co_{cluster_name}", use_container_width=True, type="secondary"):
+            st.session_state["cr_add_companies_cluster"] = cluster_name
+            st.rerun()
+
+    show_cols = [c for c in [company_col, _DESC_COL] if c in df_cluster.columns]
+    col_cfg = {}
+    if company_col in df_cluster.columns:
+        col_cfg[company_col] = st.column_config.TextColumn("Company", width="medium")
+    if _DESC_COL in df_cluster.columns:
+        col_cfg[_DESC_COL] = st.column_config.TextColumn("Description", width="large")
+
+    st.dataframe(
+        df_cluster[show_cols].reset_index(drop=True),
+        use_container_width=True,
+        hide_index=True,
+        height=min(240, 35 + 35 * max(n, 1)),
+        column_config=col_cfg,
     )
-    show_cols = [c for c in [company_col, _DESC_COL] + dimensions if c in df_cluster.columns]
-    df_show = df_cluster
-    if search:
-        mask = df_cluster[company_col].astype(str).str.contains(search, case=False, na=False)
-        df_show = df_cluster[mask]
-    st.dataframe(df_show[show_cols], use_container_width=True, hide_index=True, height=300)
+
+    # ── Move / remove a company ───────────────────────────────────────────────
+    company_options = df_cluster[company_col].dropna().astype(str).tolist() if company_col in df_cluster.columns else []
+    if company_options:
+        _scol2, _rcol = st.columns([5, 1])
+        with _scol2:
+            selected_company = st.selectbox(
+                "Move or remove a company",
+                options=[""] + company_options,
+                key=f"cr_remove_sel_{cluster_name}",
+                label_visibility="collapsed",
+                placeholder="Select a company to move or remove…",
+            )
+        with _rcol:
+            st.write("")
+            if st.button("Remove", key=f"cr_remove_btn_{cluster_name}", use_container_width=True,
+                         type="secondary", disabled=not selected_company):
+                st.session_state["cr_move_company"] = {"cluster": cluster_name, "company": selected_company}
+                st.rerun()
 
 
 
@@ -294,33 +365,6 @@ def _delete_dialog(delete_pending: str, named_clusters: list[str], df_clean: pd.
             st.rerun()
 
 
-@st.dialog("Rename cluster", width="large")
-def _rename_dialog(cluster_name: str, df_clean: pd.DataFrame):
-    new_name = st.text_input("New name", value=cluster_name, placeholder="Cluster name…")
-    col_ok, col_no = st.columns(2)
-    with col_ok:
-        if st.button("Rename", type="primary", width="stretch"):
-            new_name_clean = (new_name or "").strip()
-            existing = set(df_clean["Cluster"].unique()) - {cluster_name}
-            if not new_name_clean:
-                st.error("Please enter a name.")
-            elif new_name_clean in existing:
-                st.error(f'"{new_name_clean}" already exists.')
-            else:
-                df_out = df_clean.copy()
-                df_out.loc[df_out["Cluster"] == cluster_name, "Cluster"] = new_name_clean
-                descs = st.session_state.get("cr_cluster_descriptions") or {}
-                if cluster_name in descs:
-                    descs[new_name_clean] = descs.pop(cluster_name)
-                    st.session_state["cr_cluster_descriptions"] = descs
-                st.session_state.df_clean = df_out
-                st.session_state["cr_rename_pending"] = None
-                st.rerun()
-    with col_no:
-        if st.button("Cancel", width="stretch", key="rename_cancel"):
-            st.session_state["cr_rename_pending"] = None
-            st.rerun()
-
 
 @st.dialog("Add new cluster", width="large")
 def _add_cluster_dialog(df_clean: pd.DataFrame, company_col: str):
@@ -412,6 +456,61 @@ def show_companies_dialog(cname: str, df_cluster: pd.DataFrame, cluster_company_
         st.markdown('<div class="hy-co-list"><div class="hy-co-empty">No companies match your search.</div></div>', unsafe_allow_html=True)
 
 
+@st.dialog("Add companies", width="large")
+def _add_companies_dialog(cluster_name: str, df_clean: pd.DataFrame, company_col: str):
+    other = df_clean[df_clean["Cluster"] != cluster_name].copy()
+    search = st.text_input("Search", placeholder="Filter by name…", label_visibility="collapsed")
+    if search:
+        mask = other[company_col].astype(str).str.contains(search, case=False, na=False)
+        other = other[mask]
+    options = other[company_col].dropna().astype(str).tolist()
+    clusters_for = other.set_index(company_col)["Cluster"].to_dict() if company_col in other.columns else {}
+    selected = st.multiselect(
+        "Select companies to add",
+        options=options,
+        format_func=lambda x: f"{x}  ·  {clusters_for.get(x, '')}",
+        placeholder=f"Pick companies to move into {cluster_name}…",
+        label_visibility="collapsed",
+    )
+    col_ok, col_no = st.columns(2)
+    with col_ok:
+        if st.button("Add to cluster", type="primary", width="stretch", disabled=not selected):
+            df_out = df_clean.copy()
+            df_out.loc[df_out[company_col].isin(selected), "Cluster"] = cluster_name
+            st.session_state.df_clean = df_out
+            st.session_state["cr_add_companies_cluster"] = None
+            st.rerun()
+    with col_no:
+        if st.button("Cancel", width="stretch", key="add_co_cancel"):
+            st.session_state["cr_add_companies_cluster"] = None
+            st.rerun()
+
+
+@st.dialog("Move company", width="large")
+def _move_company_dialog(
+    cluster_name: str,
+    company_name: str,
+    named_clusters: list[str],
+    df_clean: pd.DataFrame,
+    company_col: str,
+):
+    destinations = [_OUTLIER_LABEL] + [c for c in named_clusters if c != cluster_name]
+    st.markdown(f"Move **{company_name}** to:")
+    target = st.selectbox("Destination", options=destinations, label_visibility="collapsed")
+    col_ok, col_no = st.columns(2)
+    with col_ok:
+        if st.button("Confirm", type="primary", width="stretch"):
+            df_out = df_clean.copy()
+            df_out.loc[df_out[company_col] == company_name, "Cluster"] = target
+            st.session_state.df_clean = df_out
+            st.session_state["cr_move_company"] = None
+            st.rerun()
+    with col_no:
+        if st.button("Cancel", width="stretch", key="move_co_cancel"):
+            st.session_state["cr_move_company"] = None
+            st.rerun()
+
+
 # ============================================================
 # PUBLIC ENTRY POINT
 # ============================================================
@@ -427,8 +526,9 @@ def render_cluster_review(
     st.session_state.setdefault("cr_delete_pending", None)
     st.session_state.setdefault("cr_delete_target", _OUTLIER_LABEL)
     st.session_state.setdefault("cr_merge_pending", None)
-    st.session_state.setdefault("cr_rename_pending", None)
     st.session_state.setdefault("cr_cluster_descriptions", {})
+    st.session_state.setdefault("cr_add_companies_cluster", None)
+    st.session_state.setdefault("cr_move_company", None)
 
     all_clusters   = df_clean["Cluster"].unique().tolist()
     named_clusters = sorted(
@@ -440,7 +540,6 @@ def render_cluster_review(
     # ── Open dialogs if pending ───────────────────────────────────────────────
     merge_pending  = st.session_state.get("cr_merge_pending")
     delete_pending = st.session_state.get("cr_delete_pending")
-    rename_pending = st.session_state.get("cr_rename_pending")
 
     if merge_pending and merge_pending in named_clusters:
         _merge_dialog(merge_pending, named_clusters, df_clean)
@@ -448,8 +547,12 @@ def render_cluster_review(
     if delete_pending and delete_pending in named_clusters:
         _delete_dialog(delete_pending, named_clusters, df_clean)
 
-    if rename_pending and rename_pending in named_clusters:
-        _rename_dialog(rename_pending, df_clean)
+    if st.session_state.get("cr_add_companies_cluster"):
+        _add_companies_dialog(st.session_state["cr_add_companies_cluster"], df_clean, company_col)
+
+    if st.session_state.get("cr_move_company"):
+        _info = st.session_state["cr_move_company"]
+        _move_company_dialog(_info["cluster"], _info["company"], named_clusters, df_clean, company_col)
 
     # ── Cluster list ──────────────────────────────────────────────────────────
     for cluster_name in named_clusters:
@@ -457,12 +560,6 @@ def render_cluster_review(
         df_cluster = df_clean[df_clean["Cluster"] == cluster_name].reset_index(drop=True)
         n = len(df_cluster)
         _noun = "company" if n == 1 else "companies"
-        current_desc = st.session_state.get("cr_cluster_descriptions", {}).get(cluster_name, "")
-        desc_preview = ""
-        if current_desc:
-            first_sent = current_desc.split(".")[0].strip()
-            desc_preview = (first_sent[:110] + "…") if len(first_sent) > 110 else (first_sent + ".")
-
         with st.container(border=True):
             _left, _right = st.columns([3, 4])
             with _left:
@@ -472,26 +569,17 @@ def render_cluster_review(
                     f'<span style="font-size:14px;font-weight:700;color:#0d1f2d;letter-spacing:-0.01em">{cluster_name}</span>'
                     f'<span style="font-size:11px;color:#7496b2;background:#f7f9fc;border:1px solid #e4eaf2;'
                     f'border-radius:20px;padding:1px 8px;white-space:nowrap">{n} {_noun}</span>'
-                    f'</div>'
-                    + (
-                        f'<div style="font-size:11.5px;color:#aac0d1;line-height:1.5;padding:4px 0 2px 21px">'
-                        f'{desc_preview}</div>'
-                        if desc_preview else ""
-                    ),
+                    f'</div>',
                     unsafe_allow_html=True,
                 )
             with _right:
-                _b1, _b2, _b3 = st.columns(3)
+                _b1, _b2 = st.columns(2)
                 with _b1:
-                    if st.button("Rename", key=f"cr_rename_{cluster_name}", use_container_width=True, type="secondary"):
-                        st.session_state["cr_rename_pending"] = cluster_name
-                        st.rerun()
-                with _b2:
-                    if st.button("Merge", key=f"cr_merge_{cluster_name}", use_container_width=True, type="secondary"):
+                    if st.button(" ", icon=":material/call_merge:", key=f"cr_merge_{cluster_name}", use_container_width=True, type="secondary", help="Merge cluster"):
                         st.session_state["cr_merge_pending"] = cluster_name
                         st.rerun()
-                with _b3:
-                    if st.button("Delete", key=f"cr_del_{cluster_name}", use_container_width=True, type="secondary"):
+                with _b2:
+                    if st.button(" ", icon=":material/delete_outline:", key=f"cr_del_{cluster_name}", use_container_width=True, type="secondary", help="Delete cluster"):
                         st.session_state["cr_delete_pending"] = cluster_name
                         st.session_state["cr_delete_target"] = _OUTLIER_LABEL
                         st.rerun()
