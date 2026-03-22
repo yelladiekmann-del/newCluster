@@ -115,7 +115,7 @@ def _render_named_cluster(
                 with _nc:
                     st.markdown(
                         f'<div style="font-size:13px;font-weight:400;color:#0d1f2d;'
-                        f'padding:5px 8px;line-height:1.4">{name}</div>',
+                        f'padding:2px 8px 7px;line-height:1.4">{name}</div>',
                         unsafe_allow_html=True,
                     )
                 with _mc:

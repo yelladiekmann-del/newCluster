@@ -493,7 +493,6 @@ div[data-testid="stVerticalBlock"]:has(> .element-container .hy-cr-co-list-marke
 }
 /* Each company row */
 div[data-testid="stVerticalBlock"]:has(> .element-container .hy-cr-co-list-marker) [data-testid="stHorizontalBlock"] {
-  border-bottom: 1px solid #f0f4f8;
   align-items: center !important;
   gap: 0 !important;
   padding: 0 4px 0 0 !important;
@@ -509,13 +508,6 @@ div[data-testid="stVerticalBlock"]:has(> .element-container .hy-cr-co-list-marke
   gap: 0 !important;
   padding: 0 !important;
   margin: 0 !important;
-}
-div[data-testid="stVerticalBlock"]:has(> .element-container .hy-cr-co-list-marker) > [data-testid="stHorizontalBlock"]:last-child {
-  border-bottom: none;
-}
-/* Zebra stripe: even-position children (companies 1, 3, 5 …) */
-div[data-testid="stVerticalBlock"]:has(> .element-container .hy-cr-co-list-marker) > [data-testid="stHorizontalBlock"]:nth-child(even) {
-  background: #f7f9fc;
 }
 /* Icon buttons — identical to HY-CR-ICON-BTN */
 div[data-testid="stVerticalBlock"]:has(> .element-container .hy-cr-co-list-marker) button {
