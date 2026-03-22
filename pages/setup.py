@@ -69,6 +69,12 @@ with st.container(border=True):
             unsafe_allow_html=True,
         )
         with st.form("api_key_form", border=False):
+            st.markdown(
+                '<style>'
+                '#api_key_form div[data-testid="stHorizontalBlock"] { align-items: flex-end; }'
+                '</style>',
+                unsafe_allow_html=True,
+            )
             col_in, col_btn = st.columns([6, 1])
             with col_in:
                 _key_input = st.text_input(
@@ -78,7 +84,6 @@ with st.container(border=True):
                     value="",
                 )
             with col_btn:
-                st.write("")
                 _key_submitted = st.form_submit_button("Save", width="stretch")
             if _key_submitted and _key_input.strip():
                 st.session_state["api_key"] = _key_input.strip()
