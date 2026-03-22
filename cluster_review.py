@@ -620,21 +620,16 @@ def render_cluster_review(
 
     if merge_pending and merge_pending in named_clusters:
         _merge_dialog(merge_pending, named_clusters, df_clean)
-
-    if delete_pending and delete_pending in named_clusters:
+    elif delete_pending and delete_pending in named_clusters:
         _delete_dialog(delete_pending, named_clusters, df_clean)
-
-    if st.session_state.get("cr_add_companies_cluster"):
+    elif st.session_state.get("cr_add_companies_cluster"):
         _add_companies_dialog(st.session_state["cr_add_companies_cluster"], df_clean, company_col)
-
-    if st.session_state.get("cr_move_company"):
+    elif st.session_state.get("cr_move_company"):
         _info = st.session_state["cr_move_company"]
         _move_company_dialog(_info["cluster"], _info["company"], named_clusters, df_clean, company_col)
-
-    if st.session_state.get("cr_company_detail"):
+    elif st.session_state.get("cr_company_detail"):
         _company_detail_dialog(st.session_state["cr_company_detail"], dimensions)
-
-    if st.session_state.get("cr_company_editor_cluster"):
+    elif st.session_state.get("cr_company_editor_cluster"):
         _cec = st.session_state["cr_company_editor_cluster"]
         _df_cec = df_clean[df_clean["Cluster"] == _cec].reset_index(drop=True)
         _company_editor_dialog(_cec, _df_cec, company_col, df_clean, named_clusters)
