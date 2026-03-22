@@ -124,41 +124,36 @@ def _render_named_cluster(
         mask = df_cluster[company_col].astype(str).str.contains(search, case=False, na=False)
         df_show = df_cluster[mask]
 
-    # ── Company list — names only ─────────────────────────────────────────────
-    rows_html = [
-        f'<div class="hy-cr-co-row"><span class="hy-co-item-name">'
-        f'{str(row.get(company_col, "") or "")}</span></div>'
-        for _, row in df_show.iterrows()
-    ]
-
-    if rows_html:
-        st.markdown(
-            '<div class="hy-co-list" style="max-height:260px">' + "".join(rows_html) + '</div>',
-            unsafe_allow_html=True,
-        )
-    else:
-        st.markdown(
-            '<div class="hy-co-list"><div class="hy-co-empty">No companies match.</div></div>',
-            unsafe_allow_html=True,
-        )
-
-    # ── Move / Remove a company ───────────────────────────────────────────────
-    if len(df_show) > 0:
-        _sel_col, _rm_col = st.columns([4, 1])
-        with _sel_col:
-            selected_co = st.selectbox(
-                "Move a company",
-                options=df_show[company_col].tolist(),
-                label_visibility="collapsed",
-                key=f"cr_sel_co_{cluster_name}",
-                placeholder="Select a company to move…",
+    # ── Company list with per-row move / delete icons ────────────────────────
+    with st.container():
+        st.markdown('<span class="hy-cr-co-list-marker"></span>', unsafe_allow_html=True)
+        if len(df_show) == 0:
+            st.markdown(
+                '<div style="padding:12px 14px;font-size:12px;color:#aac0d1">No companies match.</div>',
+                unsafe_allow_html=True,
             )
-        with _rm_col:
-            if st.button("Move →", key=f"cr_mv_co_{cluster_name}", type="secondary",
-                         use_container_width=True):
-                if selected_co:
-                    st.session_state["cr_move_company"] = {"cluster": cluster_name, "company": selected_co}
-                    st.rerun()
+        else:
+            for i, (_, row) in enumerate(df_show.iterrows()):
+                name = str(row.get(company_col, "") or "")
+                _nc, _mc, _dc = st.columns([10, 0.5, 0.5])
+                with _nc:
+                    st.markdown(
+                        f'<div style="font-size:13px;font-weight:600;color:#0d1f2d;'
+                        f'padding:5px 8px;line-height:1.4">{name}</div>',
+                        unsafe_allow_html=True,
+                    )
+                with _mc:
+                    if st.button(" ", icon=":material/arrow_forward:", key=f"cr_mv_{cluster_name}_{i}",
+                                 type="secondary", help=f"Move {name}"):
+                        st.session_state["cr_move_company"] = {"cluster": cluster_name, "company": name}
+                        st.rerun()
+                with _dc:
+                    if st.button(" ", icon=":material/delete_outline:", key=f"cr_rm_{cluster_name}_{i}",
+                                 type="secondary", help=f"Remove {name} from cluster"):
+                        df_out = st.session_state["df_clean"].copy()
+                        df_out.loc[df_out[company_col] == name, "Cluster"] = _OUTLIER_LABEL
+                        st.session_state.df_clean = df_out
+                        st.rerun()
 
 
 

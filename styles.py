@@ -476,16 +476,67 @@ div[data-testid="stVerticalBlock"]:has(> .element-container .hy-cr-add-row-marke
   color:      #26B4D2  !important;
 }
 
-/* ── Cluster editor: company name list rows (name-only) ── */
-.hy-cr-co-row {
-  padding: 8px 14px;
-  border-bottom: 1px solid #f0f4f8;
-  font-size: 13px;
-  font-weight: 600;
-  color: #0d1f2d;
+/* ══════════════════════════════════════════════════════════════════════════════
+   HY-CR-CO-LIST — per-row move/delete icons inside the company list
+   Scoped via hy-cr-co-list-marker; same icon style as HY-CR-ICON-BTN.
+   ══════════════════════════════════════════════════════════════════════════════ */
+
+/* Container: looks like .hy-co-list */
+div[data-testid="stVerticalBlock"]:has(> .element-container .hy-cr-co-list-marker) {
+  border: 1px solid #e4eaf2 !important;
+  border-radius: 10px !important;
+  overflow-y: auto !important;
+  max-height: 260px !important;
+  margin-top: 4px;
 }
-.hy-cr-co-row:last-child { border-bottom: none; }
-.hy-cr-co-row:nth-child(even) { background: #f7f9fc; }
+/* Hide the marker span element-container */
+div[data-testid="stVerticalBlock"]:has(> .element-container .hy-cr-co-list-marker) > .element-container:first-child {
+  display: none !important;
+}
+/* Collapse Streamlit's default spacing so rows stay tight */
+div[data-testid="stVerticalBlock"]:has(> .element-container .hy-cr-co-list-marker) .element-container {
+  margin-bottom: 0 !important;
+}
+/* Each company row */
+div[data-testid="stVerticalBlock"]:has(> .element-container .hy-cr-co-list-marker) [data-testid="stHorizontalBlock"] {
+  border-bottom: 1px solid #f0f4f8;
+  align-items: center !important;
+  gap: 0 !important;
+  padding: 0 4px 0 0 !important;
+}
+div[data-testid="stVerticalBlock"]:has(> .element-container .hy-cr-co-list-marker) > [data-testid="stHorizontalBlock"]:last-child {
+  border-bottom: none;
+}
+/* Zebra stripe: even-position children (companies 1, 3, 5 …) */
+div[data-testid="stVerticalBlock"]:has(> .element-container .hy-cr-co-list-marker) > [data-testid="stHorizontalBlock"]:nth-child(even) {
+  background: #f7f9fc;
+}
+/* Icon buttons — identical to HY-CR-ICON-BTN */
+div[data-testid="stVerticalBlock"]:has(> .element-container .hy-cr-co-list-marker) button {
+  background:  transparent !important;
+  border:      none        !important;
+  box-shadow:  none        !important;
+  padding:     2px 4px     !important;
+  min-height:  26px        !important;
+  height:      26px        !important;
+  color:       #c8d8e4     !important;
+}
+div[data-testid="stVerticalBlock"]:has(> .element-container .hy-cr-co-list-marker) button p,
+div[data-testid="stVerticalBlock"]:has(> .element-container .hy-cr-co-list-marker) button span {
+  color: inherit !important;
+  font-size: 15px !important;
+}
+div[data-testid="stVerticalBlock"]:has(> .element-container .hy-cr-co-list-marker) button:hover {
+  background: #f0f4f8 !important;
+}
+/* Move arrow (2nd col) sharpens to grey-blue on hover */
+div[data-testid="stVerticalBlock"]:has(> .element-container .hy-cr-co-list-marker) [data-testid="stColumn"]:nth-child(2) button:hover {
+  color: #7496b2 !important;
+}
+/* Delete bin (3rd col) sharpens to red on hover */
+div[data-testid="stVerticalBlock"]:has(> .element-container .hy-cr-co-list-marker) [data-testid="stColumn"]:nth-child(3) button:hover {
+  color: #c0392b !important;
+}
 """
 
 
