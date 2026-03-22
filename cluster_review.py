@@ -70,30 +70,6 @@ def _render_named_cluster(
         height=160,
         label_visibility="collapsed",
     )
-    if new_desc != current_desc:
-        descs = st.session_state.get("cr_cluster_descriptions") or {}
-        descs[cluster_name] = new_desc
-        st.session_state["cr_cluster_descriptions"] = descs
-
-    # ── Save name button (bottom of edit section) ─────────────────────────────
-    name_changed = new_name.strip() != cluster_name
-    if st.button("Save name", key=f"cr_name_save_{cluster_name}", type="primary",
-                 disabled=not name_changed, use_container_width=True):
-        new_name_clean = new_name.strip()
-        existing = set(df_full["Cluster"].unique()) - {cluster_name}
-        if not new_name_clean:
-            st.error("Name cannot be empty.")
-        elif new_name_clean in existing:
-            st.error(f'"{new_name_clean}" already exists.')
-        else:
-            df_out = df_full.copy()
-            df_out.loc[df_out["Cluster"] == cluster_name, "Cluster"] = new_name_clean
-            descs = st.session_state.get("cr_cluster_descriptions") or {}
-            if cluster_name in descs:
-                descs[new_name_clean] = descs.pop(cluster_name)
-                st.session_state["cr_cluster_descriptions"] = descs
-            st.session_state.df_clean = df_out
-            st.rerun()
 
     st.divider()
 
@@ -138,7 +114,7 @@ def _render_named_cluster(
                 _nc, _mc, _dc = st.columns([10, 0.5, 0.5])
                 with _nc:
                     st.markdown(
-                        f'<div style="font-size:13px;font-weight:600;color:#0d1f2d;'
+                        f'<div style="font-size:13px;font-weight:400;color:#0d1f2d;'
                         f'padding:5px 8px;line-height:1.4">{name}</div>',
                         unsafe_allow_html=True,
                     )
@@ -155,6 +131,28 @@ def _render_named_cluster(
                         st.session_state.df_clean = df_out
                         st.rerun()
 
+    # ── Confirm Edits button ──────────────────────────────────────────────────
+    name_changed = new_name.strip() != cluster_name
+    desc_changed = new_desc != current_desc
+    if st.button("Confirm edits", key=f"cr_confirm_{cluster_name}", type="primary",
+                 disabled=not (name_changed or desc_changed), use_container_width=True):
+        new_name_clean = new_name.strip()
+        existing = set(df_full["Cluster"].unique()) - {cluster_name}
+        if not new_name_clean:
+            st.error("Name cannot be empty.")
+        elif name_changed and new_name_clean in existing:
+            st.error(f'"{new_name_clean}" already exists.')
+        else:
+            df_out = df_full.copy()
+            descs = st.session_state.get("cr_cluster_descriptions") or {}
+            descs[cluster_name] = new_desc
+            if name_changed:
+                df_out.loc[df_out["Cluster"] == cluster_name, "Cluster"] = new_name_clean
+                if cluster_name in descs:
+                    descs[new_name_clean] = descs.pop(cluster_name)
+            st.session_state["cr_cluster_descriptions"] = descs
+            st.session_state.df_clean = df_out
+            st.rerun()
 
 
 # ============================================================
@@ -617,12 +615,20 @@ def render_cluster_review(
         n = len(df_cluster)
         _noun = "company" if n == 1 else "companies"
         with st.container(border=True):
-            # Icon row — top right, above title
-            # Wrapped in st.container() so the marker's element-container is a
-            # direct child of this stVB — enabling reliable CSS scoping.
+            # Title + icon buttons on the same row
             with st.container():
                 st.markdown('<span class="hy-cr-icon-row-marker"></span>', unsafe_allow_html=True)
-                _sp, _b1, _b2 = st.columns([10, 0.5, 0.5])
+                _title_col, _b1, _b2 = st.columns([10, 0.5, 0.5])
+                with _title_col:
+                    st.markdown(
+                        f'<div style="display:flex;align-items:center;gap:10px;padding:2px 0 6px">'
+                        f'<div style="width:11px;height:11px;border-radius:50%;background:{color};flex-shrink:0"></div>'
+                        f'<span style="font-size:14px;font-weight:700;color:#0d1f2d;letter-spacing:-0.01em">{cluster_name}</span>'
+                        f'<span style="font-size:11px;color:#7496b2;background:#f7f9fc;border:1px solid #e4eaf2;'
+                        f'border-radius:20px;padding:1px 8px;white-space:nowrap">{n} {_noun}</span>'
+                        f'</div>',
+                        unsafe_allow_html=True,
+                    )
                 with _b1:
                     if st.button(" ", icon=":material/call_merge:", key=f"cr_merge_{cluster_name}",
                                  use_container_width=True, type="secondary", help="Merge cluster"):
@@ -634,16 +640,6 @@ def render_cluster_review(
                         st.session_state["cr_delete_pending"] = cluster_name
                         st.session_state["cr_delete_target"] = _OUTLIER_LABEL
                         st.rerun()
-            # Title — full width, below icon row
-            st.markdown(
-                f'<div style="display:flex;align-items:center;gap:10px;padding:2px 0 6px">'
-                f'<div style="width:11px;height:11px;border-radius:50%;background:{color};flex-shrink:0"></div>'
-                f'<span style="font-size:14px;font-weight:700;color:#0d1f2d;letter-spacing:-0.01em">{cluster_name}</span>'
-                f'<span style="font-size:11px;color:#7496b2;background:#f7f9fc;border:1px solid #e4eaf2;'
-                f'border-radius:20px;padding:1px 8px;white-space:nowrap">{n} {_noun}</span>'
-                f'</div>',
-                unsafe_allow_html=True,
-            )
             with st.expander(f"Edit & browse {n} {_noun}", expanded=False):
                 _render_named_cluster(cluster_name, df_cluster, company_col, dimensions)
 

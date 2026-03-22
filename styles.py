@@ -425,9 +425,6 @@ hr { border: none; border-top: 1px solid #e4eaf2; margin: 18px 0; }
    carries the marker. No `all:unset`, no assumed stHB depth — just overrides the
    handful of properties that make the button look dark.
    ══════════════════════════════════════════════════════════════════════════════ */
-div[data-testid="stVerticalBlock"]:has(> .element-container .hy-cr-icon-row-marker) {
-  margin-bottom: -10px;
-}
 div[data-testid="stVerticalBlock"]:has(> .element-container .hy-cr-icon-row-marker) button {
   background:  transparent !important;
   border:      none        !important;
@@ -503,6 +500,11 @@ div[data-testid="stVerticalBlock"]:has(> .element-container .hy-cr-co-list-marke
   align-items: center !important;
   gap: 0 !important;
   padding: 0 4px 0 0 !important;
+}
+/* Vertically center content within each column */
+div[data-testid="stVerticalBlock"]:has(> .element-container .hy-cr-co-list-marker) [data-testid="stColumn"] {
+  display: flex !important;
+  align-items: center !important;
 }
 div[data-testid="stVerticalBlock"]:has(> .element-container .hy-cr-co-list-marker) > [data-testid="stHorizontalBlock"]:last-child {
   border-bottom: none;
