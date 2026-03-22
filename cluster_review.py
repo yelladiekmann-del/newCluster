@@ -359,9 +359,11 @@ def _add_cluster_dialog(df_clean: pd.DataFrame, company_col: str):
                     st.session_state["cr_cluster_descriptions"] = descs
                 st.session_state.df_clean = df_clean
                 st.session_state["cr_name_edits"] = {}
+                st.session_state["cr_add_cluster_pending"] = False
                 st.rerun()
     with col_no:
         if st.button("Cancel", width="stretch", key="add_cancel"):
+            st.session_state["cr_add_cluster_pending"] = False
             st.rerun()
 
 
@@ -606,6 +608,7 @@ def render_cluster_review(
     st.session_state.setdefault("cr_move_company", None)
     st.session_state.setdefault("cr_company_detail", None)
     st.session_state.setdefault("cr_company_editor_cluster", None)
+    st.session_state.setdefault("cr_add_cluster_pending", False)
 
     all_clusters   = df_clean["Cluster"].unique().tolist()
     named_clusters = sorted(
@@ -629,6 +632,8 @@ def render_cluster_review(
         _move_company_dialog(_info["cluster"], _info["company"], named_clusters, df_clean, company_col)
     elif st.session_state.get("cr_company_detail"):
         _company_detail_dialog(st.session_state["cr_company_detail"], dimensions)
+    elif st.session_state.get("cr_add_cluster_pending"):
+        _add_cluster_dialog(df_clean, company_col)
     elif st.session_state.get("cr_company_editor_cluster"):
         _cec = st.session_state["cr_company_editor_cluster"]
         _df_cec = df_clean[df_clean["Cluster"] == _cec].reset_index(drop=True)
@@ -684,7 +689,8 @@ def render_cluster_review(
 
     # ── Add cluster ───────────────────────────────────────────────────────────
     if st.button("➕ Add cluster", key="cr_add_btn", width="stretch"):
-        _add_cluster_dialog(df_clean, company_col)
+        st.session_state["cr_add_cluster_pending"] = True
+        st.rerun()
 
     # ── Sort via Gemini ───────────────────────────────────────────────────────
     with st.container(border=True):

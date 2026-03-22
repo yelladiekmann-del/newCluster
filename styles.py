@@ -253,6 +253,26 @@ hr { border: none; border-top: 1px solid #e4eaf2; margin: 18px 0; }
   letter-spacing: -0.01em; margin-bottom: 2px; margin-top: 4px;
 }
 
+/* ── Reload chart button — very subtle, text-like ── */
+div[data-testid="stVerticalBlock"]:has(> .element-container .hy-reload-btn-marker) button {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  color: #aac0d1 !important;
+  font-size: 10px !important;
+  font-weight: 500 !important;
+  padding: 2px 6px !important;
+  letter-spacing: 0.02em !important;
+}
+div[data-testid="stVerticalBlock"]:has(> .element-container .hy-reload-btn-marker) button:hover {
+  color: #516e81 !important;
+  background: transparent !important;
+}
+/* Hide the marker span */
+div[data-testid="stVerticalBlock"]:has(> .element-container .hy-reload-btn-marker) > .element-container:first-child {
+  display: none !important;
+}
+
 /* ── Field labels inside cluster editor expander ── */
 .hy-field-label {
   font-size: 9px; font-weight: 700; text-transform: uppercase;

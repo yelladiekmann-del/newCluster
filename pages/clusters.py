@@ -144,15 +144,16 @@ if "scatter_fig" not in st.session_state or st.session_state.get("scatter_umap_s
     )
     st.session_state["scatter_umap_sig"] = _umap_sig
 
+st.plotly_chart(st.session_state["scatter_fig"], use_container_width=True)
+
 _, _reload_col = st.columns([8, 1])
 with _reload_col:
-    if st.button("↻ Reload", key="reload_scatter", type="secondary", use_container_width=True):
+    st.markdown('<span class="hy-reload-btn-marker"></span>', unsafe_allow_html=True)
+    if st.button("↻ reload chart", key="reload_scatter", type="secondary", use_container_width=True):
         _make_scatter.clear()
         st.session_state["scatter_fig"] = _make_scatter(
             df, hover_cols, tuple(sorted(_color_map.items())), tuple(_cluster_order)
         )
-
-st.plotly_chart(st.session_state["scatter_fig"], use_container_width=True)
 
 # ── SECTION 1: Cluster overview cards ─────────────────────────────────────────
 CLUSTER_COLORS = [
@@ -210,6 +211,10 @@ if named_clusters:
         for _ci, _cname in enumerate(_card_row):
             with _btn_cols[_ci]:
                 if st.button("View companies →", key=f"card_{_cname}", use_container_width=True):
+                    for _dk in ("cr_company_editor_cluster", "cr_move_company", "cr_company_detail",
+                                "cr_add_companies_cluster", "cr_merge_pending", "cr_delete_pending",
+                                "cr_add_cluster_pending"):
+                        st.session_state[_dk] = None
                     show_companies_dialog(_cname, df[df["Cluster"] == _cname], company_col, _color_map.get(_cname, "#26B4D2"))
 
 # ── SECTIONS 2 & 3: Editor + AI Assistant — two equal columns, no implied order
