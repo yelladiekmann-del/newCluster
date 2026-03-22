@@ -68,7 +68,7 @@ with st.container(border=True):
             unsafe_allow_html=True,
         )
         with st.form("api_key_form", border=False):
-            col_in, col_btn, _ = st.columns([4.5, 1, 1.5])
+            col_in, col_btn, _ = st.columns([6, 1, 0.001])
             with col_in:
                 _key_input = st.text_input(
                     "Gemini API Key",
