@@ -163,12 +163,19 @@ _CSS = """
 }
 
 /* ── Sliders ── */
+/* Thumb circle */
 [data-testid="stSlider"] [role="slider"] {
   background-color: #26B4D2 !important;
   border-color: #26B4D2 !important;
 }
-[data-testid="stSlider"] [data-baseweb="slider"] > div > div > div:nth-child(2) {
+/* Filled track (left of thumb) */
+[data-testid="stSlider"] [data-baseweb="slider"] > div > div > div:nth-child(1) {
   background-color: #26B4D2 !important;
+}
+/* Value label above thumb */
+[data-testid="stSlider"] [role="slider"] > div {
+  color: #26B4D2 !important;
+  border-color: #26B4D2 !important;
 }
 
 /* ── Upload zone ── */
