@@ -168,10 +168,13 @@ _CSS = """
 }
 
 /* ── Sliders ── */
-/* Filled track: Streamlit's default primary is #FF4B4B = rgb(255,75,75); override via inline style */
-[data-testid="stSlider"] [data-baseweb="slider"] div[style*="255, 75, 75"],
-[data-testid="stSlider"] [data-baseweb="slider"] div[style*="255,75,75"] {
+/* Filled track: catch all formats Streamlit/base-web might use for the primary red */
+[data-testid="stSlider"] [data-baseweb="slider"] *[style*="255, 75, 75"],
+[data-testid="stSlider"] [data-baseweb="slider"] *[style*="255,75,75"],
+[data-testid="stSlider"] [data-baseweb="slider"] *[style*="FF4B4B"],
+[data-testid="stSlider"] [data-baseweb="slider"] *[style*="ff4b4b"] {
   background-color: #26B4D2 !important;
+  background:       #26B4D2 !important;
 }
 /* Value label (number above thumb) */
 [data-testid="stSlider"] [role="slider"] > div {
