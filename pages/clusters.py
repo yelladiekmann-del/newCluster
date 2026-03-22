@@ -114,21 +114,27 @@ _color_map = {c: _palette[i % len(_palette)] for i, c in enumerate(_named)}
 if _has_outliers:
     _color_map["Outliers"] = "rgba(150,150,150,0.35)"
 
-hover_cols = [c for c in [company_col, "Outlier score"] + DIMENSIONS if c in df.columns]
-fig = px.scatter(
-    df, x="_x", y="_y", color="Cluster",
-    hover_data=hover_cols,
-    color_discrete_map=_color_map,
-    category_orders={"Cluster": _cluster_order},
-    height=480,
-)
-fig.update_traces(marker=dict(size=7, opacity=0.80))
-fig.update_layout(
-    margin=dict(l=0, r=0, t=20, b=0),
-    xaxis=dict(title="", showticklabels=False, showgrid=False, zeroline=False),
-    yaxis=dict(title="", showticklabels=False, showgrid=False, zeroline=False),
-    dragmode="lasso",
-)
+@st.cache_data
+def _make_scatter(df, hover_cols, color_map_items, cluster_order):
+    fig = px.scatter(
+        df, x="_x", y="_y", color="Cluster",
+        hover_data=list(hover_cols),
+        color_discrete_map=dict(color_map_items),
+        category_orders={"Cluster": list(cluster_order)},
+        height=480,
+        render_mode="webgl",
+    )
+    fig.update_traces(marker=dict(size=7, opacity=0.80))
+    fig.update_layout(
+        margin=dict(l=0, r=0, t=20, b=0),
+        xaxis=dict(title="", showticklabels=False, showgrid=False, zeroline=False),
+        yaxis=dict(title="", showticklabels=False, showgrid=False, zeroline=False),
+        dragmode="lasso",
+    )
+    return fig
+
+hover_cols = tuple(c for c in [company_col, "Outlier score"] + DIMENSIONS if c in df.columns)
+fig = _make_scatter(df, hover_cols, tuple(sorted(_color_map.items())), tuple(_cluster_order))
 st.plotly_chart(fig, use_container_width=True)
 
 # ── SECTION 1: Cluster overview cards ─────────────────────────────────────────
