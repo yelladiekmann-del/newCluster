@@ -17,6 +17,7 @@ from utils import (
     _EMBED_WORKERS,
     _fmt_secs,
     build_cluster_profile,
+    find_optimal_params_for_range,
     generate_cluster_descriptions,
     get_per_dimension_embedding,
     name_all_clusters,
@@ -51,6 +52,46 @@ _clustered     = (
 custom_weights = st.session_state.get("custom_weights") or dict(DIMENSION_WEIGHTS)
 
 # ── Dialogs ───────────────────────────────────────────────────────────────────
+
+@st.dialog("Suggest best parameters", width="large")
+def _suggest_params_dialog():
+    fm = st.session_state.get("feature_matrix")
+    st.caption(
+        "Set your desired cluster count range. The system will run UMAP once, then test "
+        "all parameter combinations and apply the one with the highest silhouette score."
+    )
+    col_min, col_max = st.columns(2)
+    with col_min:
+        min_cl = st.number_input("Min clusters", min_value=2, max_value=50, value=3, step=1,
+                                  key="_suggest_min")
+    with col_max:
+        max_cl = st.number_input("Max clusters", min_value=2, max_value=50, value=10, step=1,
+                                  key="_suggest_max")
+    if min_cl > max_cl:
+        st.warning("Min clusters must be ≤ Max clusters.")
+    _ucd = st.session_state.get("_autotune_ucd", 15)
+    st.caption(f"Uses UMAP dims = {_ucd} (set via the slider below). Tests up to ~160 combinations.")
+    col_ok, col_no = st.columns(2)
+    with col_ok:
+        if st.button("Find best parameters", type="primary", width="stretch",
+                     disabled=(min_cl > max_cl), key="_suggest_run"):
+            with st.spinner("Running UMAP + testing parameter grid… (10–30s)"):
+                result = find_optimal_params_for_range(fm, _ucd, int(min_cl), int(max_cl))
+            if result:
+                st.session_state["_autotune_mcs"] = result["min_cluster_size"]
+                st.session_state["_autotune_ms"]  = result["min_samples"]
+                st.session_state["_autotune_eps"] = result["cluster_epsilon"]
+                st.session_state["_autotune_applied"] = result
+                st.rerun()
+            else:
+                st.warning(
+                    f"No combination produces {int(min_cl)}–{int(max_cl)} clusters. "
+                    "Try a wider range or adjust the UMAP dims slider."
+                )
+    with col_no:
+        if st.button("Cancel", width="stretch", key="_suggest_cancel"):
+            st.rerun()
+
 
 @st.dialog("Confirm re-embed", width="large")
 def _reembed_dialog():
@@ -225,6 +266,7 @@ else:
     _at_mcs = st.session_state.get("_autotune_mcs", 5)
     _at_ms  = st.session_state.get("_autotune_ms",  3)
     _at_eps = st.session_state.get("_autotune_eps", 0.0)
+    _at_ucd = st.session_state.get("_autotune_ucd", 15)
 
     col1, col2, col3, col4 = st.columns(4)
     with col1:
@@ -244,11 +286,27 @@ else:
         )
     with col4:
         umap_cluster_dims = st.slider(
-            "UMAP cluster dims", 5, 50, 15,
+            "UMAP cluster dims", 5, 50, _at_ucd,
             help="Dimensions used for HDBSCAN. Higher = more signal preserved.",
         )
+    # Keep umap_cluster_dims synced so _suggest_params_dialog can read it
+    st.session_state["_autotune_ucd"] = umap_cluster_dims
 
-    cluster_btn = st.button("▶ Cluster", type="primary")
+    _applied = st.session_state.get("_autotune_applied")
+    if _applied:
+        st.markdown(
+            f'<span class="hy-chip hy-chip-cyan">✦ Suggested: {_applied["n_clusters"]} clusters '
+            f'· Sil {_applied["silhouette"]} · DB {_applied["davies_bouldin"]}</span>',
+            unsafe_allow_html=True,
+        )
+
+    _col_cluster, _col_suggest = st.columns([3, 1])
+    with _col_cluster:
+        cluster_btn = st.button("▶ Cluster", type="primary", use_container_width=True)
+    with _col_suggest:
+        if st.button("✦ Suggest parameters", type="secondary", use_container_width=True,
+                     key="suggest_btn"):
+            _suggest_params_dialog()
 
     if cluster_btn:
         _df = st.session_state.get("df_clean")
@@ -317,12 +375,21 @@ if _clustered:
             unsafe_allow_html=True,
         )
 
-    # UMAP scatter — completely unchanged
+    # UMAP scatter — Outliers always grey, always last in legend
+    _named = sorted([c for c in df["Cluster"].unique() if c != "Outliers"])
+    _has_outliers = "Outliers" in df["Cluster"].values
+    _cluster_order = _named + (["Outliers"] if _has_outliers else [])
+    _palette = px.colors.qualitative.Bold
+    _color_map = {c: _palette[i % len(_palette)] for i, c in enumerate(_named)}
+    if _has_outliers:
+        _color_map["Outliers"] = "rgba(150,150,150,0.35)"
+
     hover_cols = [c for c in [company_col, "Outlier score"] + DIMENSIONS if c in df.columns]
     fig = px.scatter(
         df, x="_x", y="_y", color="Cluster",
         hover_data=hover_cols,
-        color_discrete_sequence=px.colors.qualitative.Bold,
+        color_discrete_map=_color_map,
+        category_orders={"Cluster": _cluster_order},
         height=480,
     )
     fig.update_traces(marker=dict(size=7, opacity=0.80))

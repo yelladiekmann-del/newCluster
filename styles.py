@@ -162,6 +162,15 @@ _CSS = """
   border-color: #26B4D2 !important;
 }
 
+/* ── Sliders ── */
+[data-testid="stSlider"] [role="slider"] {
+  background-color: #26B4D2 !important;
+  border-color: #26B4D2 !important;
+}
+[data-testid="stSlider"] [data-baseweb="slider"] > div > div > div:nth-child(2) {
+  background-color: #26B4D2 !important;
+}
+
 /* ── Upload zone ── */
 [data-testid="stFileUploader"] {
   border: 1.5px dashed #d8e1ec;
