@@ -101,7 +101,7 @@ _CSS = """
   display: flex; align-items: center; justify-content: center;
   font-size: 11px; font-weight: 700;
 }
-.hy-step-num.done { background: #26B4D2; box-shadow: 0 0 12px #26B4D244; }
+.hy-step-num.done { background: #001f2b; }
 .hy-step-label { font-size: 14px; font-weight: 600; color: #0d1f2d; letter-spacing: -0.01em; }
 
 /* ── Chips ── */
@@ -510,7 +510,7 @@ def card(content_fn):
 def step_label(n, label, done=False):
     """Render a numbered step label."""
     done_class = "done" if done else ""
-    symbol = "✓" if done else str(n)
+    symbol = str(n)
     st.markdown(
         f'<div class="hy-step">'
         f'<div class="hy-step-num {done_class}">{symbol}</div>'
