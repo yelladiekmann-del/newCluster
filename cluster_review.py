@@ -124,28 +124,12 @@ def _render_named_cluster(
         mask = df_cluster[company_col].astype(str).str.contains(search, case=False, na=False)
         df_show = df_cluster[mask]
 
-    # ── Company list (pure HTML, matching .hy-co-item popup style) ──────────────
-    rows_html = []
-    for _, row in df_show.iterrows():
-        name = str(row.get(company_col, "") or "")
-        desc = ""
-        if _desc_col:
-            raw = str(row.get(_desc_col, "") or "").strip()
-            if raw and raw.lower() not in ("nan", "none"):
-                desc = raw
-        url_raw = ""
-        if _url_col:
-            raw_url = str(row.get(_url_col, "") or "").strip()
-            if raw_url and raw_url.lower() not in ("nan", "none", ""):
-                url_raw = raw_url if raw_url.startswith(("http://", "https://")) else f"https://{raw_url}"
-        row_html = f'<div class="hy-co-item"><span class="hy-co-item-name">{name}</span>'
-        if desc:
-            row_html += f'<span class="hy-co-item-desc">{desc}</span>'
-        if url_raw:
-            display_url = url_raw.replace("https://", "").replace("http://", "").rstrip("/")[:30]
-            row_html += f'<a class="hy-co-item-url" href="{url_raw}" target="_blank">↗ {display_url}</a>'
-        row_html += '</div>'
-        rows_html.append(row_html)
+    # ── Company list — names only ─────────────────────────────────────────────
+    rows_html = [
+        f'<div class="hy-cr-co-row"><span class="hy-co-item-name">'
+        f'{str(row.get(company_col, "") or "")}</span></div>'
+        for _, row in df_show.iterrows()
+    ]
 
     if rows_html:
         st.markdown(

@@ -419,51 +419,80 @@ hr { border: none; border-top: 1px solid #e4eaf2; margin: 18px 0; }
 .hy-co-item-url:hover { text-decoration: underline; }
 .hy-co-empty { padding: 20px 14px; font-size: 12px; color: #aac0d1; text-align: center; }
 
-/* ── Cluster editor: merge / delete icon buttons (top-right, no background) ── */
-/* The icon row is wrapped in `with st.container()`, which creates a stVerticalBlock
-   whose direct .element-container child holds the marker span. The stHB (columns row)
-   is also a direct child of that same stVB. This is the only stVB in the page tree
-   where its own direct .element-container contains this marker — ancestor stVBs
-   (card container, editor column) have section titles/captions in their direct
-   .element-container children, never this marker. */
+/* ══════════════════════════════════════════════════════════════════════════════
+   HY-CR-ICON-BTN — cluster editor icon-only action buttons
+   Completely self-contained; touches nothing outside this marker scope.
+   Scoped via stVB wrapper whose direct .element-container holds the marker.
+   ══════════════════════════════════════════════════════════════════════════════ */
 div[data-testid="stVerticalBlock"]:has(> div.element-container .hy-cr-icon-row-marker) {
   margin-bottom: -10px;
 }
+/* Reset: strip every inherited button style for these buttons */
 div[data-testid="stVerticalBlock"]:has(> div.element-container .hy-cr-icon-row-marker) > div[data-testid="stHorizontalBlock"] button {
-  background: transparent !important;
-  border: none !important;
-  box-shadow: none !important;
-  padding: 0 4px !important;
-  min-height: 22px !important;
-  height: 22px !important;
+  all: unset !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  cursor: pointer !important;
+  width: 26px !important;
+  height: 26px !important;
+  border-radius: 6px !important;
+  transition: background 0.12s !important;
 }
+/* Icon glyph: same muted tone as the card background */
+div[data-testid="stVerticalBlock"]:has(> div.element-container .hy-cr-icon-row-marker) > div[data-testid="stHorizontalBlock"] button span[data-testid="stIconMaterial"] {
+  font-size: 17px !important;
+  color: #c8d8e4 !important;
+  transition: color 0.12s !important;
+}
+/* Hover: icon sharpens, faint bg tint appears */
 div[data-testid="stVerticalBlock"]:has(> div.element-container .hy-cr-icon-row-marker) > div[data-testid="stHorizontalBlock"] button:hover {
-  background: transparent !important;
+  background: #f0f4f8 !important;
 }
-div[data-testid="stVerticalBlock"]:has(> div.element-container .hy-cr-icon-row-marker) > div[data-testid="stHorizontalBlock"] div[data-testid="stColumn"]:nth-child(2) button span {
-  color: #7496b2 !important; font-size: 17px !important;
+div[data-testid="stVerticalBlock"]:has(> div.element-container .hy-cr-icon-row-marker) > div[data-testid="stHorizontalBlock"] div[data-testid="stColumn"]:nth-child(2) button:hover span[data-testid="stIconMaterial"] {
+  color: #7496b2 !important;
 }
-div[data-testid="stVerticalBlock"]:has(> div.element-container .hy-cr-icon-row-marker) > div[data-testid="stHorizontalBlock"] div[data-testid="stColumn"]:nth-child(3) button span {
-  color: #c0392b !important; font-size: 17px !important;
+div[data-testid="stVerticalBlock"]:has(> div.element-container .hy-cr-icon-row-marker) > div[data-testid="stHorizontalBlock"] div[data-testid="stColumn"]:nth-child(3) button:hover span[data-testid="stIconMaterial"] {
+  color: #c0392b !important;
 }
-div[data-testid="stVerticalBlock"]:has(> div.element-container .hy-cr-icon-row-marker) > div[data-testid="stHorizontalBlock"] div[data-testid="stColumn"]:nth-child(2) button:hover span { opacity: 0.7; }
-div[data-testid="stVerticalBlock"]:has(> div.element-container .hy-cr-icon-row-marker) > div[data-testid="stHorizontalBlock"] div[data-testid="stColumn"]:nth-child(3) button:hover span { opacity: 0.7; }
 
-/* ── Cluster editor: "+" add companies icon button ── */
+/* ══════════════════════════════════════════════════════════════════════════════
+   HY-CR-ADD-BTN — cluster editor "+" add companies icon button
+   Same isolated approach, separate marker.
+   ══════════════════════════════════════════════════════════════════════════════ */
 div[data-testid="stVerticalBlock"]:has(> div.element-container .hy-cr-add-row-marker) > div[data-testid="stHorizontalBlock"] div[data-testid="stColumn"]:last-child button {
-  background: transparent !important;
-  border: none !important;
-  box-shadow: none !important;
-  padding: 0 4px !important;
-  min-height: 22px !important;
+  all: unset !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  cursor: pointer !important;
+  width: 26px !important;
+  height: 26px !important;
+  border-radius: 6px !important;
+  transition: background 0.12s !important;
 }
-div[data-testid="stVerticalBlock"]:has(> div.element-container .hy-cr-add-row-marker) > div[data-testid="stHorizontalBlock"] div[data-testid="stColumn"]:last-child button span {
-  color: #26B4D2 !important; font-size: 18px !important;
+div[data-testid="stVerticalBlock"]:has(> div.element-container .hy-cr-add-row-marker) > div[data-testid="stHorizontalBlock"] div[data-testid="stColumn"]:last-child button span[data-testid="stIconMaterial"] {
+  font-size: 18px !important;
+  color: #c8d8e4 !important;
+  transition: color 0.12s !important;
 }
-div[data-testid="stVerticalBlock"]:has(> div.element-container .hy-cr-add-row-marker) > div[data-testid="stHorizontalBlock"] div[data-testid="stColumn"]:last-child button:hover span { opacity: 0.7; }
 div[data-testid="stVerticalBlock"]:has(> div.element-container .hy-cr-add-row-marker) > div[data-testid="stHorizontalBlock"] div[data-testid="stColumn"]:last-child button:hover {
-  background: transparent !important;
+  background: #f0f4f8 !important;
 }
+div[data-testid="stVerticalBlock"]:has(> div.element-container .hy-cr-add-row-marker) > div[data-testid="stHorizontalBlock"] div[data-testid="stColumn"]:last-child button:hover span[data-testid="stIconMaterial"] {
+  color: #26B4D2 !important;
+}
+
+/* ── Cluster editor: company name list rows (name-only) ── */
+.hy-cr-co-row {
+  padding: 8px 14px;
+  border-bottom: 1px solid #f0f4f8;
+  font-size: 13px;
+  font-weight: 600;
+  color: #0d1f2d;
+}
+.hy-cr-co-row:last-child { border-bottom: none; }
+.hy-cr-co-row:nth-child(even) { background: #f7f9fc; }
 """
 
 
