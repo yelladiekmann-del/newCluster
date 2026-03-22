@@ -73,63 +73,13 @@ def _render_named_cluster(
 
     st.divider()
 
-    # ── Companies header ──────────────────────────────────────────────────────
+    # ── Companies — open in dialog to avoid per-row widget explosion ──────────
     n = len(df_cluster)
-    with st.container():
-        st.markdown('<span class="hy-cr-add-row-marker"></span>', unsafe_allow_html=True)
-        _hcol, _acol = st.columns([9, 0.5])
-        with _hcol:
-            st.markdown(
-                f'<div style="font-size:12px;font-weight:700;color:#0d1f2d;letter-spacing:-0.01em;'
-                f'padding:4px 0">Companies ({n})</div>',
-                unsafe_allow_html=True,
-            )
-        with _acol:
-            if st.button(" ", icon=":material/add:", key=f"cr_add_co_{cluster_name}",
-                         use_container_width=True, type="secondary", help="Add companies"):
-                st.session_state["cr_add_companies_cluster"] = cluster_name
-                st.rerun()
-
-    # ── Search ────────────────────────────────────────────────────────────────
-    search = st.text_input(
-        "Filter", key=f"cr_search_{cluster_name}",
-        placeholder="Search companies…", label_visibility="collapsed",
-    )
-    df_show = df_cluster
-    if search:
-        mask = df_cluster[company_col].astype(str).str.contains(search, case=False, na=False)
-        df_show = df_cluster[mask]
-
-    # ── Company list with per-row move / delete icons ────────────────────────
-    with st.container():
-        st.markdown('<span class="hy-cr-co-list-marker"></span>', unsafe_allow_html=True)
-        if len(df_show) == 0:
-            st.markdown(
-                '<div style="padding:12px 14px;font-size:12px;color:#aac0d1">No companies match.</div>',
-                unsafe_allow_html=True,
-            )
-        else:
-            for i, (_, row) in enumerate(df_show.iterrows()):
-                name = str(row.get(company_col, "") or "")
-                _nc, _mc, _dc = st.columns([10, 0.5, 0.5])
-                with _nc:
-                    st.markdown(
-                        f'<div style="font-size:13px;font-weight:400;color:#0d1f2d;'
-                        f'padding:2px 8px 7px;line-height:1.4">{name}</div>',
-                        unsafe_allow_html=True,
-                    )
-                with _mc:
-                    if st.button(" ", icon=":material/arrow_forward:", key=f"cr_mv_{cluster_name}_{i}",
-                                 type="secondary", help=f"Move {name}"):
-                        st.session_state["cr_move_company"] = {"cluster": cluster_name, "company": name}
-                        st.rerun()
-                with _dc:
-                    if st.button(" ", icon=":material/delete_outline:", key=f"cr_rm_{cluster_name}_{i}",
-                                 type="secondary", help=f"Remove {name} from cluster"):
-                        df_out = st.session_state["df_clean"].copy()
-                        df_out.loc[df_out[company_col] == name, "Cluster"] = _OUTLIER_LABEL
-                        st.session_state.df_clean = df_out
-                        st.rerun()
+    _noun = "company" if n == 1 else "companies"
+    if st.button(f"Manage {n} {_noun} →", key=f"cr_open_editor_{cluster_name}",
+                 use_container_width=True):
+        st.session_state["cr_company_editor_cluster"] = cluster_name
+        st.rerun()
 
     # ── Confirm Edits button ──────────────────────────────────────────────────
     name_changed = new_name.strip() != cluster_name
@@ -561,6 +511,79 @@ def _move_company_dialog(
             st.rerun()
 
 
+@st.dialog("Manage companies", width="large")
+def _company_editor_dialog(
+    cluster_name: str,
+    df_cluster: pd.DataFrame,
+    company_col: str,
+    df_clean: pd.DataFrame,
+    named_clusters: list[str],
+) -> None:
+    n = len(df_cluster)
+    # ── Header row: count + add button ───────────────────────────────────────
+    with st.container():
+        st.markdown('<span class="hy-cr-add-row-marker"></span>', unsafe_allow_html=True)
+        _hcol, _acol = st.columns([9, 0.5])
+        with _hcol:
+            st.markdown(
+                f'<div style="font-size:12px;font-weight:700;color:#0d1f2d;letter-spacing:-0.01em;'
+                f'padding:4px 0">Companies ({n})</div>',
+                unsafe_allow_html=True,
+            )
+        with _acol:
+            if st.button(" ", icon=":material/add:", key="ced_add",
+                         use_container_width=True, type="secondary", help="Add companies"):
+                st.session_state["cr_add_companies_cluster"] = cluster_name
+                st.rerun()
+
+    # ── Search ────────────────────────────────────────────────────────────────
+    search = st.text_input(
+        "Filter", key="ced_search",
+        placeholder="Search companies…", label_visibility="collapsed",
+    )
+    df_show = df_cluster
+    if search:
+        mask = df_cluster[company_col].astype(str).str.contains(search, case=False, na=False)
+        df_show = df_cluster[mask]
+
+    # ── Company list with per-row move / delete icons ─────────────────────────
+    with st.container():
+        st.markdown('<span class="hy-cr-co-list-marker"></span>', unsafe_allow_html=True)
+        if len(df_show) == 0:
+            st.markdown(
+                '<div style="padding:12px 14px;font-size:12px;color:#aac0d1">No companies match.</div>',
+                unsafe_allow_html=True,
+            )
+        else:
+            for i, (_, row) in enumerate(df_show.iterrows()):
+                name = str(row.get(company_col, "") or "")
+                _nc, _mc, _dc = st.columns([10, 0.5, 0.5])
+                with _nc:
+                    st.markdown(
+                        f'<div style="font-size:13px;font-weight:400;color:#0d1f2d;'
+                        f'padding:2px 8px 7px;line-height:1.4">{name}</div>',
+                        unsafe_allow_html=True,
+                    )
+                with _mc:
+                    if st.button(" ", icon=":material/arrow_forward:", key=f"ced_mv_{i}",
+                                 type="secondary", help=f"Move {name}"):
+                        st.session_state["cr_move_company"] = {"cluster": cluster_name, "company": name}
+                        st.rerun()
+                with _dc:
+                    if st.button(" ", icon=":material/delete_outline:", key=f"ced_rm_{i}",
+                                 type="secondary", help=f"Remove {name} from cluster"):
+                        df_out = st.session_state["df_clean"].copy()
+                        df_out.loc[df_out[company_col] == name, "Cluster"] = _OUTLIER_LABEL
+                        st.session_state.df_clean = df_out
+                        # cr_company_editor_cluster stays set → dialog reopens with updated list
+                        st.rerun()
+
+    st.divider()
+    if st.button("Close", key="ced_close", use_container_width=True):
+        st.session_state["cr_company_editor_cluster"] = None
+        st.rerun()
+
+
 # ============================================================
 # PUBLIC ENTRY POINT
 # ============================================================
@@ -580,6 +603,7 @@ def render_cluster_review(
     st.session_state.setdefault("cr_add_companies_cluster", None)
     st.session_state.setdefault("cr_move_company", None)
     st.session_state.setdefault("cr_company_detail", None)
+    st.session_state.setdefault("cr_company_editor_cluster", None)
 
     all_clusters   = df_clean["Cluster"].unique().tolist()
     named_clusters = sorted(
@@ -607,6 +631,11 @@ def render_cluster_review(
 
     if st.session_state.get("cr_company_detail"):
         _company_detail_dialog(st.session_state["cr_company_detail"], dimensions)
+
+    if st.session_state.get("cr_company_editor_cluster"):
+        _cec = st.session_state["cr_company_editor_cluster"]
+        _df_cec = df_clean[df_clean["Cluster"] == _cec].reset_index(drop=True)
+        _company_editor_dialog(_cec, _df_cec, company_col, df_clean, named_clusters)
 
     # ── Cluster list ──────────────────────────────────────────────────────────
     for cluster_name in named_clusters:
