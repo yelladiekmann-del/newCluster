@@ -210,6 +210,10 @@ hr { border: none; border-top: 1px solid #e4eaf2; margin: 18px 0; }
   border: 1px solid #e4eaf2 !important; border-radius: 10px !important;
   background: #ffffff;
 }
+/* Tighten default vertical gap inside expander content */
+[data-testid="stExpander"] [data-testid="stVerticalBlock"] {
+  gap: 6px !important;
+}
 
 /* ── Success / info / warning overrides ── */
 [data-testid="stAlert"] { border-radius: 9px; }
@@ -247,6 +251,13 @@ hr { border: none; border-top: 1px solid #e4eaf2; margin: 18px 0; }
 .hy-section-title {
   font-size: 13px; font-weight: 700; color: #0d1f2d;
   letter-spacing: -0.01em; margin-bottom: 2px; margin-top: 4px;
+}
+
+/* ── Field labels inside cluster editor expander ── */
+.hy-field-label {
+  font-size: 9px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.09em; color: #7496b2; margin-bottom: 3px;
+  font-family: 'IBM Plex Mono', monospace;
 }
 
 /* ── Cluster overview cards ── */

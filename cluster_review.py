@@ -48,10 +48,9 @@ def _render_named_cluster(
     dimensions: list[str],
 ) -> None:
     df_full = st.session_state.get("df_clean", pd.DataFrame())
-    _url_col = next((c for c in _URL_COLS if c in df_cluster.columns), None)
-    _desc_col = _DESC_COL if _DESC_COL in df_cluster.columns else None
 
     # ── Name field ────────────────────────────────────────────────────────────
+    st.markdown('<div class="hy-field-label">Cluster name</div>', unsafe_allow_html=True)
     new_name = st.text_input(
         "Cluster name",
         value=cluster_name,
@@ -62,47 +61,50 @@ def _render_named_cluster(
 
     # ── Description ───────────────────────────────────────────────────────────
     current_desc = st.session_state.get("cr_cluster_descriptions", {}).get(cluster_name, "")
+    _desc_height = max(80, min(360, (len(current_desc) // 55 + 1 + current_desc.count("\n")) * 22))
+    st.markdown('<div class="hy-field-label" style="margin-top:10px">Description</div>', unsafe_allow_html=True)
     new_desc = st.text_area(
         "Description",
         value=current_desc,
         key=f"cr_desc_{cluster_name}",
         placeholder="Describe what this cluster represents and what sets it apart…",
-        height=160,
+        height=_desc_height,
         label_visibility="collapsed",
     )
 
-    st.divider()
-
-    # ── Companies — open in dialog to avoid per-row widget explosion ──────────
+    # ── Action row ────────────────────────────────────────────────────────────
     n = len(df_cluster)
     _noun = "company" if n == 1 else "companies"
-    if st.button(f"Manage {n} {_noun} →", key=f"cr_open_editor_{cluster_name}",
-                 use_container_width=True):
-        st.session_state["cr_company_editor_cluster"] = cluster_name
-        st.rerun()
-
-    # ── Confirm Edits button ──────────────────────────────────────────────────
     name_changed = new_name.strip() != cluster_name
     desc_changed = new_desc != current_desc
-    if st.button("Confirm edits", key=f"cr_confirm_{cluster_name}", type="primary",
-                 disabled=not (name_changed or desc_changed), use_container_width=True):
-        new_name_clean = new_name.strip()
-        existing = set(df_full["Cluster"].unique()) - {cluster_name}
-        if not new_name_clean:
-            st.error("Name cannot be empty.")
-        elif name_changed and new_name_clean in existing:
-            st.error(f'"{new_name_clean}" already exists.')
-        else:
-            df_out = df_full.copy()
-            descs = st.session_state.get("cr_cluster_descriptions") or {}
-            descs[cluster_name] = new_desc
-            if name_changed:
-                df_out.loc[df_out["Cluster"] == cluster_name, "Cluster"] = new_name_clean
-                if cluster_name in descs:
-                    descs[new_name_clean] = descs.pop(cluster_name)
-            st.session_state["cr_cluster_descriptions"] = descs
-            st.session_state.df_clean = df_out
+
+    st.markdown('<div style="margin-top:12px"></div>', unsafe_allow_html=True)
+    _browse_col, _confirm_col = st.columns(2)
+    with _browse_col:
+        if st.button(f"Browse {n} {_noun} →", key=f"cr_open_editor_{cluster_name}",
+                     use_container_width=True, type="secondary"):
+            st.session_state["cr_company_editor_cluster"] = cluster_name
             st.rerun()
+    with _confirm_col:
+        if st.button("Confirm edits", key=f"cr_confirm_{cluster_name}", type="primary",
+                     disabled=not (name_changed or desc_changed), use_container_width=True):
+            new_name_clean = new_name.strip()
+            existing = set(df_full["Cluster"].unique()) - {cluster_name}
+            if not new_name_clean:
+                st.error("Name cannot be empty.")
+            elif name_changed and new_name_clean in existing:
+                st.error(f'"{new_name_clean}" already exists.')
+            else:
+                df_out = df_full.copy()
+                descs = st.session_state.get("cr_cluster_descriptions") or {}
+                descs[cluster_name] = new_desc
+                if name_changed:
+                    df_out.loc[df_out["Cluster"] == cluster_name, "Cluster"] = new_name_clean
+                    if cluster_name in descs:
+                        descs[new_name_clean] = descs.pop(cluster_name)
+                st.session_state["cr_cluster_descriptions"] = descs
+                st.session_state.df_clean = df_out
+                st.rerun()
 
 
 # ============================================================
@@ -669,7 +671,7 @@ def render_cluster_review(
                         st.session_state["cr_delete_pending"] = cluster_name
                         st.session_state["cr_delete_target"] = _OUTLIER_LABEL
                         st.rerun()
-            with st.expander(f"Edit & browse {n} {_noun}", expanded=False):
+            with st.expander("Edit cluster", expanded=False):
                 _render_named_cluster(cluster_name, df_cluster, company_col, dimensions)
 
     # ── Outliers (collapsed) ──────────────────────────────────────────────────

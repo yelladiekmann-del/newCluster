@@ -134,8 +134,25 @@ def _make_scatter(df, hover_cols, color_map_items, cluster_order):
     return fig
 
 hover_cols = tuple(c for c in [company_col, "Outlier score"] + DIMENSIONS if c in df.columns)
-fig = _make_scatter(df, hover_cols, tuple(sorted(_color_map.items())), tuple(_cluster_order))
-st.plotly_chart(fig, use_container_width=True)
+_umap_sig = (df.shape[0], round(float(df["_x"].sum()), 2), round(float(df["_y"].sum()), 2))
+
+# Auto-build only on first visit or when UMAP coordinates change (new clustering run).
+# On data edits (renames, company moves) the chart stays frozen until user clicks Reload.
+if "scatter_fig" not in st.session_state or st.session_state.get("scatter_umap_sig") != _umap_sig:
+    st.session_state["scatter_fig"] = _make_scatter(
+        df, hover_cols, tuple(sorted(_color_map.items())), tuple(_cluster_order)
+    )
+    st.session_state["scatter_umap_sig"] = _umap_sig
+
+_, _reload_col = st.columns([8, 1])
+with _reload_col:
+    if st.button("↻ Reload", key="reload_scatter", type="secondary", use_container_width=True):
+        _make_scatter.clear()
+        st.session_state["scatter_fig"] = _make_scatter(
+            df, hover_cols, tuple(sorted(_color_map.items())), tuple(_cluster_order)
+        )
+
+st.plotly_chart(st.session_state["scatter_fig"], use_container_width=True)
 
 # ── SECTION 1: Cluster overview cards ─────────────────────────────────────────
 CLUSTER_COLORS = [
