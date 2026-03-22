@@ -41,34 +41,52 @@ with _status_col:
 with st.container(border=True):
     step_label(1, "Gemini API Key", done=bool(api_key))
 
-    # Prevent Chrome from suggesting to save this as a login credential.
-    st.markdown(
-        '<input type="text" style="display:none" autocomplete="username">',
-        unsafe_allow_html=True,
-    )
-    with st.form("api_key_form", border=False):
-        col_in, col_btn = st.columns([6, 1])
-        with col_in:
-            _key_input = st.text_input(
+    _editing = st.session_state.get("api_key_editing", False)
+
+    if api_key and not _editing:
+        # Locked view — key is saved, show masked + Change button
+        _lcol, _chg_col = st.columns([6, 1])
+        with _lcol:
+            st.text_input(
                 "Gemini API Key",
-                type="password",
-                placeholder="AIza…",
-                value=st.session_state.get("api_key", ""),
+                value="••••••••••••••••••••",
+                disabled=True,
+                label_visibility="collapsed",
             )
-        with col_btn:
+        with _chg_col:
             st.write("")
-            _key_submitted = st.form_submit_button("Save", width="stretch")
-        if _key_submitted:
-            st.session_state["api_key"] = _key_input
-            api_key = _key_input
-
-    api_key = st.session_state.get("api_key", "")
-
-    if api_key:
+            if st.button("Change", key="api_key_change", type="secondary", use_container_width=True):
+                st.session_state["api_key_editing"] = True
+                st.rerun()
         st.markdown(
-            '<span class="hy-chip hy-chip-green">✓ Verified · Gemini 2.5 Flash accessible</span>',
+            '<span class="hy-chip hy-chip-green">✓ Saved · Gemini 2.5 Flash accessible</span>',
             unsafe_allow_html=True,
         )
+    else:
+        # Editable form
+        st.markdown(
+            '<input type="text" style="display:none" autocomplete="username">',
+            unsafe_allow_html=True,
+        )
+        with st.form("api_key_form", border=False):
+            col_in, col_btn = st.columns([6, 1])
+            with col_in:
+                _key_input = st.text_input(
+                    "Gemini API Key",
+                    type="password",
+                    placeholder="AIza…",
+                    value="",
+                )
+            with col_btn:
+                st.write("")
+                _key_submitted = st.form_submit_button("Save", width="stretch")
+            if _key_submitted and _key_input.strip():
+                st.session_state["api_key"] = _key_input.strip()
+                st.session_state["api_key_editing"] = False
+                api_key = _key_input.strip()
+                st.rerun()
+
+    api_key = st.session_state.get("api_key", "")
 
 # ── Step 2: Data Upload ───────────────────────────────────────────────────────
 with st.container(border=True):

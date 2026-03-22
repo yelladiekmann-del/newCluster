@@ -374,6 +374,7 @@ hr { border: none; border-top: 1px solid #e4eaf2; margin: 18px 0; }
   font-size: 10px; color: #7496b2; margin-top: 2px;
 }
 [data-testid="stElementToolbar"] { display: none !important; }
+[data-testid="InputInstructions"] { display: none !important; }
 
 /* ── Company list in dialog ── */
 .hy-co-list {
