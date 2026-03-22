@@ -420,67 +420,60 @@ hr { border: none; border-top: 1px solid #e4eaf2; margin: 18px 0; }
 .hy-co-empty { padding: 20px 14px; font-size: 12px; color: #aac0d1; text-align: center; }
 
 /* ══════════════════════════════════════════════════════════════════════════════
-   HY-CR-ICON-BTN — cluster editor icon-only action buttons
-   Completely self-contained; touches nothing outside this marker scope.
-   Scoped via stVB wrapper whose direct .element-container holds the marker.
+   HY-CR-ICON-BTN — cluster editor merge/delete icon buttons
+   Scoped via the inner st.container() stVB whose DIRECT .element-container child
+   carries the marker. No `all:unset`, no assumed stHB depth — just overrides the
+   handful of properties that make the button look dark.
    ══════════════════════════════════════════════════════════════════════════════ */
-div[data-testid="stVerticalBlock"]:has(> div.element-container .hy-cr-icon-row-marker) {
+div[data-testid="stVerticalBlock"]:has(> .element-container .hy-cr-icon-row-marker) {
   margin-bottom: -10px;
 }
-/* Reset: strip every inherited button style for these buttons */
-div[data-testid="stVerticalBlock"]:has(> div.element-container .hy-cr-icon-row-marker) > div[data-testid="stHorizontalBlock"] button {
-  all: unset !important;
-  display: inline-flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  cursor: pointer !important;
-  width: 26px !important;
-  height: 26px !important;
-  border-radius: 6px !important;
-  transition: background 0.12s !important;
+div[data-testid="stVerticalBlock"]:has(> .element-container .hy-cr-icon-row-marker) button {
+  background:  transparent !important;
+  border:      none        !important;
+  box-shadow:  none        !important;
+  padding:     2px 4px     !important;
+  min-height:  26px        !important;
+  height:      26px        !important;
+  color:       #c8d8e4     !important;
 }
-/* Icon glyph: same muted tone as the card background */
-div[data-testid="stVerticalBlock"]:has(> div.element-container .hy-cr-icon-row-marker) > div[data-testid="stHorizontalBlock"] button span[data-testid="stIconMaterial"] {
+div[data-testid="stVerticalBlock"]:has(> .element-container .hy-cr-icon-row-marker) button p,
+div[data-testid="stVerticalBlock"]:has(> .element-container .hy-cr-icon-row-marker) button span {
+  color: inherit !important;
   font-size: 17px !important;
-  color: #c8d8e4 !important;
-  transition: color 0.12s !important;
 }
-/* Hover: icon sharpens, faint bg tint appears */
-div[data-testid="stVerticalBlock"]:has(> div.element-container .hy-cr-icon-row-marker) > div[data-testid="stHorizontalBlock"] button:hover {
+div[data-testid="stVerticalBlock"]:has(> .element-container .hy-cr-icon-row-marker) button:hover {
   background: #f0f4f8 !important;
 }
-div[data-testid="stVerticalBlock"]:has(> div.element-container .hy-cr-icon-row-marker) > div[data-testid="stHorizontalBlock"] div[data-testid="stColumn"]:nth-child(2) button:hover span[data-testid="stIconMaterial"] {
+/* Merge (2nd col) sharpens to grey-blue on hover */
+div[data-testid="stVerticalBlock"]:has(> .element-container .hy-cr-icon-row-marker) [data-testid="stColumn"]:nth-child(2) button:hover {
   color: #7496b2 !important;
 }
-div[data-testid="stVerticalBlock"]:has(> div.element-container .hy-cr-icon-row-marker) > div[data-testid="stHorizontalBlock"] div[data-testid="stColumn"]:nth-child(3) button:hover span[data-testid="stIconMaterial"] {
+/* Delete (3rd col) sharpens to red on hover */
+div[data-testid="stVerticalBlock"]:has(> .element-container .hy-cr-icon-row-marker) [data-testid="stColumn"]:nth-child(3) button:hover {
   color: #c0392b !important;
 }
 
 /* ══════════════════════════════════════════════════════════════════════════════
-   HY-CR-ADD-BTN — cluster editor "+" add companies icon button
-   Same isolated approach, separate marker.
+   HY-CR-ADD-BTN — cluster editor "+" add companies button (separate marker)
    ══════════════════════════════════════════════════════════════════════════════ */
-div[data-testid="stVerticalBlock"]:has(> div.element-container .hy-cr-add-row-marker) > div[data-testid="stHorizontalBlock"] div[data-testid="stColumn"]:last-child button {
-  all: unset !important;
-  display: inline-flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  cursor: pointer !important;
-  width: 26px !important;
-  height: 26px !important;
-  border-radius: 6px !important;
-  transition: background 0.12s !important;
+div[data-testid="stVerticalBlock"]:has(> .element-container .hy-cr-add-row-marker) [data-testid="stColumn"]:last-child button {
+  background:  transparent !important;
+  border:      none        !important;
+  box-shadow:  none        !important;
+  padding:     2px 4px     !important;
+  min-height:  26px        !important;
+  height:      26px        !important;
+  color:       #c8d8e4     !important;
 }
-div[data-testid="stVerticalBlock"]:has(> div.element-container .hy-cr-add-row-marker) > div[data-testid="stHorizontalBlock"] div[data-testid="stColumn"]:last-child button span[data-testid="stIconMaterial"] {
+div[data-testid="stVerticalBlock"]:has(> .element-container .hy-cr-add-row-marker) [data-testid="stColumn"]:last-child button p,
+div[data-testid="stVerticalBlock"]:has(> .element-container .hy-cr-add-row-marker) [data-testid="stColumn"]:last-child button span {
+  color: inherit !important;
   font-size: 18px !important;
-  color: #c8d8e4 !important;
-  transition: color 0.12s !important;
 }
-div[data-testid="stVerticalBlock"]:has(> div.element-container .hy-cr-add-row-marker) > div[data-testid="stHorizontalBlock"] div[data-testid="stColumn"]:last-child button:hover {
-  background: #f0f4f8 !important;
-}
-div[data-testid="stVerticalBlock"]:has(> div.element-container .hy-cr-add-row-marker) > div[data-testid="stHorizontalBlock"] div[data-testid="stColumn"]:last-child button:hover span[data-testid="stIconMaterial"] {
-  color: #26B4D2 !important;
+div[data-testid="stVerticalBlock"]:has(> .element-container .hy-cr-add-row-marker) [data-testid="stColumn"]:last-child button:hover {
+  background: #f0f4f8  !important;
+  color:      #26B4D2  !important;
 }
 
 /* ── Cluster editor: company name list rows (name-only) ── */
