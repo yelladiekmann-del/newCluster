@@ -136,8 +136,10 @@ with st.container(border=True):
                 desc_col = st.selectbox("Description column", desc_options, index=desc_default)
                 st.session_state["desc_col"] = desc_col
             with col_prev:
-                st.write("")
-                st.write("")
+                st.markdown(
+                    '<p style="visibility:hidden;font-size:14px;line-height:1.6;margin:0 0 4px">x</p>',
+                    unsafe_allow_html=True,
+                )
                 if st.button("Preview", width="stretch", key="preview_btn", type="secondary"):
                     st.session_state["_show_preview"] = True
 
