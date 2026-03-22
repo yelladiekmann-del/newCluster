@@ -54,7 +54,6 @@ with st.container(border=True):
                 label_visibility="collapsed",
             )
         with _chg_col:
-            st.write("")
             if st.button("Change", key="api_key_change", type="secondary", use_container_width=True):
                 st.session_state["api_key_editing"] = True
                 st.rerun()
