@@ -106,11 +106,20 @@ with stat_qual:
     )
 
 # ── UMAP scatter ───────────────────────────────────────────────────────────────
+_named = sorted([c for c in df["Cluster"].unique() if c != "Outliers"])
+_has_outliers = "Outliers" in df["Cluster"].values
+_cluster_order = _named + (["Outliers"] if _has_outliers else [])
+_palette = px.colors.qualitative.Bold
+_color_map = {c: _palette[i % len(_palette)] for i, c in enumerate(_named)}
+if _has_outliers:
+    _color_map["Outliers"] = "rgba(150,150,150,0.35)"
+
 hover_cols = [c for c in [company_col, "Outlier score"] + DIMENSIONS if c in df.columns]
 fig = px.scatter(
     df, x="_x", y="_y", color="Cluster",
     hover_data=hover_cols,
-    color_discrete_sequence=px.colors.qualitative.Bold,
+    color_discrete_map=_color_map,
+    category_orders={"Cluster": _cluster_order},
     height=480,
 )
 fig.update_traces(marker=dict(size=7, opacity=0.80))

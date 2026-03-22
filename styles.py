@@ -154,6 +154,11 @@ _CSS = """
   background: #f7f9fc !important; border: 1px solid #e4eaf2 !important;
   border-radius: 9px !important; font-size: 13px !important; color: #0d1f2d !important;
 }
+.stTextArea textarea,
+[data-testid="stTextArea"] textarea {
+  background: #f7f9fc !important; border: 1px solid #e4eaf2 !important;
+  border-radius: 9px !important; font-size: 13px !important; color: #0d1f2d !important;
+}
 [data-baseweb="select"] {
   background: #f7f9fc !important; border: 1px solid #e4eaf2 !important;
   border-radius: 9px !important;
@@ -163,19 +168,20 @@ _CSS = """
 }
 
 /* ── Sliders ── */
-/* Thumb circle */
-[data-testid="stSlider"] [role="slider"] {
-  background-color: #26B4D2 !important;
-  border-color: #26B4D2 !important;
-}
-/* Filled track (left of thumb) */
-[data-testid="stSlider"] [data-baseweb="slider"] > div > div > div:nth-child(1) {
+/* Filled track: Streamlit's default primary is #FF4B4B = rgb(255,75,75); override via inline style */
+[data-testid="stSlider"] [data-baseweb="slider"] div[style*="255, 75, 75"],
+[data-testid="stSlider"] [data-baseweb="slider"] div[style*="255,75,75"] {
   background-color: #26B4D2 !important;
 }
-/* Value label above thumb */
+/* Value label (number above thumb) */
 [data-testid="stSlider"] [role="slider"] > div {
   color: #26B4D2 !important;
   border-color: #26B4D2 !important;
+}
+/* Thumb — white circle with cyan border acts as separator */
+[data-testid="stSlider"] [role="slider"] {
+  background-color: #ffffff !important;
+  border: 2px solid #26B4D2 !important;
 }
 
 /* ── Upload zone ── */
@@ -414,10 +420,11 @@ hr { border: none; border-top: 1px solid #e4eaf2; margin: 18px 0; }
 .hy-co-empty { padding: 20px 14px; font-size: 12px; color: #aac0d1; text-align: center; }
 
 /* ── Cluster editor: merge / delete icon buttons (top-right, no background) ── */
-div[data-testid="stHorizontalBlock"]:has(.hy-cr-icon-anchor) {
+/* Scoped via stVerticalBlock marker to avoid polluting outer horizontal blocks */
+div[data-testid="stVerticalBlock"]:has(> .element-container > .hy-cr-icon-row) {
   margin-bottom: -10px;
 }
-div[data-testid="stHorizontalBlock"]:has(.hy-cr-icon-anchor) button {
+div[data-testid="stVerticalBlock"]:has(> .element-container > .hy-cr-icon-row) div[data-testid="stHorizontalBlock"] button {
   background: transparent !important;
   border: none !important;
   box-shadow: none !important;
@@ -425,30 +432,30 @@ div[data-testid="stHorizontalBlock"]:has(.hy-cr-icon-anchor) button {
   min-height: 22px !important;
   height: 22px !important;
 }
-div[data-testid="stHorizontalBlock"]:has(.hy-cr-icon-anchor) button:hover {
+div[data-testid="stVerticalBlock"]:has(> .element-container > .hy-cr-icon-row) div[data-testid="stHorizontalBlock"] button:hover {
   background: transparent !important;
 }
-div[data-testid="stHorizontalBlock"]:has(.hy-cr-icon-anchor) div[data-testid="stColumn"]:nth-child(2) button span {
+div[data-testid="stVerticalBlock"]:has(> .element-container > .hy-cr-icon-row) div[data-testid="stHorizontalBlock"] div[data-testid="stColumn"]:nth-child(2) button span {
   color: #7496b2 !important; font-size: 17px !important;
 }
-div[data-testid="stHorizontalBlock"]:has(.hy-cr-icon-anchor) div[data-testid="stColumn"]:nth-child(3) button span {
+div[data-testid="stVerticalBlock"]:has(> .element-container > .hy-cr-icon-row) div[data-testid="stHorizontalBlock"] div[data-testid="stColumn"]:nth-child(3) button span {
   color: #c0392b !important; font-size: 17px !important;
 }
-div[data-testid="stHorizontalBlock"]:has(.hy-cr-icon-anchor) div[data-testid="stColumn"]:nth-child(2) button:hover span { opacity: 0.7; }
-div[data-testid="stHorizontalBlock"]:has(.hy-cr-icon-anchor) div[data-testid="stColumn"]:nth-child(3) button:hover span { opacity: 0.7; }
+div[data-testid="stVerticalBlock"]:has(> .element-container > .hy-cr-icon-row) div[data-testid="stHorizontalBlock"] div[data-testid="stColumn"]:nth-child(2) button:hover span { opacity: 0.7; }
+div[data-testid="stVerticalBlock"]:has(> .element-container > .hy-cr-icon-row) div[data-testid="stHorizontalBlock"] div[data-testid="stColumn"]:nth-child(3) button:hover span { opacity: 0.7; }
 
 /* ── Cluster editor: "+" add companies icon button ── */
-div[data-testid="stHorizontalBlock"]:has(.hy-cr-add-anchor) div[data-testid="stColumn"]:last-child button {
+div[data-testid="stVerticalBlock"]:has(> .element-container > .hy-cr-add-row) div[data-testid="stColumn"]:last-child button {
   background: transparent !important;
   border: none !important;
   box-shadow: none !important;
   padding: 0 4px !important;
   min-height: 22px !important;
 }
-div[data-testid="stHorizontalBlock"]:has(.hy-cr-add-anchor) div[data-testid="stColumn"]:last-child button span {
+div[data-testid="stVerticalBlock"]:has(> .element-container > .hy-cr-add-row) div[data-testid="stColumn"]:last-child button span {
   color: #26B4D2 !important; font-size: 18px !important;
 }
-div[data-testid="stHorizontalBlock"]:has(.hy-cr-add-anchor) div[data-testid="stColumn"]:last-child button:hover span { opacity: 0.7; }
+div[data-testid="stVerticalBlock"]:has(> .element-container > .hy-cr-add-row) div[data-testid="stColumn"]:last-child button:hover span { opacity: 0.7; }
 
 /* ── Cluster editor: company list rows (matching .hy-co-item popup style) ── */
 div[data-testid="stVerticalBlock"]:has(> .element-container > .hy-cr-co-list-hdr) {
@@ -483,9 +490,19 @@ div[data-testid="stVerticalBlock"]:has(> .element-container > .hy-cr-co-list-hdr
   min-height: unset !important;
   width: 100% !important;
 }
+div[data-testid="stVerticalBlock"]:has(> .element-container > .hy-cr-co-list-hdr) div[data-testid="stColumn"]:first-child button p,
+div[data-testid="stVerticalBlock"]:has(> .element-container > .hy-cr-co-list-hdr) div[data-testid="stColumn"]:first-child button span {
+  color: #0d1f2d !important;
+  font-size: 13px !important;
+  font-weight: 600 !important;
+}
 div[data-testid="stVerticalBlock"]:has(> .element-container > .hy-cr-co-list-hdr) div[data-testid="stColumn"]:first-child button:hover {
   color: #26B4D2 !important;
   background: transparent !important;
+}
+div[data-testid="stVerticalBlock"]:has(> .element-container > .hy-cr-co-list-hdr) div[data-testid="stColumn"]:first-child button:hover p,
+div[data-testid="stVerticalBlock"]:has(> .element-container > .hy-cr-co-list-hdr) div[data-testid="stColumn"]:first-child button:hover span {
+  color: #26B4D2 !important;
 }
 /* URL text in middle column */
 div[data-testid="stVerticalBlock"]:has(> .element-container > .hy-cr-co-list-hdr) div[data-testid="stColumn"]:nth-child(2) .stMarkdown {

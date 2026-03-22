@@ -67,7 +67,7 @@ def _render_named_cluster(
         value=current_desc,
         key=f"cr_desc_{cluster_name}",
         placeholder="Describe what this cluster represents and what sets it apart…",
-        height=100,
+        height=160,
         label_visibility="collapsed",
     )
     if new_desc != current_desc:
@@ -99,18 +99,20 @@ def _render_named_cluster(
 
     # ── Companies header ──────────────────────────────────────────────────────
     n = len(df_cluster)
-    _hcol, _acol = st.columns([9, 0.5])
-    with _hcol:
-        st.markdown(
-            f'<div style="font-size:12px;font-weight:700;color:#0d1f2d;letter-spacing:-0.01em;'
-            f'padding:4px 0">Companies ({n})<span class="hy-cr-add-anchor"></span></div>',
-            unsafe_allow_html=True,
-        )
-    with _acol:
-        if st.button(" ", icon=":material/add:", key=f"cr_add_co_{cluster_name}",
-                     use_container_width=True, type="secondary", help="Add companies"):
-            st.session_state["cr_add_companies_cluster"] = cluster_name
-            st.rerun()
+    with st.container():
+        st.markdown('<span class="hy-cr-add-row"></span>', unsafe_allow_html=True)
+        _hcol, _acol = st.columns([9, 0.5])
+        with _hcol:
+            st.markdown(
+                f'<div style="font-size:12px;font-weight:700;color:#0d1f2d;letter-spacing:-0.01em;'
+                f'padding:4px 0">Companies ({n})</div>',
+                unsafe_allow_html=True,
+            )
+        with _acol:
+            if st.button(" ", icon=":material/add:", key=f"cr_add_co_{cluster_name}",
+                         use_container_width=True, type="secondary", help="Add companies"):
+                st.session_state["cr_add_companies_cluster"] = cluster_name
+                st.rerun()
 
     # ── Search ────────────────────────────────────────────────────────────────
     search = st.text_input(
@@ -628,20 +630,20 @@ def render_cluster_review(
         _noun = "company" if n == 1 else "companies"
         with st.container(border=True):
             # Icon row — top right, above title
-            _sp, _b1, _b2 = st.columns([10, 0.5, 0.5])
-            with _sp:
-                st.markdown('<span class="hy-cr-icon-anchor"></span>', unsafe_allow_html=True)
-            with _b1:
-                if st.button(" ", icon=":material/call_merge:", key=f"cr_merge_{cluster_name}",
-                             use_container_width=True, type="secondary", help="Merge cluster"):
-                    st.session_state["cr_merge_pending"] = cluster_name
-                    st.rerun()
-            with _b2:
-                if st.button(" ", icon=":material/delete_outline:", key=f"cr_del_{cluster_name}",
-                             use_container_width=True, type="secondary", help="Delete cluster"):
-                    st.session_state["cr_delete_pending"] = cluster_name
-                    st.session_state["cr_delete_target"] = _OUTLIER_LABEL
-                    st.rerun()
+            with st.container():
+                st.markdown('<span class="hy-cr-icon-row"></span>', unsafe_allow_html=True)
+                _sp, _b1, _b2 = st.columns([10, 0.5, 0.5])
+                with _b1:
+                    if st.button(" ", icon=":material/call_merge:", key=f"cr_merge_{cluster_name}",
+                                 use_container_width=True, type="secondary", help="Merge cluster"):
+                        st.session_state["cr_merge_pending"] = cluster_name
+                        st.rerun()
+                with _b2:
+                    if st.button(" ", icon=":material/delete_outline:", key=f"cr_del_{cluster_name}",
+                                 use_container_width=True, type="secondary", help="Delete cluster"):
+                        st.session_state["cr_delete_pending"] = cluster_name
+                        st.session_state["cr_delete_target"] = _OUTLIER_LABEL
+                        st.rerun()
             # Title — full width, below icon row
             st.markdown(
                 f'<div style="display:flex;align-items:center;gap:10px;padding:2px 0 6px">'
