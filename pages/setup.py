@@ -75,7 +75,7 @@ with st.container(border=True):
                 '</style>',
                 unsafe_allow_html=True,
             )
-            col_in, col_btn = st.columns([6, 1])
+            col_in, col_btn, _ = st.columns([4.5, 1, 1.5])
             with col_in:
                 _key_input = st.text_input(
                     "Gemini API Key",
