@@ -143,7 +143,7 @@ _CSS = """
 .stButton [data-testid="baseButton-secondary"] {
   background: transparent !important; color: #516e81 !important;
   border: 1px solid #d8e1ec !important; box-shadow: none !important;
-  font-weight: 500 !important;
+  font-weight: 500 !important; padding: 6px 10px !important;
 }
 .stButton [data-testid="baseButton-secondary"]:hover {
   background: #f7f9fc !important; color: #0d1f2d !important;
