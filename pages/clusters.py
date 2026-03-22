@@ -144,16 +144,27 @@ if "scatter_fig" not in st.session_state or st.session_state.get("scatter_umap_s
     )
     st.session_state["scatter_umap_sig"] = _umap_sig
 
-st.plotly_chart(st.session_state["scatter_fig"], use_container_width=True)
+# Skip chart serialisation entirely when a dialog is about to open — the modal
+# covers the chart anyway and st.plotly_chart is the most expensive render step.
+_DIALOG_STATE_KEYS = (
+    "cr_company_editor_cluster", "cr_move_company", "cr_company_detail",
+    "cr_add_companies_cluster", "cr_merge_pending", "cr_delete_pending",
+    "cr_add_cluster_pending",
+)
+_any_dialog = any(st.session_state.get(k) for k in _DIALOG_STATE_KEYS)
 
-_, _reload_col = st.columns([8, 1])
-with _reload_col:
-    st.markdown('<span class="hy-reload-btn-marker"></span>', unsafe_allow_html=True)
-    if st.button("↻ reload chart", key="reload_scatter", type="secondary", use_container_width=True):
-        _make_scatter.clear()
-        st.session_state["scatter_fig"] = _make_scatter(
-            df, hover_cols, tuple(sorted(_color_map.items())), tuple(_cluster_order)
-        )
+if not _any_dialog:
+    st.plotly_chart(st.session_state["scatter_fig"], use_container_width=True)
+    _, _reload_col = st.columns([8, 1])
+    with _reload_col:
+        st.markdown('<span class="hy-reload-btn-marker"></span>', unsafe_allow_html=True)
+        if st.button("↻ reload chart", key="reload_scatter", type="secondary", use_container_width=True):
+            _make_scatter.clear()
+            st.session_state["scatter_fig"] = _make_scatter(
+                df, hover_cols, tuple(sorted(_color_map.items())), tuple(_cluster_order)
+            )
+else:
+    st.markdown('<div style="height:480px"></div>', unsafe_allow_html=True)
 
 # ── SECTION 1: Cluster overview cards ─────────────────────────────────────────
 CLUSTER_COLORS = [
