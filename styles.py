@@ -420,13 +420,16 @@ hr { border: none; border-top: 1px solid #e4eaf2; margin: 18px 0; }
 .hy-co-empty { padding: 20px 14px; font-size: 12px; color: #aac0d1; text-align: center; }
 
 /* ── Cluster editor: merge / delete icon buttons (top-right, no background) ── */
-/* Scoped to exactly the icon row's HB using a 3-level direct-child path.
-   Ancestor HBs (e.g. the outer st.columns(2)) have stVBBW—not element-container—as
-   direct children of their column's stVB, so they never match this selector. */
-div[data-testid="stHorizontalBlock"]:has(> div[data-testid="stColumn"] > div[data-testid="stVerticalBlock"] > div.element-container .hy-cr-icon-anchor) {
+/* The icon row is wrapped in `with st.container()`, which creates a stVerticalBlock
+   whose direct .element-container child holds the marker span. The stHB (columns row)
+   is also a direct child of that same stVB. This is the only stVB in the page tree
+   where its own direct .element-container contains this marker — ancestor stVBs
+   (card container, editor column) have section titles/captions in their direct
+   .element-container children, never this marker. */
+div[data-testid="stVerticalBlock"]:has(> div.element-container .hy-cr-icon-row-marker) {
   margin-bottom: -10px;
 }
-div[data-testid="stHorizontalBlock"]:has(> div[data-testid="stColumn"] > div[data-testid="stVerticalBlock"] > div.element-container .hy-cr-icon-anchor) button {
+div[data-testid="stVerticalBlock"]:has(> div.element-container .hy-cr-icon-row-marker) > div[data-testid="stHorizontalBlock"] button {
   background: transparent !important;
   border: none !important;
   box-shadow: none !important;
@@ -434,31 +437,31 @@ div[data-testid="stHorizontalBlock"]:has(> div[data-testid="stColumn"] > div[dat
   min-height: 22px !important;
   height: 22px !important;
 }
-div[data-testid="stHorizontalBlock"]:has(> div[data-testid="stColumn"] > div[data-testid="stVerticalBlock"] > div.element-container .hy-cr-icon-anchor) button:hover {
+div[data-testid="stVerticalBlock"]:has(> div.element-container .hy-cr-icon-row-marker) > div[data-testid="stHorizontalBlock"] button:hover {
   background: transparent !important;
 }
-div[data-testid="stHorizontalBlock"]:has(> div[data-testid="stColumn"] > div[data-testid="stVerticalBlock"] > div.element-container .hy-cr-icon-anchor) div[data-testid="stColumn"]:nth-child(2) button span {
+div[data-testid="stVerticalBlock"]:has(> div.element-container .hy-cr-icon-row-marker) > div[data-testid="stHorizontalBlock"] div[data-testid="stColumn"]:nth-child(2) button span {
   color: #7496b2 !important; font-size: 17px !important;
 }
-div[data-testid="stHorizontalBlock"]:has(> div[data-testid="stColumn"] > div[data-testid="stVerticalBlock"] > div.element-container .hy-cr-icon-anchor) div[data-testid="stColumn"]:nth-child(3) button span {
+div[data-testid="stVerticalBlock"]:has(> div.element-container .hy-cr-icon-row-marker) > div[data-testid="stHorizontalBlock"] div[data-testid="stColumn"]:nth-child(3) button span {
   color: #c0392b !important; font-size: 17px !important;
 }
-div[data-testid="stHorizontalBlock"]:has(> div[data-testid="stColumn"] > div[data-testid="stVerticalBlock"] > div.element-container .hy-cr-icon-anchor) div[data-testid="stColumn"]:nth-child(2) button:hover span { opacity: 0.7; }
-div[data-testid="stHorizontalBlock"]:has(> div[data-testid="stColumn"] > div[data-testid="stVerticalBlock"] > div.element-container .hy-cr-icon-anchor) div[data-testid="stColumn"]:nth-child(3) button:hover span { opacity: 0.7; }
+div[data-testid="stVerticalBlock"]:has(> div.element-container .hy-cr-icon-row-marker) > div[data-testid="stHorizontalBlock"] div[data-testid="stColumn"]:nth-child(2) button:hover span { opacity: 0.7; }
+div[data-testid="stVerticalBlock"]:has(> div.element-container .hy-cr-icon-row-marker) > div[data-testid="stHorizontalBlock"] div[data-testid="stColumn"]:nth-child(3) button:hover span { opacity: 0.7; }
 
 /* ── Cluster editor: "+" add companies icon button ── */
-div[data-testid="stHorizontalBlock"]:has(> div[data-testid="stColumn"] > div[data-testid="stVerticalBlock"] > div.element-container .hy-cr-add-anchor) div[data-testid="stColumn"]:last-child button {
+div[data-testid="stVerticalBlock"]:has(> div.element-container .hy-cr-add-row-marker) > div[data-testid="stHorizontalBlock"] div[data-testid="stColumn"]:last-child button {
   background: transparent !important;
   border: none !important;
   box-shadow: none !important;
   padding: 0 4px !important;
   min-height: 22px !important;
 }
-div[data-testid="stHorizontalBlock"]:has(> div[data-testid="stColumn"] > div[data-testid="stVerticalBlock"] > div.element-container .hy-cr-add-anchor) div[data-testid="stColumn"]:last-child button span {
+div[data-testid="stVerticalBlock"]:has(> div.element-container .hy-cr-add-row-marker) > div[data-testid="stHorizontalBlock"] div[data-testid="stColumn"]:last-child button span {
   color: #26B4D2 !important; font-size: 18px !important;
 }
-div[data-testid="stHorizontalBlock"]:has(> div[data-testid="stColumn"] > div[data-testid="stVerticalBlock"] > div.element-container .hy-cr-add-anchor) div[data-testid="stColumn"]:last-child button:hover span { opacity: 0.7; }
-div[data-testid="stHorizontalBlock"]:has(> div[data-testid="stColumn"] > div[data-testid="stVerticalBlock"] > div.element-container .hy-cr-add-anchor) div[data-testid="stColumn"]:last-child button:hover {
+div[data-testid="stVerticalBlock"]:has(> div.element-container .hy-cr-add-row-marker) > div[data-testid="stHorizontalBlock"] div[data-testid="stColumn"]:last-child button:hover span { opacity: 0.7; }
+div[data-testid="stVerticalBlock"]:has(> div.element-container .hy-cr-add-row-marker) > div[data-testid="stHorizontalBlock"] div[data-testid="stColumn"]:last-child button:hover {
   background: transparent !important;
 }
 """
