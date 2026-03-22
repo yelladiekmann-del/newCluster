@@ -395,6 +395,102 @@ hr { border: none; border-top: 1px solid #e4eaf2; margin: 18px 0; }
 }
 .hy-co-item-url:hover { text-decoration: underline; }
 .hy-co-empty { padding: 20px 14px; font-size: 12px; color: #aac0d1; text-align: center; }
+
+/* ── Cluster editor: merge / delete icon buttons (top-right, no background) ── */
+div[data-testid="stHorizontalBlock"]:has(.hy-cr-icon-anchor) {
+  margin-bottom: -10px;
+}
+div[data-testid="stHorizontalBlock"]:has(.hy-cr-icon-anchor) button {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 0 4px !important;
+  min-height: 22px !important;
+  height: 22px !important;
+}
+div[data-testid="stHorizontalBlock"]:has(.hy-cr-icon-anchor) button:hover {
+  background: transparent !important;
+}
+div[data-testid="stHorizontalBlock"]:has(.hy-cr-icon-anchor) div[data-testid="stColumn"]:nth-child(2) button span {
+  color: #7496b2 !important; font-size: 17px !important;
+}
+div[data-testid="stHorizontalBlock"]:has(.hy-cr-icon-anchor) div[data-testid="stColumn"]:nth-child(3) button span {
+  color: #c0392b !important; font-size: 17px !important;
+}
+div[data-testid="stHorizontalBlock"]:has(.hy-cr-icon-anchor) div[data-testid="stColumn"]:nth-child(2) button:hover span { opacity: 0.7; }
+div[data-testid="stHorizontalBlock"]:has(.hy-cr-icon-anchor) div[data-testid="stColumn"]:nth-child(3) button:hover span { opacity: 0.7; }
+
+/* ── Cluster editor: "+" add companies icon button ── */
+div[data-testid="stHorizontalBlock"]:has(.hy-cr-add-anchor) div[data-testid="stColumn"]:last-child button {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 0 4px !important;
+  min-height: 22px !important;
+}
+div[data-testid="stHorizontalBlock"]:has(.hy-cr-add-anchor) div[data-testid="stColumn"]:last-child button span {
+  color: #26B4D2 !important; font-size: 18px !important;
+}
+div[data-testid="stHorizontalBlock"]:has(.hy-cr-add-anchor) div[data-testid="stColumn"]:last-child button:hover span { opacity: 0.7; }
+
+/* ── Cluster editor: company list rows (matching .hy-co-item popup style) ── */
+div[data-testid="stVerticalBlock"]:has(> .element-container > .hy-cr-co-list-hdr) {
+  border: 1px solid #e4eaf2;
+  border-radius: 10px;
+  overflow: hidden;
+  margin-top: 4px;
+}
+div[data-testid="stVerticalBlock"]:has(> .element-container > .hy-cr-co-list-hdr) > .element-container:first-child {
+  display: none;
+}
+div[data-testid="stVerticalBlock"]:has(> .element-container > .hy-cr-co-list-hdr) div[data-testid="stHorizontalBlock"] {
+  border-bottom: 1px solid #f0f4f8;
+  padding: 0 8px 0 4px;
+  align-items: center !important;
+  gap: 0 !important;
+}
+div[data-testid="stVerticalBlock"]:has(> .element-container > .hy-cr-co-list-hdr) div[data-testid="stHorizontalBlock"]:last-of-type {
+  border-bottom: none;
+}
+/* Company name button — looks like plain text */
+div[data-testid="stVerticalBlock"]:has(> .element-container > .hy-cr-co-list-hdr) div[data-testid="stColumn"]:first-child button {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 6px 4px !important;
+  font-size: 13px !important;
+  font-weight: 600 !important;
+  color: #0d1f2d !important;
+  justify-content: flex-start !important;
+  text-align: left !important;
+  min-height: unset !important;
+  width: 100% !important;
+}
+div[data-testid="stVerticalBlock"]:has(> .element-container > .hy-cr-co-list-hdr) div[data-testid="stColumn"]:first-child button:hover {
+  color: #26B4D2 !important;
+  background: transparent !important;
+}
+/* URL text in middle column */
+div[data-testid="stVerticalBlock"]:has(> .element-container > .hy-cr-co-list-hdr) div[data-testid="stColumn"]:nth-child(2) .stMarkdown {
+  font-size: 11px !important;
+}
+/* Bin icon button */
+div[data-testid="stVerticalBlock"]:has(> .element-container > .hy-cr-co-list-hdr) div[data-testid="stColumn"]:last-child button {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 0 2px !important;
+  min-height: 22px !important;
+}
+div[data-testid="stVerticalBlock"]:has(> .element-container > .hy-cr-co-list-hdr) div[data-testid="stColumn"]:last-child button span {
+  color: #c8d8e4 !important; font-size: 16px !important;
+}
+div[data-testid="stVerticalBlock"]:has(> .element-container > .hy-cr-co-list-hdr) div[data-testid="stColumn"]:last-child button:hover span {
+  color: #e05c5c !important;
+}
+div[data-testid="stVerticalBlock"]:has(> .element-container > .hy-cr-co-list-hdr) div[data-testid="stColumn"]:last-child button:hover {
+  background: transparent !important;
+}
 """
 
 
