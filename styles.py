@@ -210,10 +210,6 @@ hr { border: none; border-top: 1px solid #e4eaf2; margin: 18px 0; }
   border: 1px solid #e4eaf2 !important; border-radius: 10px !important;
   background: #ffffff;
 }
-/* Tighten default vertical gap inside expander content */
-[data-testid="stExpander"] [data-testid="stVerticalBlock"] {
-  gap: 6px !important;
-}
 
 /* ── Success / info / warning overrides ── */
 [data-testid="stAlert"] { border-radius: 9px; }
@@ -276,7 +272,9 @@ div[data-testid="stVerticalBlock"]:has(> .element-container .hy-reload-btn-marke
 /* ── Field labels inside cluster editor expander ── */
 .hy-field-label {
   font-size: 9px; font-weight: 700; text-transform: uppercase;
-  letter-spacing: 0.09em; color: #7496b2; margin-bottom: 3px;
+  letter-spacing: 0.09em; color: #7496b2;
+  margin-bottom: 8px; margin-top: 2px;
+  display: block;
   font-family: 'IBM Plex Mono', monospace;
 }
 
@@ -506,13 +504,13 @@ div[data-testid="stVerticalBlock"]:has(> .element-container .hy-cr-add-row-marke
    Scoped via hy-cr-co-list-marker; same icon style as HY-CR-ICON-BTN.
    ══════════════════════════════════════════════════════════════════════════════ */
 
-/* Container: looks like .hy-co-list */
+/* Container — matches .hy-co-list */
 div[data-testid="stVerticalBlock"]:has(> .element-container .hy-cr-co-list-marker) {
   border: 1px solid #e4eaf2 !important;
   border-radius: 10px !important;
   overflow-y: auto !important;
-  max-height: 260px !important;
-  margin-top: 4px;
+  max-height: 460px !important;
+  margin-top: 8px;
 }
 /* Hide the marker span element-container */
 div[data-testid="stVerticalBlock"]:has(> .element-container .hy-cr-co-list-marker) > .element-container:first-child {
@@ -522,25 +520,29 @@ div[data-testid="stVerticalBlock"]:has(> .element-container .hy-cr-co-list-marke
 div[data-testid="stVerticalBlock"]:has(> .element-container .hy-cr-co-list-marker) .element-container {
   margin-bottom: 0 !important;
 }
-/* Each company row */
+/* Each company row — matches .hy-co-item padding + border */
 div[data-testid="stVerticalBlock"]:has(> .element-container .hy-cr-co-list-marker) [data-testid="stHorizontalBlock"] {
   align-items: center !important;
   gap: 0 !important;
-  padding: 0 4px 0 0 !important;
+  padding: 8px 14px !important;
+  border-bottom: 1px solid #f0f4f8 !important;
+}
+/* Alternating row background — matches .hy-co-item:nth-child(even) */
+div[data-testid="stVerticalBlock"]:has(> .element-container .hy-cr-co-list-marker) > .element-container:nth-child(even) [data-testid="stHorizontalBlock"] {
+  background: #f7f9fc !important;
 }
 /* Vertically center content within each column */
 div[data-testid="stVerticalBlock"]:has(> .element-container .hy-cr-co-list-marker) [data-testid="stColumn"] {
   display: flex !important;
   align-items: center !important;
 }
-/* Collapse the stVerticalBlock wrapper Streamlit inserts inside button columns —
-   it inherits gap:1rem which inflates the wrapper height and shifts buttons up */
+/* Collapse the stVerticalBlock wrapper inside button columns */
 div[data-testid="stVerticalBlock"]:has(> .element-container .hy-cr-co-list-marker) [data-testid="stColumn"] > [data-testid="stVerticalBlock"] {
   gap: 0 !important;
   padding: 0 !important;
   margin: 0 !important;
 }
-/* Icon buttons — identical to HY-CR-ICON-BTN */
+/* Icon buttons */
 div[data-testid="stVerticalBlock"]:has(> .element-container .hy-cr-co-list-marker) button {
   background:  transparent !important;
   border:      none        !important;
@@ -558,11 +560,11 @@ div[data-testid="stVerticalBlock"]:has(> .element-container .hy-cr-co-list-marke
 div[data-testid="stVerticalBlock"]:has(> .element-container .hy-cr-co-list-marker) button:hover {
   background: #f0f4f8 !important;
 }
-/* Move arrow (2nd col) sharpens to grey-blue on hover */
+/* Move arrow sharpens to grey-blue on hover */
 div[data-testid="stVerticalBlock"]:has(> .element-container .hy-cr-co-list-marker) [data-testid="stColumn"]:nth-child(2) button:hover {
   color: #7496b2 !important;
 }
-/* Delete bin (3rd col) sharpens to red on hover */
+/* Delete bin sharpens to red on hover */
 div[data-testid="stVerticalBlock"]:has(> .element-container .hy-cr-co-list-marker) [data-testid="stColumn"]:nth-child(3) button:hover {
   color: #c0392b !important;
 }

@@ -12,6 +12,7 @@ _GEN_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-f
 _BATCH_SIZE = 20
 _DESC_COL = "Description"
 _MAX_WORKERS = 10
+_DIALOG_PAGE_SIZE = 30
 
 
 # ============================================================
@@ -84,6 +85,7 @@ def _render_named_cluster(
         if st.button(f"Browse {n} {_noun} →", key=f"cr_open_editor_{cluster_name}",
                      use_container_width=True, type="secondary"):
             st.session_state["cr_company_editor_cluster"] = cluster_name
+            st.session_state["cr_company_editor_page"] = 0
             st.rerun()
     with _confirm_col:
         if st.button("Confirm edits", key=f"cr_confirm_{cluster_name}", type="primary",
@@ -550,24 +552,22 @@ def _company_editor_dialog(
         mask = df_cluster[company_col].astype(str).str.contains(search, case=False, na=False)
         df_show = df_cluster[mask]
 
-    # ── Company list with per-row move / delete icons ─────────────────────────
+    # ── Company list — paginated to avoid widget explosion ────────────────────
+    n_total = len(df_show)
+    n_pages = max(1, (n_total + _DIALOG_PAGE_SIZE - 1) // _DIALOG_PAGE_SIZE)
+    page = min(st.session_state.get("cr_company_editor_page", 0), n_pages - 1)
+    df_page = df_show.iloc[page * _DIALOG_PAGE_SIZE : (page + 1) * _DIALOG_PAGE_SIZE]
+
     with st.container():
         st.markdown('<span class="hy-cr-co-list-marker"></span>', unsafe_allow_html=True)
-        if len(df_show) == 0:
-            st.markdown(
-                '<div style="padding:12px 14px;font-size:12px;color:#aac0d1">No companies match.</div>',
-                unsafe_allow_html=True,
-            )
+        if n_total == 0:
+            st.markdown('<div class="hy-co-empty">No companies match.</div>', unsafe_allow_html=True)
         else:
-            for i, (_, row) in enumerate(df_show.iterrows()):
+            for i, (_, row) in enumerate(df_page.iterrows()):
                 name = str(row.get(company_col, "") or "")
                 _nc, _mc, _dc = st.columns([10, 0.5, 0.5])
                 with _nc:
-                    st.markdown(
-                        f'<div style="font-size:13px;font-weight:400;color:#0d1f2d;'
-                        f'padding:2px 8px 7px;line-height:1.4">{name}</div>',
-                        unsafe_allow_html=True,
-                    )
+                    st.markdown(f'<span class="hy-co-item-name">{name}</span>', unsafe_allow_html=True)
                 with _mc:
                     if st.button(" ", icon=":material/arrow_forward:", key=f"ced_mv_{i}",
                                  type="secondary", help=f"Move {name}"):
@@ -579,8 +579,27 @@ def _company_editor_dialog(
                         df_out = st.session_state["df_clean"].copy()
                         df_out.loc[df_out[company_col] == name, "Cluster"] = _OUTLIER_LABEL
                         st.session_state.df_clean = df_out
-                        # cr_company_editor_cluster stays set → dialog reopens with updated list
                         st.rerun()
+
+    # ── Pagination controls ────────────────────────────────────────────────────
+    if n_pages > 1:
+        _pp, _pm, _pn = st.columns([1, 4, 1])
+        with _pp:
+            if st.button("←", key="ced_prev", disabled=(page == 0), use_container_width=True):
+                st.session_state["cr_company_editor_page"] = page - 1
+                st.rerun()
+        with _pm:
+            _start = page * _DIALOG_PAGE_SIZE + 1
+            _end = min((page + 1) * _DIALOG_PAGE_SIZE, n_total)
+            st.markdown(
+                f'<div style="text-align:center;font-size:11px;color:#7496b2;padding:8px 0">'
+                f'{_start}–{_end} of {n_total} companies</div>',
+                unsafe_allow_html=True,
+            )
+        with _pn:
+            if st.button("→", key="ced_next", disabled=(page >= n_pages - 1), use_container_width=True):
+                st.session_state["cr_company_editor_page"] = page + 1
+                st.rerun()
 
     st.divider()
     if st.button("Close", key="ced_close", use_container_width=True):
@@ -608,6 +627,7 @@ def render_cluster_review(
     st.session_state.setdefault("cr_move_company", None)
     st.session_state.setdefault("cr_company_detail", None)
     st.session_state.setdefault("cr_company_editor_cluster", None)
+    st.session_state.setdefault("cr_company_editor_page", 0)
     st.session_state.setdefault("cr_add_cluster_pending", False)
 
     all_clusters   = df_clean["Cluster"].unique().tolist()
