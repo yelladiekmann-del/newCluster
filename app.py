@@ -55,7 +55,7 @@ _logo_tag = (
 with st.sidebar:
     st.markdown(
         f"""
-        <div style="display:flex;align-items:center;gap:10px;padding:16px 0 12px 0">
+        <div style="display:flex;align-items:center;gap:0;padding:16px 0 12px 0">
           {_logo_tag}
           <div>
             <div style="font-size:13px;font-weight:700;color:#eef2f7;letter-spacing:-0.01em">
