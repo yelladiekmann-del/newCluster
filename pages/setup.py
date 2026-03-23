@@ -304,7 +304,10 @@ if df_input is not None:
     # Persist df_clean with current column selections so Page 2 can use it
     _existing = st.session_state.get("df_clean")
     if _existing is None or (
-        hasattr(_existing, "__len__") and len(_existing) != len(df_input)
+        hasattr(_existing, "__len__") and (
+            len(_existing) != len(df_input)
+            or set(df_input.columns) != set(_existing.columns)
+        )
     ):
         st.session_state["df_clean"] = df_input.copy()
 
