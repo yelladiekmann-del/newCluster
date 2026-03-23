@@ -13,10 +13,27 @@ _BATCH_SIZE = 20
 _DESC_COL = "Description"
 _MAX_WORKERS = 10
 
+# All dialog session state keys — cleared whenever an external rerun (toggle, sort) fires
+_DIALOG_STATE_KEYS = (
+    "cr_company_editor_cluster", "cr_move_company", "cr_company_detail",
+    "cr_add_companies_cluster", "cr_merge_pending", "cr_delete_pending",
+    "cr_add_cluster_pending",
+)
+
+_EDITOR_PAGE_SIZE = 25
+
+
+def _clear_dialog_state() -> None:
+    """Clear all dialog session state keys. Called as on_change for widgets that trigger
+    full-page reruns but should not re-open any previously open dialog."""
+    for k in _DIALOG_STATE_KEYS:
+        st.session_state[k] = None
+
 
 def _open_company_editor_cb(cluster_name: str) -> None:
     """on_click callback — runs BEFORE the script body so the dialog-skip check fires."""
     st.session_state["cr_company_editor_cluster"] = cluster_name
+    st.session_state["cr_company_editor_page"] = 0
 
 
 # ============================================================
@@ -556,13 +573,19 @@ def _company_editor_dialog(
         mask = df_cluster[company_col].astype(str).str.contains(search, case=False, na=False)
         df_show = df_cluster[mask]
 
-    # ── Company list ─────────────────────────────────────────────────────────
+    # ── Company list (paginated to keep widget count low) ─────────────────────
+    total = len(df_show)
+    page = st.session_state.get("cr_company_editor_page", 0)
+    n_pages = max(1, (total + _EDITOR_PAGE_SIZE - 1) // _EDITOR_PAGE_SIZE)
+    page = min(page, n_pages - 1)
+    df_page = df_show.iloc[page * _EDITOR_PAGE_SIZE : (page + 1) * _EDITOR_PAGE_SIZE]
+
     with st.container():
         st.markdown('<span class="hy-cr-co-list-marker"></span>', unsafe_allow_html=True)
-        if len(df_show) == 0:
+        if total == 0:
             st.markdown('<div class="hy-co-empty">No companies match.</div>', unsafe_allow_html=True)
         else:
-            for i, (_, row) in enumerate(df_show.iterrows()):
+            for i, (_, row) in enumerate(df_page.iterrows()):
                 name = str(row.get(company_col, "") or "")
                 _nc, _mc, _dc = st.columns([10, 0.5, 0.5])
                 with _nc:
@@ -579,6 +602,22 @@ def _company_editor_dialog(
                         df_out.loc[df_out[company_col] == name, "Cluster"] = _OUTLIER_LABEL
                         st.session_state.df_clean = df_out
                         st.rerun()
+
+    # ── Pagination nav ────────────────────────────────────────────────────────
+    if n_pages > 1:
+        _pn_col, _pp_col, _pc_col = st.columns([1, 1, 2])
+        with _pn_col:
+            if page > 0 and st.button("← Prev", key="ced_prev", use_container_width=True):
+                st.session_state["cr_company_editor_page"] = page - 1
+                st.rerun()
+        with _pp_col:
+            if page < n_pages - 1 and st.button("Next →", key="ced_next", use_container_width=True):
+                st.session_state["cr_company_editor_page"] = page + 1
+                st.rerun()
+        with _pc_col:
+            _start = page * _EDITOR_PAGE_SIZE + 1
+            _end = min((page + 1) * _EDITOR_PAGE_SIZE, total)
+            st.caption(f"{_start}–{_end} of {total}")
 
     st.divider()
     if st.button("Close", key="ced_close", use_container_width=True):
@@ -707,6 +746,7 @@ def render_cluster_review(
             st.toggle(
                 "Include outliers",
                 key="cr_include_outliers",
+                on_change=_clear_dialog_state,
                 help="When ON, outlier companies are also sent to Gemini and may be sorted into a cluster.",
             )
         with col_rerun:
@@ -764,6 +804,7 @@ def render_cluster_review(
                     "switches": switches,
                 }
                 st.session_state.df_clean = df_out
+                _clear_dialog_state()
                 st.rerun()
 
     if not api_key:
