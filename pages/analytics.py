@@ -82,25 +82,25 @@ COLUMN_DESCRIPTIONS: dict[str, str] = {
 }
 
 GROUPS: dict[str, list[str]] = {
-    "Größe":            ["Gesamt", "# Companies", "⌀ Angestellte"],
-    "Neuheit":          ["⌀ Year Founded", "% Recently Founded"],
-    "Deals":            ["# Deals", "Deal Momentum"],
-    "Funding":          ["⌀ Total Raised (m€)", "Σ Total Raised (m€)", "Σ Invested (4 J.)", "Funding Momentum"],
-    "Risikoverteilung": ["Capital Invested Mean", "Capital Invested Median", "Abweichung M/M"],
-    "Absolutes Risiko": ["VC Graduation Rate", "Mortality Rate"],
-    "Markt":            ["Marktanteil (HHI)", "Marktreife"],
-    "Technologie":      ["⌀ Patentierte Erf."],
+    "Size":       ["Gesamt", "# Companies", "⌀ Angestellte"],
+    "Recency":    ["⌀ Year Founded", "% Recently Founded"],
+    "Deals":      ["# Deals", "Deal Momentum"],
+    "Funding":    ["⌀ Total Raised (m€)", "Σ Total Raised (m€)", "Σ Invested (4 J.)", "Funding Momentum"],
+    "Capital":    ["Capital Invested Mean", "Capital Invested Median", "Abweichung M/M"],
+    "Risk":       ["VC Graduation Rate", "Mortality Rate"],
+    "Market":     ["Marktanteil (HHI)", "Marktreife"],
+    "Technology": ["⌀ Patentierte Erf."],
 }
 
 GROUP_COLORS: dict[str, str] = {
-    "Größe":            "#2E3B55",
-    "Neuheit":          "#2E3B55",
-    "Deals":            "#C06020",
-    "Funding":          "#1868A8",
-    "Risikoverteilung": "#453D8A",
-    "Absolutes Risiko": "#882040",
-    "Markt":            "#154038",
-    "Technologie":      "#1A3840",
+    "Size":       "#7496b2",
+    "Recency":    "#7496b2",
+    "Deals":      "#7496b2",
+    "Funding":    "#7496b2",
+    "Capital":    "#7496b2",
+    "Risk":       "#7496b2",
+    "Market":     "#7496b2",
+    "Technology": "#7496b2",
 }
 
 COL_DISPLAY_NAMES: dict[str, str] = {
@@ -155,7 +155,7 @@ def _fmt_cell(col: str, val) -> str:
 
 
 def _build_analytics_html(df: pd.DataFrame) -> str:
-    """Build the full HTML table string with colored group headers and top-4 blue-shade highlighting."""
+    """Build the HTML table with light group headers, separators, momentum chips, rank highlighting."""
     data_cols = [c for c in df.columns if c != "Cluster"]
 
     # Compute rank per column (1 = best)
@@ -175,6 +175,15 @@ def _build_analytics_html(df: pd.DataFrame) -> str:
             if c in df.columns:
                 col_to_group[c] = gname
 
+    # Track first column of each group for left-border separator
+    seen_for_sep: set[str] = set()
+    first_in_group: set[str] = set()
+    for col in data_cols:
+        grp = col_to_group.get(col)
+        if grp and grp not in seen_for_sep:
+            seen_for_sep.add(grp)
+            first_in_group.add(col)
+
     html = ['<div class="hy-tbl-wrap"><table class="hy-tbl"><thead>']
 
     # Row 1: group header spans (in order of first appearance)
@@ -191,18 +200,19 @@ def _build_analytics_html(df: pd.DataFrame) -> str:
         group_spans[grp] += 1
     for grp in seen_groups:
         span = group_spans[grp]
-        color = GROUP_COLORS.get(grp, "#7496b2") if grp else "#7496b2"
         label = grp or ""
-        html.append(f'<th class="hy-th-group" colspan="{span}" style="background:{color}">{label}</th>')
+        html.append(f'<th class="hy-th-group" colspan="{span}">{label}</th>')
     html.append('</tr>')
 
-    # Row 2: individual column headers
+    # Row 2: individual column headers with direction arrows + group separators
     html.append('<tr>')
     for col in data_cols:
-        grp = col_to_group.get(col)
-        color = GROUP_COLORS.get(grp, "#7496b2") if grp else "#7496b2"
+        sep_style = "border-left:2px solid #d8e1ec;" if col in first_in_group else ""
+        dir_arrow = {"higher": " ↑", "lower": " ↓"}.get(METRIC_DIRECTION.get(col, ""), "")
         label = COL_DISPLAY_NAMES.get(col, col)
-        html.append(f'<th class="hy-th-col" style="background:{color}">{label}</th>')
+        html.append(
+            f'<th class="hy-th-col" style="{sep_style}">{label}{dir_arrow}</th>'
+        )
     html.append('</tr>')
     html.append('</thead><tbody>')
 
@@ -216,6 +226,7 @@ def _build_analytics_html(df: pd.DataFrame) -> str:
             val = row[col]
             txt = _fmt_cell(col, val)
             classes = ["hy-td"]
+            sep_style = "border-left:2px solid #d8e1ec;" if col in first_in_group else ""
             ranks = col_ranks.get(col)
             if ranks is not None and len(ranks) > i:
                 r = ranks.iloc[i]
@@ -230,16 +241,30 @@ def _build_analytics_html(df: pd.DataFrame) -> str:
             if col in ("Deal Momentum", "Funding Momentum"):
                 try:
                     fv = float(val)
-                    if fv > 0:
-                        classes.append("hy-td-pos")
-                    elif fv < 0:
-                        classes.append("hy-td-neg")
+                    chip_cls = "pos" if fv > 0 else ("neg" if fv < 0 else "neu")
                 except (TypeError, ValueError):
-                    pass
-            html.append(f'<td class="{" ".join(c for c in classes if c)}">{txt}</td>')
+                    chip_cls = "neu"
+                cell_inner = f'<span class="hy-mom-chip hy-mom-chip-{chip_cls}">{txt}</span>'
+                html.append(
+                    f'<td class="{" ".join(c for c in classes if c)}" style="{sep_style}">{cell_inner}</td>'
+                )
+            else:
+                html.append(
+                    f'<td class="{" ".join(c for c in classes if c)}" style="{sep_style}">{txt}</td>'
+                )
         html.append('</tr>')
 
-    html.append('</tbody></table></div>')
+    html.append('</tbody></table>')
+    # Inline legend at bottom
+    html.append(
+        '<div style="padding:8px 14px;font-size:10px;color:#aac0d1;'
+        'border-top:1px solid #f0f4f8;display:flex;gap:16px;">'
+        '<span>↑ higher is better</span>'
+        '<span>↓ lower is better</span>'
+        '<span>Bold = #1 rank · progressively lighter = #2 #3 #4</span>'
+        '</div>'
+    )
+    html.append('</div>')
     return "\n".join(html)
 
 
@@ -518,7 +543,7 @@ def _compute_ranking(df: pd.DataFrame) -> pd.DataFrame:
 
 _hdr_col, _export_col = st.columns([4, 1])
 with _hdr_col:
-    page_header("Analytics v2", "Cluster performance, rankings, and export.")
+    page_header("Analytics", "Cluster performance, rankings, and export.")
 
 _confirmed = st.session_state.get("clusters_confirmed", False)
 _clustered = (
@@ -726,10 +751,11 @@ if "VC Graduation Rate" in df_analytics.columns:
         )
 
 
-def _kpi_card(label: str, value: str, sub: str = "") -> str:
+def _kpi_card(label: str, value: str, sub: str = "", accent: bool = False) -> str:
     sub_html = f'<div class="hy-kpi-sub">{sub}</div>' if sub else ""
+    accent_style = "border-top:3px solid #26B4D2;" if accent else ""
     return (
-        f'<div class="hy-kpi-card">'
+        f'<div class="hy-kpi-card" style="{accent_style}">'
         f'<div class="hy-kpi-label">{label}</div>'
         f'<div class="hy-kpi-value">{value}</div>'
         f'{sub_html}'
@@ -773,7 +799,7 @@ _kpis_html = (
     + _kpi_card("Active Clusters",    str(_n_clusters),          "named clusters")
     + _kpi_card("Total Capital Raised", _capital_str,            "all clusters combined")
     + _kpi_card("Total Deals",        _deals_str,                "all clusters combined")
-    + _kpi_card("Market Momentum",    _mom_str,                  _mom_sub)
+    + _kpi_card("Market Momentum",    _mom_str,                  _mom_sub, accent=True)
     + _kpi_card("Market Maturity",    _mat_str,                  _mat_sub)
     + '</div>'
 )
@@ -830,20 +856,24 @@ if "# Deals" in df_analytics.columns:
         })
 
 if _spotlights:
-    st.markdown('<div class="hy-section-title" style="margin-top:4px;margin-bottom:10px">Spotlight</div>', unsafe_allow_html=True)
-    _spot_cols = st.columns(len(_spotlights))
-    for _col, _sp in zip(_spot_cols, _spotlights):
-        with _col:
-            with st.container(border=True):
-                st.markdown(
-                    f'<div style="font-size:9px;font-weight:700;text-transform:uppercase;'
-                    f'letter-spacing:0.07em;color:{_sp["color"]};font-family:IBM Plex Mono,monospace;'
-                    f'margin-bottom:6px">{_sp["label"]}</div>'
-                    f'<div style="font-size:14px;font-weight:700;color:#0d1f2d;'
-                    f'letter-spacing:-0.01em;margin-bottom:8px">{_sp["cluster"]}</div>'
-                    f'<span class="hy-cl-chip">{_sp["metric"]}</span>',
-                    unsafe_allow_html=True,
-                )
+    st.markdown(
+        '<div class="hy-section-title" style="margin-top:4px;margin-bottom:4px">Spotlight</div>'
+        '<div style="font-size:11px;color:#7496b2;margin-bottom:12px">Standout clusters by key signal</div>',
+        unsafe_allow_html=True,
+    )
+    _spot_variant = ["hy-spot-gold", "hy-spot-teal", "hy-spot-blue"]
+    _spot_html = '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px">'
+    for _idx, _sp in enumerate(_spotlights):
+        _cls = _spot_variant[_idx % len(_spot_variant)]
+        _spot_html += (
+            f'<div class="hy-spot-card {_cls}">'
+            f'<div class="hy-spot-tag">{_sp["label"]}</div>'
+            f'<div class="hy-spot-name">{_sp["cluster"]}</div>'
+            f'<span class="hy-spot-value">{_sp["metric"]}</span>'
+            f'</div>'
+        )
+    _spot_html += '</div>'
+    st.markdown(_spot_html, unsafe_allow_html=True)
 
 # ── SECTION: Cluster Size + Funding charts (side by side) ─────────────────────
 
@@ -901,52 +931,49 @@ if _has_deal_mom or _has_fund_mom:
 
     _mom_cols = [c for c in ["Deal Momentum", "Funding Momentum"] if c in df_analytics.columns]
     _mom_df = df_analytics[["Cluster"] + _mom_cols].copy()
-    # Sort by first momentum col
-    _mom_df = _mom_df.sort_values(_mom_cols[0], na_position="last")
+    # Sort by first momentum col descending
+    _mom_df = _mom_df.sort_values(_mom_cols[0], ascending=True, na_position="last")
+
+    # Melt and add direction for colour coding by sign
+    _mom_melted = _mom_df.melt(
+        id_vars="Cluster", value_vars=_mom_cols, var_name="Type", value_name="Momentum %"
+    )
+    _mom_melted["Direction"] = _mom_melted["Momentum %"].apply(
+        lambda v: "↑ Positive" if (pd.to_numeric(v, errors="coerce") or 0) >= 0 else "↓ Negative"
+    )
 
     _fig_mom = px.bar(
-        _mom_df.melt(id_vars="Cluster", value_vars=_mom_cols, var_name="Type", value_name="Momentum %"),
-        x="Momentum %", y="Cluster", color="Type", barmode="group", orientation="h",
-        color_discrete_map={"Deal Momentum": "#26B4D2", "Funding Momentum": "#4AC596"},
+        _mom_melted,
+        x="Momentum %", y="Cluster", color="Direction", barmode="group", orientation="h",
+        color_discrete_map={"↑ Positive": "#26B4D2", "↓ Negative": "#ef4444"},
+        hover_data={"Type": True, "Direction": False},
         height=max(200, 44 * len(df_analytics)),
     )
     _fig_mom.update_layout(
         showlegend=True,
-        legend=dict(orientation="h", yanchor="bottom", y=1.01, xanchor="left", x=0,
-                    font=dict(size=11)),
-        margin=dict(l=0, r=20, t=30, b=0),
-        xaxis=dict(title="Change vs. prior period (%)", showgrid=True, gridcolor="#e4eaf2",
-                   tickfont=dict(family="IBM Plex Mono", size=10),
-                   zeroline=True, zerolinecolor="#c8d8e4", zerolinewidth=1.5),
+        legend=dict(
+            orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0,
+            font=dict(size=11), title_text="",
+        ),
+        margin=dict(l=0, r=20, t=36, b=0),
+        xaxis=dict(
+            title="Change vs. prior period (%)", showgrid=True, gridcolor="#e4eaf2",
+            tickfont=dict(family="IBM Plex Mono", size=10),
+            zeroline=True, zerolinecolor="#c8d8e4", zerolinewidth=2,
+        ),
         yaxis=dict(title="", tickfont=dict(family="IBM Plex Sans", size=11)),
         plot_bgcolor="#ffffff", paper_bgcolor="#f7f9fc",
         font=dict(family="IBM Plex Sans", size=11, color="#0d1f2d"),
     )
-    _fig_mom.update_traces(marker_line_width=0, opacity=0.88)
+    _fig_mom.update_traces(marker_line_width=0, opacity=0.85)
     st.plotly_chart(_fig_mom, use_container_width=True)
 
 st.divider()
 
 # ── SECTION: Analytics Table ──────────────────────────────────────────────────
 
-_tbl_hdr, _desc_toggle = st.columns([3, 1])
-with _tbl_hdr:
-    st.markdown('<div class="hy-section-title">Analytics Table</div>', unsafe_allow_html=True)
-with _desc_toggle:
-    st.markdown('<div style="padding-top:4px"></div>', unsafe_allow_html=True)
-
-with st.expander("Column Descriptions", expanded=False):
-    items = [(k, v) for k, v in COLUMN_DESCRIPTIONS.items() if k in df_analytics.columns]
-    mid = (len(items) + 1) // 2
-    left_col, right_col = st.columns(2)
-    for i, (col_name, desc) in enumerate(items):
-        dir_icon = {"higher": " ↑", "lower": " ↓"}.get(METRIC_DIRECTION.get(col_name, ""), "")
-        target = left_col if i < mid else right_col
-        target.markdown(
-            f"**{col_name}**{dir_icon}  \n<small style='color:#555'>{desc}</small>",
-            unsafe_allow_html=True,
-        )
-        target.markdown("")
+st.markdown('<div class="hy-section-title">Analytics Table</div>', unsafe_allow_html=True)
+st.caption("All metrics per cluster — bold = #1 rank · muted = lowest · ↑ higher is better · ↓ lower is better")
 
 # Drop the redundant "Gesamt" column (always == # Companies when no duplicates)
 _tbl_df = df_analytics.drop(columns=["Gesamt"], errors="ignore").copy()
@@ -957,7 +984,37 @@ for _c in _tbl_df.columns:
         _tbl_df[_c] = pd.to_numeric(_tbl_df[_c], errors="coerce")
 
 st.markdown(_build_analytics_html(_tbl_df), unsafe_allow_html=True)
-st.caption("Darkest blue = #1  ·  progressively lighter = #2 #3 #4  ·  ↑ higher is better  ·  ↓ lower is better")
+
+# ── SECTION: Cluster Ranking (after table — logical narrative end to analysis) ─
+
+if not df_rank.empty:
+    st.markdown(
+        '<div class="hy-section-title" style="margin-top:20px">Cluster Ranking</div>',
+        unsafe_allow_html=True,
+    )
+    st.caption(
+        "Each metric normalised 0–1 (best = 1, worst = 0) and averaged. "
+        "Excludes size/neutral columns."
+    )
+
+    _rank_cards_html = ""
+    for _, row in df_rank.iterrows():
+        _rank = int(row["Rank"])
+        _name = row["Cluster"]
+        _score = float(row["Score"])
+        _badge_class = "hy-rank-badge hy-rank-badge-gold" if _rank == 1 else "hy-rank-badge"
+        _bar_pct = _score  # score is already 0–100
+        _rank_cards_html += (
+            f'<div class="hy-rank-card">'
+            f'<span class="{_badge_class}">#{_rank}</span>'
+            f'<span class="hy-rank-name">{_name}</span>'
+            f'<div class="hy-rank-bar-wrap"><div class="hy-rank-bar" style="width:{_bar_pct:.1f}%"></div></div>'
+            f'<span class="hy-rank-score">{_score:.1f}</span>'
+            f'</div>'
+        )
+    st.markdown(_rank_cards_html, unsafe_allow_html=True)
+
+st.divider()
 
 # ── SECTION: Growth vs. Funding scatter ───────────────────────────────────────
 
@@ -966,7 +1023,7 @@ _gf_y = "⌀ Total Raised (m€)" if "⌀ Total Raised (m€)" in df_analytics.c
 _gf_sz = "# Companies"        if "# Companies"         in df_analytics.columns else None
 
 if _gf_x in df_analytics.columns and _gf_y:
-    st.markdown('<div class="hy-section-title" style="margin-top:20px;margin-bottom:4px">Growth vs. Funding</div>', unsafe_allow_html=True)
+    st.markdown('<div class="hy-section-title" style="margin-top:4px;margin-bottom:4px">Growth vs. Funding</div>', unsafe_allow_html=True)
     st.caption("Each bubble is a cluster. X = deal activity growth · Y = avg funding raised · Size = number of companies.")
 
     _gf_cols = ["Cluster", _gf_x, _gf_y] + ([_gf_sz] if _gf_sz else [])
@@ -1005,37 +1062,7 @@ if _gf_x in df_analytics.columns and _gf_y:
         )
         st.plotly_chart(_fig_gf, use_container_width=True)
 
-st.divider()
-
-# ── SECTION: Cluster Ranking ──────────────────────────────────────────────────
-
-if not df_rank.empty:
-    st.markdown('<div class="hy-section-title">Cluster Ranking</div>', unsafe_allow_html=True)
-    st.caption(
-        "Each metric normalised 0–1 (best = 1, worst = 0) and averaged. "
-        "Excludes size/neutral columns."
-    )
-
-    _rank_cards_html = ""
-    for _, row in df_rank.iterrows():
-        _rank = int(row["Rank"])
-        _name = row["Cluster"]
-        _score = float(row["Score"])
-        _badge_class = "hy-rank-badge hy-rank-badge-gold" if _rank == 1 else "hy-rank-badge"
-        _bar_pct = _score  # score is already 0–100
-        _rank_cards_html += (
-            f'<div class="hy-rank-card">'
-            f'<span class="{_badge_class}">#{_rank}</span>'
-            f'<span class="hy-rank-name">{_name}</span>'
-            f'<div class="hy-rank-bar-wrap"><div class="hy-rank-bar" style="width:{_bar_pct:.1f}%"></div></div>'
-            f'<span class="hy-rank-score">{_score:.1f}</span>'
-            f'</div>'
-        )
-    st.markdown(_rank_cards_html, unsafe_allow_html=True)
-
-st.divider()
-
-# ── Export ────────────────────────────────────────────────────────────────────
+# ── Export (download button in page header) ────────────────────────────────────
 
 export_df = df_analytics.copy()
 if not df_rank.empty:
@@ -1044,346 +1071,346 @@ if not df_rank.empty:
         on="Cluster", how="left",
     )
 
-_exp_col1, _exp_col2 = st.columns([3, 1])
-with _exp_col2:
+with _export_col:
+    st.markdown('<div style="padding-top:18px"></div>', unsafe_allow_html=True)
     st.download_button(
-        "Download analytics CSV",
+        "↓ Download CSV",
         export_df.to_csv(index=False),
         "cluster_analytics.csv",
         "text/csv",
-        type="primary",
+        type="secondary",
         use_container_width=True,
     )
 
-# ── SECTION: Verify Computation ───────────────────────────────────────────────
+# ── SECTION: Verify Computation (Advanced — collapsed by default) ──────────────
 
 st.divider()
-st.markdown('<div class="hy-section-title">Verify Computation</div>', unsafe_allow_html=True)
-st.caption("Pick any company to trace every cluster metric step by step — useful for sanity-checking results.")
+with st.expander("Advanced — Verify Computation", expanded=False):
+    st.caption("Pick any company to trace every cluster metric step by step — useful for sanity-checking results.")
 
-_company_col = st.session_state.get("company_col", "name")
+    _company_col = st.session_state.get("company_col", "name")
 
-_dbg_search = st.text_input(
-    "Company name", value="Stripe", key="debug_company_search",
-    placeholder="e.g. Stripe",
-)
-
-if _dbg_search and _company_col in df_co.columns:
-    _mask = df_co[_company_col].astype(str).str.lower().str.contains(
-        _dbg_search.strip().lower(), na=False, regex=False
+    _dbg_search = st.text_input(
+        "Company name", value="Stripe", key="debug_company_search",
+        placeholder="e.g. Stripe",
     )
-    _matches = df_co[_mask]
 
-    if _matches.empty:
-        st.warning(f"No company matching '{_dbg_search}' found.")
-    else:
-        # If multiple hits, let user narrow down
-        if len(_matches) > 1:
-            _match_names = _matches[_company_col].tolist()
-            _chosen_name = st.selectbox(
-                f"{len(_matches)} matches — pick one:", _match_names, key="debug_company_pick"
-            )
-            _match_row = _matches[_matches[_company_col] == _chosen_name].iloc[0]
+    if _dbg_search and _company_col in df_co.columns:
+        _mask = df_co[_company_col].astype(str).str.lower().str.contains(
+            _dbg_search.strip().lower(), na=False, regex=False
+        )
+        _matches = df_co[_mask]
+
+        if _matches.empty:
+            st.warning(f"No company matching '{_dbg_search}' found.")
         else:
-            _match_row = _matches.iloc[0]
-
-        _match_name    = _match_row[_company_col]
-        _match_cluster = str(_match_row.get("Cluster", "N/A"))
-
-        if _match_cluster in ("N/A", "Outliers"):
-            st.info(f"**{_match_name}** is in '{_match_cluster}' — not included in cluster analytics.")
-        else:
-            _co = df_co[df_co["Cluster"] == _match_cluster].copy()
-
-            # Deals for this cluster
-            _co_id_k    = _cmap.get("co_id")
-            _de_co_id_k = _cmap.get("de_co_id")
-            if (df_de is not None and _co_id_k and _de_co_id_k
-                    and _co_id_k in _co.columns and _de_co_id_k in df_de.columns):
-                _ids = _co[_co_id_k].dropna().unique()
-                _de  = df_de[df_de[_de_co_id_k].isin(_ids)].copy()
+            # If multiple hits, let user narrow down
+            if len(_matches) > 1:
+                _match_names = _matches[_company_col].tolist()
+                _chosen_name = st.selectbox(
+                    f"{len(_matches)} matches — pick one:", _match_names, key="debug_company_pick"
+                )
+                _match_row = _matches[_matches[_company_col] == _chosen_name].iloc[0]
             else:
-                _de = pd.DataFrame()
+                _match_row = _matches.iloc[0]
 
-            # ── Company summary table ──────────────────────────────────────────
-            def _raw_val(col_key):
-                col = _cmap.get(col_key)
-                if col and col in _match_row.index:
-                    v = _match_row[col]
-                    return "—" if (v is None or (isinstance(v, float) and pd.isna(v))) else str(v)
-                return "—"
+            _match_name    = _match_row[_company_col]
+            _match_cluster = str(_match_row.get("Cluster", "N/A"))
 
-            _summary = pd.DataFrame([{
-                "Field": "Company",        "Value": _match_name,
-            }, {
-                "Field": "Cluster",        "Value": _match_cluster,
-            }, {
-                "Field": "Cluster size",   "Value": f"{len(_co)} companies",
-            }, {
-                "Field": "Employees",      "Value": _raw_val("employees"),
-            }, {
-                "Field": "Year Founded",   "Value": _raw_val("year_founded"),
-            }, {
-                "Field": "Total Raised",   "Value": _raw_val("total_raised"),
-            }, {
-                "Field": "Business Status","Value": _raw_val("business_status"),
-            }, {
-                "Field": "Ownership",      "Value": _raw_val("ownership_status"),
-            }, {
-                "Field": "Patents",        "Value": _raw_val("total_patent_families"),
-            }])
-            st.dataframe(_summary, use_container_width=True, hide_index=True,
-                         height=38 + 35 * len(_summary))
+            if _match_cluster in ("N/A", "Outliers"):
+                st.info(f"**{_match_name}** is in '{_match_cluster}' — not included in cluster analytics.")
+            else:
+                _co = df_co[df_co["Cluster"] == _match_cluster].copy()
 
-            # ── Build metric trace ─────────────────────────────────────────────
-            _trace = []
+                # Deals for this cluster
+                _co_id_k    = _cmap.get("co_id")
+                _de_co_id_k = _cmap.get("de_co_id")
+                if (df_de is not None and _co_id_k and _de_co_id_k
+                        and _co_id_k in _co.columns and _de_co_id_k in df_de.columns):
+                    _ids = _co[_co_id_k].dropna().unique()
+                    _de  = df_de[df_de[_de_co_id_k].isin(_ids)].copy()
+                else:
+                    _de = pd.DataFrame()
 
-            # # Companies
-            if _co_id_k and _co_id_k in _co.columns:
-                _n_co = int(_co[_co_id_k].nunique())
-                _trace.append({
-                    "Metric":     "# Companies",
-                    "Formula":    "nunique(Company ID) within cluster",
-                    "Key Inputs": f"{len(_co)} total rows, {_n_co} unique Company IDs",
-                    "Result":     str(_n_co),
-                })
+                # ── Company summary table ──────────────────────────────────────────
+                def _raw_val(col_key):
+                    col = _cmap.get(col_key)
+                    if col and col in _match_row.index:
+                        v = _match_row[col]
+                        return "—" if (v is None or (isinstance(v, float) and pd.isna(v))) else str(v)
+                    return "—"
 
-            # ⌀ Employees
-            _emp_k = _cmap.get("employees")
-            if _emp_k and _emp_k in _co.columns:
-                _ev = pd.to_numeric(_co[_emp_k], errors="coerce").dropna()
-                if len(_ev):
-                    _em = float(_ev.mean())
+                _summary = pd.DataFrame([{
+                    "Field": "Company",        "Value": _match_name,
+                }, {
+                    "Field": "Cluster",        "Value": _match_cluster,
+                }, {
+                    "Field": "Cluster size",   "Value": f"{len(_co)} companies",
+                }, {
+                    "Field": "Employees",      "Value": _raw_val("employees"),
+                }, {
+                    "Field": "Year Founded",   "Value": _raw_val("year_founded"),
+                }, {
+                    "Field": "Total Raised",   "Value": _raw_val("total_raised"),
+                }, {
+                    "Field": "Business Status","Value": _raw_val("business_status"),
+                }, {
+                    "Field": "Ownership",      "Value": _raw_val("ownership_status"),
+                }, {
+                    "Field": "Patents",        "Value": _raw_val("total_patent_families"),
+                }])
+                st.dataframe(_summary, use_container_width=True, hide_index=True,
+                             height=38 + 35 * len(_summary))
+
+                # ── Build metric trace ─────────────────────────────────────────────
+                _trace = []
+
+                # # Companies
+                if _co_id_k and _co_id_k in _co.columns:
+                    _n_co = int(_co[_co_id_k].nunique())
                     _trace.append({
-                        "Metric":     "⌀ Employees",
-                        "Formula":    "mean(Employees) across cluster",
-                        "Key Inputs": f"N={len(_ev)}, sum={_ev.sum():,.0f}, mean={_em:.1f}",
-                        "Result":     f"{_em:.1f}",
+                        "Metric":     "# Companies",
+                        "Formula":    "nunique(Company ID) within cluster",
+                        "Key Inputs": f"{len(_co)} total rows, {_n_co} unique Company IDs",
+                        "Result":     str(_n_co),
                     })
 
-            # ⌀ Year Founded / % Recently Founded
-            _yf_k = _cmap.get("year_founded")
-            if _yf_k and _yf_k in _co.columns:
-                _yv = pd.to_numeric(_co[_yf_k], errors="coerce").dropna()
-                if len(_yv):
-                    _yfm = float(_yv.mean())
-                    _rec_n = int((_yv >= (_ref_year - 2)).sum())
-                    _trace.append({
-                        "Metric":     "⌀ Year Founded",
-                        "Formula":    "mean(Year Founded) across cluster",
-                        "Key Inputs": f"N={len(_yv)}, min={int(_yv.min())}, max={int(_yv.max())}",
-                        "Result":     str(int(round(_yfm))),
-                    })
-                    _trace.append({
-                        "Metric":     "% Recently Founded",
-                        "Formula":    f"count(Year ≥ {_ref_year - 2}) / N × 100",
-                        "Key Inputs": f"{_rec_n} of {len(_yv)} companies founded ≥ {_ref_year - 2}",
-                        "Result":     f"{_rec_n / len(_yv) * 100:.1f}%",
-                    })
-
-            # Deals
-            if not _de.empty:
-                _did_k = _cmap.get("deal_id")
-                if _did_k and _did_k in _de.columns:
-                    _n_deals = int(_de[_did_k].nunique())
-                    _trace.append({
-                        "Metric":     "# Deals",
-                        "Formula":    "nunique(Deal ID) across deals linked to cluster's company IDs",
-                        "Key Inputs": f"{len(_de)} deal rows, {_n_deals} unique Deal IDs",
-                        "Result":     str(_n_deals),
-                    })
-
-                _dd_k = _cmap.get("deal_date")
-                if _dd_k and _dd_k in _de.columns:
-                    _dyrs = _to_year(_de[_dd_k])
-                    _dn_curr = int((_dyrs == _ref_year).sum())
-                    _dn_prev = int((_dyrs == (_ref_year - 1)).sum())
-                    if _dn_prev > 0:
-                        _dm = round((_dn_curr / _dn_prev - 1) * 100, 0)
+                # ⌀ Employees
+                _emp_k = _cmap.get("employees")
+                if _emp_k and _emp_k in _co.columns:
+                    _ev = pd.to_numeric(_co[_emp_k], errors="coerce").dropna()
+                    if len(_ev):
+                        _em = float(_ev.mean())
                         _trace.append({
-                            "Metric":     "Deal Momentum",
-                            "Formula":    f"Count({_ref_year}) / Count({_ref_year-1}) − 1) × 100",
-                            "Key Inputs": f"Y={_ref_year}: {_dn_curr} deals  ·  Y−1={_ref_year-1}: {_dn_prev} deals",
-                            "Result":     f"{_dm:+.0f}%",
-                        })
-                    else:
-                        _trace.append({
-                            "Metric":     "Deal Momentum",
-                            "Formula":    f"Count({_ref_year}) / Count({_ref_year-1}) − 1) × 100",
-                            "Key Inputs": f"Y−1={_ref_year-1} has 0 deals → ratio undefined",
-                            "Result":     "N/A",
+                            "Metric":     "⌀ Employees",
+                            "Formula":    "mean(Employees) across cluster",
+                            "Key Inputs": f"N={len(_ev)}, sum={_ev.sum():,.0f}, mean={_em:.1f}",
+                            "Result":     f"{_em:.1f}",
                         })
 
-            # ⌀ / Σ Total Raised
-            _tr_k = _cmap.get("total_raised")
-            if _tr_k and _tr_k in _co.columns:
-                _tv = pd.to_numeric(_co[_tr_k], errors="coerce").dropna()
-                if len(_tv):
-                    _trace.append({
-                        "Metric":     "⌀ Total Raised (m€)",
-                        "Formula":    "mean(Total Raised) across cluster companies",
-                        "Key Inputs": f"N={len(_tv)}, sum={_tv.sum():,.1f}, mean={float(_tv.mean()):.1f}",
-                        "Result":     f"{float(_tv.mean()):.1f}",
-                    })
-                    _trace.append({
-                        "Metric":     "Σ Total Raised (m€)",
-                        "Formula":    "sum(Total Raised) across cluster companies",
-                        "Key Inputs": f"N={len(_tv)} companies with non-null Total Raised",
-                        "Result":     f"{float(_tv.sum()):,.1f}",
-                    })
+                # ⌀ Year Founded / % Recently Founded
+                _yf_k = _cmap.get("year_founded")
+                if _yf_k and _yf_k in _co.columns:
+                    _yv = pd.to_numeric(_co[_yf_k], errors="coerce").dropna()
+                    if len(_yv):
+                        _yfm = float(_yv.mean())
+                        _rec_n = int((_yv >= (_ref_year - 2)).sum())
+                        _trace.append({
+                            "Metric":     "⌀ Year Founded",
+                            "Formula":    "mean(Year Founded) across cluster",
+                            "Key Inputs": f"N={len(_yv)}, min={int(_yv.min())}, max={int(_yv.max())}",
+                            "Result":     str(int(round(_yfm))),
+                        })
+                        _trace.append({
+                            "Metric":     "% Recently Founded",
+                            "Formula":    f"count(Year ≥ {_ref_year - 2}) / N × 100",
+                            "Key Inputs": f"{_rec_n} of {len(_yv)} companies founded ≥ {_ref_year - 2}",
+                            "Result":     f"{_rec_n / len(_yv) * 100:.1f}%",
+                        })
 
-            # Deal-size metrics
-            if not _de.empty:
-                _ds_k = _cmap.get("deal_size")
-                _dd_k = _cmap.get("deal_date")
-                if _ds_k and _ds_k in _de.columns:
-                    _dsv = pd.to_numeric(_de[_ds_k], errors="coerce")
+                # Deals
+                if not _de.empty:
+                    _did_k = _cmap.get("deal_id")
+                    if _did_k and _did_k in _de.columns:
+                        _n_deals = int(_de[_did_k].nunique())
+                        _trace.append({
+                            "Metric":     "# Deals",
+                            "Formula":    "nunique(Deal ID) across deals linked to cluster's company IDs",
+                            "Key Inputs": f"{len(_de)} deal rows, {_n_deals} unique Deal IDs",
+                            "Result":     str(_n_deals),
+                        })
+
+                    _dd_k = _cmap.get("deal_date")
                     if _dd_k and _dd_k in _de.columns:
-                        _dyrs2     = _to_year(_de[_dd_k])
-                        _m4        = (_dyrs2 >= _ref_year - 3) & (_dyrs2 <= _ref_year) & _dsv.notna()
-                        _m_rec     = (_dyrs2 >= _ref_year - 1) & (_dyrs2 <= _ref_year) & _dsv.notna()
-                        _m_prv     = (_dyrs2 >= _ref_year - 3) & (_dyrs2 <= _ref_year - 2) & _dsv.notna()
-                        _inv4      = float(_dsv[_m4].sum())
-                        _inv_rec   = float(_dsv[_m_rec].sum())
-                        _inv_prv   = float(_dsv[_m_prv].sum())
-                        _trace.append({
-                            "Metric":     "Σ Invested (4 J.)",
-                            "Formula":    f"sum(Deal Size) where deal year ∈ {_ref_year-3}–{_ref_year}",
-                            "Key Inputs": f"{int(_m4.sum())} deals with size in window",
-                            "Result":     f"{_inv4:,.1f}",
-                        })
-                        if _inv_prv > 0:
-                            _fm = round((_inv_rec / _inv_prv - 1) * 100, 1)
+                        _dyrs = _to_year(_de[_dd_k])
+                        _dn_curr = int((_dyrs == _ref_year).sum())
+                        _dn_prev = int((_dyrs == (_ref_year - 1)).sum())
+                        if _dn_prev > 0:
+                            _dm = round((_dn_curr / _dn_prev - 1) * 100, 0)
                             _trace.append({
-                                "Metric":     "Funding Momentum",
-                                "Formula":    f"(Sum {_ref_year-1}+{_ref_year}) / (Sum {_ref_year-3}+{_ref_year-2}) − 1) × 100",
-                                "Key Inputs": f"Recent ({_ref_year-1}+{_ref_year}): {_inv_rec:,.1f} m€  ·  Prev ({_ref_year-3}+{_ref_year-2}): {_inv_prv:,.1f} m€",
-                                "Result":     f"{_fm:+.1f}%",
+                                "Metric":     "Deal Momentum",
+                                "Formula":    f"Count({_ref_year}) / Count({_ref_year-1}) − 1) × 100",
+                                "Key Inputs": f"Y={_ref_year}: {_dn_curr} deals  ·  Y−1={_ref_year-1}: {_dn_prev} deals",
+                                "Result":     f"{_dm:+.0f}%",
                             })
                         else:
                             _trace.append({
-                                "Metric":     "Funding Momentum",
-                                "Formula":    f"(Sum {_ref_year-1}+{_ref_year}) / (Sum {_ref_year-3}+{_ref_year-2}) − 1) × 100",
-                                "Key Inputs": f"Prev window ({_ref_year-3}+{_ref_year-2}) has no sized deals",
+                                "Metric":     "Deal Momentum",
+                                "Formula":    f"Count({_ref_year}) / Count({_ref_year-1}) − 1) × 100",
+                                "Key Inputs": f"Y−1={_ref_year-1} has 0 deals → ratio undefined",
                                 "Result":     "N/A",
                             })
 
-                    _valid_sz = _dsv.dropna()
-                    if len(_valid_sz):
-                        _sz_mean   = float(_valid_sz.mean())
-                        _sz_median = float(_valid_sz.median())
+                # ⌀ / Σ Total Raised
+                _tr_k = _cmap.get("total_raised")
+                if _tr_k and _tr_k in _co.columns:
+                    _tv = pd.to_numeric(_co[_tr_k], errors="coerce").dropna()
+                    if len(_tv):
                         _trace.append({
-                            "Metric":     "Capital Invested Mean",
-                            "Formula":    "mean(Deal Size) across all deals",
-                            "Key Inputs": f"N={len(_valid_sz)} deals with size, sum={_valid_sz.sum():,.1f}",
-                            "Result":     f"{_sz_mean:.2f}",
+                            "Metric":     "⌀ Total Raised (m€)",
+                            "Formula":    "mean(Total Raised) across cluster companies",
+                            "Key Inputs": f"N={len(_tv)}, sum={_tv.sum():,.1f}, mean={float(_tv.mean()):.1f}",
+                            "Result":     f"{float(_tv.mean()):.1f}",
                         })
                         _trace.append({
-                            "Metric":     "Capital Invested Median",
-                            "Formula":    "median(Deal Size) across all deals",
-                            "Key Inputs": f"N={len(_valid_sz)} deals sorted",
-                            "Result":     f"{_sz_median:.2f}",
+                            "Metric":     "Σ Total Raised (m€)",
+                            "Formula":    "sum(Total Raised) across cluster companies",
+                            "Key Inputs": f"N={len(_tv)} companies with non-null Total Raised",
+                            "Result":     f"{float(_tv.sum()):,.1f}",
                         })
-                        if _sz_median > 0:
+
+                # Deal-size metrics
+                if not _de.empty:
+                    _ds_k = _cmap.get("deal_size")
+                    _dd_k = _cmap.get("deal_date")
+                    if _ds_k and _ds_k in _de.columns:
+                        _dsv = pd.to_numeric(_de[_ds_k], errors="coerce")
+                        if _dd_k and _dd_k in _de.columns:
+                            _dyrs2     = _to_year(_de[_dd_k])
+                            _m4        = (_dyrs2 >= _ref_year - 3) & (_dyrs2 <= _ref_year) & _dsv.notna()
+                            _m_rec     = (_dyrs2 >= _ref_year - 1) & (_dyrs2 <= _ref_year) & _dsv.notna()
+                            _m_prv     = (_dyrs2 >= _ref_year - 3) & (_dyrs2 <= _ref_year - 2) & _dsv.notna()
+                            _inv4      = float(_dsv[_m4].sum())
+                            _inv_rec   = float(_dsv[_m_rec].sum())
+                            _inv_prv   = float(_dsv[_m_prv].sum())
                             _trace.append({
-                                "Metric":     "Abweichung M/M",
-                                "Formula":    "Capital Invested Mean ÷ Capital Invested Median",
-                                "Key Inputs": f"Mean={_sz_mean:.2f} ÷ Median={_sz_median:.2f}",
-                                "Result":     f"{_sz_mean / _sz_median:.2f}",
+                                "Metric":     "Σ Invested (4 J.)",
+                                "Formula":    f"sum(Deal Size) where deal year ∈ {_ref_year-3}–{_ref_year}",
+                                "Key Inputs": f"{int(_m4.sum())} deals with size in window",
+                                "Result":     f"{_inv4:,.1f}",
+                            })
+                            if _inv_prv > 0:
+                                _fm = round((_inv_rec / _inv_prv - 1) * 100, 1)
+                                _trace.append({
+                                    "Metric":     "Funding Momentum",
+                                    "Formula":    f"(Sum {_ref_year-1}+{_ref_year}) / (Sum {_ref_year-3}+{_ref_year-2}) − 1) × 100",
+                                    "Key Inputs": f"Recent ({_ref_year-1}+{_ref_year}): {_inv_rec:,.1f} m€  ·  Prev ({_ref_year-3}+{_ref_year-2}): {_inv_prv:,.1f} m€",
+                                    "Result":     f"{_fm:+.1f}%",
+                                })
+                            else:
+                                _trace.append({
+                                    "Metric":     "Funding Momentum",
+                                    "Formula":    f"(Sum {_ref_year-1}+{_ref_year}) / (Sum {_ref_year-3}+{_ref_year-2}) − 1) × 100",
+                                    "Key Inputs": f"Prev window ({_ref_year-3}+{_ref_year-2}) has no sized deals",
+                                    "Result":     "N/A",
+                                })
+
+                        _valid_sz = _dsv.dropna()
+                        if len(_valid_sz):
+                            _sz_mean   = float(_valid_sz.mean())
+                            _sz_median = float(_valid_sz.median())
+                            _trace.append({
+                                "Metric":     "Capital Invested Mean",
+                                "Formula":    "mean(Deal Size) across all deals",
+                                "Key Inputs": f"N={len(_valid_sz)} deals with size, sum={_valid_sz.sum():,.1f}",
+                                "Result":     f"{_sz_mean:.2f}",
+                            })
+                            _trace.append({
+                                "Metric":     "Capital Invested Median",
+                                "Formula":    "median(Deal Size) across all deals",
+                                "Key Inputs": f"N={len(_valid_sz)} deals sorted",
+                                "Result":     f"{_sz_median:.2f}",
+                            })
+                            if _sz_median > 0:
+                                _trace.append({
+                                    "Metric":     "Abweichung M/M",
+                                    "Formula":    "Capital Invested Mean ÷ Capital Invested Median",
+                                    "Key Inputs": f"Mean={_sz_mean:.2f} ÷ Median={_sz_median:.2f}",
+                                    "Result":     f"{_sz_mean / _sz_median:.2f}",
+                                })
+
+                    # Marktreife (deal stage)
+                    _sc_k = _cmap.get("series")
+                    if _sc_k and _sc_k in _de.columns:
+                        _sl    = _de[_sc_k].astype(str).str.lower().str.strip()
+                        _sscrs = _sl.map(lambda v: SERIES_SCORE.get(v, float("nan")))
+                        _valid_s = _sscrs.dropna()
+                        if len(_valid_s):
+                            _stg_counts = _sl[_sscrs.notna()].value_counts().head(5).to_dict()
+                            _stg_str = ", ".join(f"{k}: {v}" for k, v in _stg_counts.items())
+                            _trace.append({
+                                "Metric":     "Marktreife",
+                                "Formula":    "mean(SERIES_SCORE[stage]) across deals with known stage (Seed=1, A=2, … E+=6)",
+                                "Key Inputs": f"N={len(_valid_s)} deals with stage. Top stages: {_stg_str}",
+                                "Result":     f"{float(_valid_s.mean()):.1f}",
                             })
 
-                # Marktreife (deal stage)
-                _sc_k = _cmap.get("series")
-                if _sc_k and _sc_k in _de.columns:
-                    _sl    = _de[_sc_k].astype(str).str.lower().str.strip()
-                    _sscrs = _sl.map(lambda v: SERIES_SCORE.get(v, float("nan")))
-                    _valid_s = _sscrs.dropna()
-                    if len(_valid_s):
-                        _stg_counts = _sl[_sscrs.notna()].value_counts().head(5).to_dict()
-                        _stg_str = ", ".join(f"{k}: {v}" for k, v in _stg_counts.items())
+                # VC Graduation Rate / Mortality Rate
+                _bs_k  = _cmap.get("business_status")
+                _os_k  = _cmap.get("ownership_status")
+                _cfs_k = _cmap.get("company_financing_status")
+                _has_status = any(c and c in _co.columns for c in [_bs_k, _os_k, _cfs_k])
+                if _has_status:
+                    _b = _bs_k  if (_bs_k  and _bs_k  in _co.columns) else None
+                    _o = _os_k  if (_os_k  and _os_k  in _co.columns) else None
+                    _c = _cfs_k if (_cfs_k and _cfs_k in _co.columns) else None
+                    _gf = _co.apply(_vc_grad_flag, axis=1, bs_col=_b, os_col=_o, cfs_col=_c)
+                    _gn = int(_gf.sum())
+                    _trace.append({
+                        "Metric":     "VC Graduation Rate",
+                        "Formula":    "count(graduated) / N × 100. Graduated = acquired / publicly held / PE-backed (excl. bankrupt)",
+                        "Key Inputs": (
+                            f"{_gn} of {len(_co)} companies graduated. "
+                            f"Cols: {', '.join(c for c in [_b, _o, _c] if c)}"
+                        ),
+                        "Result":     f"{round(float(_gf.mean()) * 100, 1):.1f}%",
+                    })
+                if _bs_k and _bs_k in _co.columns:
+                    _mf  = _co.apply(_mortality_flag, axis=1, bs_col=_bs_k)
+                    _mn  = int(_mf.sum())
+                    _trace.append({
+                        "Metric":     "Mortality Rate",
+                        "Formula":    "count(Business Status = 'Out of Business' or starts with 'Bankruptcy') / N × 100",
+                        "Key Inputs": f"{_mn} of {len(_co)} companies with bankrupt / out-of-business status",
+                        "Result":     f"{round(float(_mf.mean()) * 100, 1):.1f}%",
+                    })
+
+                # Marktanteil (HHI)
+                if _tr_k and _tr_k in _co.columns:
+                    _hhi_v = pd.to_numeric(_co[_tr_k], errors="coerce").fillna(0)
+                    _hhi_total = _hhi_v.sum()
+                    if _hhi_total > 0:
+                        _shares = _hhi_v / _hhi_total
+                        _hhi_val = int(round((_shares ** 2).sum() * 10000))
+                        _top3 = _co[[_company_col, _tr_k]].copy()
+                        _top3[_tr_k] = pd.to_numeric(_top3[_tr_k], errors="coerce")
+                        _top3 = _top3.assign(_sh=_shares.values).nlargest(3, _tr_k)
+                        _top3_str = ", ".join(
+                            f"{r[_company_col]} ({r['_sh']:.1%})"
+                            for _, r in _top3.iterrows()
+                            if pd.notna(r[_tr_k])
+                        )
                         _trace.append({
-                            "Metric":     "Marktreife",
-                            "Formula":    "mean(SERIES_SCORE[stage]) across deals with known stage (Seed=1, A=2, … E+=6)",
-                            "Key Inputs": f"N={len(_valid_s)} deals with stage. Top stages: {_stg_str}",
-                            "Result":     f"{float(_valid_s.mean()):.1f}",
+                            "Metric":     "Marktanteil (HHI)",
+                            "Formula":    "Σ(share_i²) × 10 000, share_i = company_raised / cluster_total_raised",
+                            "Key Inputs": f"Cluster total raised: {_hhi_total:,.1f} m€. Top 3: {_top3_str}",
+                            "Result":     str(_hhi_val),
                         })
 
-            # VC Graduation Rate / Mortality Rate
-            _bs_k  = _cmap.get("business_status")
-            _os_k  = _cmap.get("ownership_status")
-            _cfs_k = _cmap.get("company_financing_status")
-            _has_status = any(c and c in _co.columns for c in [_bs_k, _os_k, _cfs_k])
-            if _has_status:
-                _b = _bs_k  if (_bs_k  and _bs_k  in _co.columns) else None
-                _o = _os_k  if (_os_k  and _os_k  in _co.columns) else None
-                _c = _cfs_k if (_cfs_k and _cfs_k in _co.columns) else None
-                _gf = _co.apply(_vc_grad_flag, axis=1, bs_col=_b, os_col=_o, cfs_col=_c)
-                _gn = int(_gf.sum())
-                _trace.append({
-                    "Metric":     "VC Graduation Rate",
-                    "Formula":    "count(graduated) / N × 100. Graduated = acquired / publicly held / PE-backed (excl. bankrupt)",
-                    "Key Inputs": (
-                        f"{_gn} of {len(_co)} companies graduated. "
-                        f"Cols: {', '.join(c for c in [_b, _o, _c] if c)}"
-                    ),
-                    "Result":     f"{round(float(_gf.mean()) * 100, 1):.1f}%",
-                })
-            if _bs_k and _bs_k in _co.columns:
-                _mf  = _co.apply(_mortality_flag, axis=1, bs_col=_bs_k)
-                _mn  = int(_mf.sum())
-                _trace.append({
-                    "Metric":     "Mortality Rate",
-                    "Formula":    "count(Business Status = 'Out of Business' or starts with 'Bankruptcy') / N × 100",
-                    "Key Inputs": f"{_mn} of {len(_co)} companies with bankrupt / out-of-business status",
-                    "Result":     f"{round(float(_mf.mean()) * 100, 1):.1f}%",
-                })
+                # ⌀ Patents
+                _pat_k = _cmap.get("total_patent_families")
+                if _pat_k and _pat_k in _co.columns:
+                    _pv = pd.to_numeric(_co[_pat_k], errors="coerce").dropna()
+                    if len(_pv):
+                        _trace.append({
+                            "Metric":     "⌀ Patentierte Erf.",
+                            "Formula":    "mean(Total Patent Families) across cluster companies",
+                            "Key Inputs": f"N={len(_pv)}, sum={_pv.sum():,.0f}",
+                            "Result":     f"{float(_pv.mean()):.1f}",
+                        })
 
-            # Marktanteil (HHI)
-            if _tr_k and _tr_k in _co.columns:
-                _hhi_v = pd.to_numeric(_co[_tr_k], errors="coerce").fillna(0)
-                _hhi_total = _hhi_v.sum()
-                if _hhi_total > 0:
-                    _shares = _hhi_v / _hhi_total
-                    _hhi_val = int(round((_shares ** 2).sum() * 10000))
-                    _top3 = _co[[_company_col, _tr_k]].copy()
-                    _top3[_tr_k] = pd.to_numeric(_top3[_tr_k], errors="coerce")
-                    _top3 = _top3.assign(_sh=_shares.values).nlargest(3, _tr_k)
-                    _top3_str = ", ".join(
-                        f"{r[_company_col]} ({r['_sh']:.1%})"
-                        for _, r in _top3.iterrows()
-                        if pd.notna(r[_tr_k])
+                if _trace:
+                    st.dataframe(
+                        pd.DataFrame(_trace),
+                        use_container_width=True,
+                        hide_index=True,
+                        height=38 + 35 * len(_trace),
+                        column_config={
+                            "Metric":     st.column_config.TextColumn("Metric",     width="medium"),
+                            "Formula":    st.column_config.TextColumn("Formula",    width="large"),
+                            "Key Inputs": st.column_config.TextColumn("Key Inputs", width="large"),
+                            "Result":     st.column_config.TextColumn("Result",     width="small"),
+                        },
                     )
-                    _trace.append({
-                        "Metric":     "Marktanteil (HHI)",
-                        "Formula":    "Σ(share_i²) × 10 000, share_i = company_raised / cluster_total_raised",
-                        "Key Inputs": f"Cluster total raised: {_hhi_total:,.1f} m€. Top 3: {_top3_str}",
-                        "Result":     str(_hhi_val),
-                    })
-
-            # ⌀ Patents
-            _pat_k = _cmap.get("total_patent_families")
-            if _pat_k and _pat_k in _co.columns:
-                _pv = pd.to_numeric(_co[_pat_k], errors="coerce").dropna()
-                if len(_pv):
-                    _trace.append({
-                        "Metric":     "⌀ Patentierte Erf.",
-                        "Formula":    "mean(Total Patent Families) across cluster companies",
-                        "Key Inputs": f"N={len(_pv)}, sum={_pv.sum():,.0f}",
-                        "Result":     f"{float(_pv.mean()):.1f}",
-                    })
-
-            if _trace:
-                st.dataframe(
-                    pd.DataFrame(_trace),
-                    use_container_width=True,
-                    hide_index=True,
-                    height=38 + 35 * len(_trace),
-                    column_config={
-                        "Metric":     st.column_config.TextColumn("Metric",     width="medium"),
-                        "Formula":    st.column_config.TextColumn("Formula",    width="large"),
-                        "Key Inputs": st.column_config.TextColumn("Key Inputs", width="large"),
-                        "Result":     st.column_config.TextColumn("Result",     width="small"),
-                    },
-                )
-            else:
-                st.info("No metrics could be traced — check column mappings above.")
+                else:
+                    st.info("No metrics could be traced — check column mappings above.")
