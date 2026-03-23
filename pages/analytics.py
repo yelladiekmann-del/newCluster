@@ -4,6 +4,7 @@ import datetime
 
 import numpy as np
 import pandas as pd
+import plotly.express as px
 import streamlit as st
 
 from styles import inject_global_css, page_header
@@ -509,6 +510,13 @@ if df_analytics.empty:
 
 df_rank = _compute_ranking(df_analytics)
 
+# ── Color map (shared across all charts) ─────────────────────────────────────
+_named_sorted    = sorted(df_analytics["Cluster"].tolist())
+_chart_color_map = {
+    cname: CLUSTER_COLORS[i % len(CLUSTER_COLORS)]
+    for i, cname in enumerate(_named_sorted)
+}
+
 # ── KPI values (all aggregate — whole market, not per-cluster peaks) ──────────
 
 _n_companies_total = int(df_co["Cluster"].notna().sum()) if "Cluster" in df_co.columns else len(df_co)
@@ -683,6 +691,86 @@ if _spotlights:
                     unsafe_allow_html=True,
                 )
 
+# ── SECTION: Cluster Size + Funding charts (side by side) ─────────────────────
+
+def _bar_layout(fig, xlab=""):
+    fig.update_layout(
+        showlegend=False,
+        margin=dict(l=0, r=50, t=6, b=0),
+        xaxis=dict(title=xlab, showgrid=True, gridcolor="#e4eaf2", gridwidth=1,
+                   tickfont=dict(family="IBM Plex Mono", size=10)),
+        yaxis=dict(title="", tickfont=dict(family="IBM Plex Sans", size=11)),
+        plot_bgcolor="#ffffff", paper_bgcolor="#f7f9fc",
+        font=dict(family="IBM Plex Sans", size=11, color="#0d1f2d"),
+        height=max(180, 38 * len(df_analytics)),
+    )
+    fig.update_traces(marker_line_width=0, opacity=0.88,
+                      textfont=dict(family="IBM Plex Mono", size=10, color="#0d1f2d"))
+    return fig
+
+
+_size_col_name = "# Companies" if "# Companies" in df_analytics.columns else "Gesamt"
+_fund_col_name = "Σ Total Raised (m€)" if "Σ Total Raised (m€)" in df_analytics.columns else None
+
+_show_size  = _size_col_name in df_analytics.columns
+_show_fund  = _fund_col_name is not None and _fund_col_name in df_analytics.columns
+
+if _show_size or _show_fund:
+    _chart_cols = st.columns(2)
+
+    if _show_size:
+        with _chart_cols[0]:
+            st.markdown('<div class="hy-section-title" style="margin-bottom:4px">Cluster Size</div>', unsafe_allow_html=True)
+            _sz = df_analytics[["Cluster", _size_col_name]].sort_values(_size_col_name)
+            _fig_sz = px.bar(_sz, x=_size_col_name, y="Cluster", orientation="h",
+                             color="Cluster", color_discrete_map=_chart_color_map, text=_size_col_name)
+            _fig_sz.update_traces(texttemplate="%{text:,}", textposition="outside")
+            st.plotly_chart(_bar_layout(_fig_sz, "Companies"), use_container_width=True)
+
+    if _show_fund:
+        with _chart_cols[1]:
+            st.markdown('<div class="hy-section-title" style="margin-bottom:4px">Total Capital Raised</div>', unsafe_allow_html=True)
+            _fd = df_analytics[["Cluster", _fund_col_name]].dropna(subset=[_fund_col_name]).sort_values(_fund_col_name)
+            _fig_fd = px.bar(_fd, x=_fund_col_name, y="Cluster", orientation="h",
+                             color="Cluster", color_discrete_map=_chart_color_map, text=_fund_col_name)
+            _fig_fd.update_traces(texttemplate="%{text:,.0f} m€", textposition="outside")
+            st.plotly_chart(_bar_layout(_fig_fd, "m€"), use_container_width=True)
+
+# ── SECTION: Momentum comparison chart ────────────────────────────────────────
+
+_has_deal_mom  = "Deal Momentum"    in df_analytics.columns
+_has_fund_mom  = "Funding Momentum" in df_analytics.columns
+
+if _has_deal_mom or _has_fund_mom:
+    st.markdown('<div class="hy-section-title" style="margin-top:8px;margin-bottom:4px">Momentum Overview</div>', unsafe_allow_html=True)
+    st.caption("How fast deal activity and investment volume are growing (or shrinking) per cluster.")
+
+    _mom_cols = [c for c in ["Deal Momentum", "Funding Momentum"] if c in df_analytics.columns]
+    _mom_df = df_analytics[["Cluster"] + _mom_cols].copy()
+    # Sort by first momentum col
+    _mom_df = _mom_df.sort_values(_mom_cols[0], na_position="last")
+
+    _fig_mom = px.bar(
+        _mom_df.melt(id_vars="Cluster", value_vars=_mom_cols, var_name="Type", value_name="Momentum %"),
+        x="Momentum %", y="Cluster", color="Type", barmode="group", orientation="h",
+        color_discrete_map={"Deal Momentum": "#26B4D2", "Funding Momentum": "#4AC596"},
+        height=max(200, 44 * len(df_analytics)),
+    )
+    _fig_mom.update_layout(
+        showlegend=True,
+        legend=dict(orientation="h", yanchor="bottom", y=1.01, xanchor="left", x=0,
+                    font=dict(size=11)),
+        margin=dict(l=0, r=20, t=30, b=0),
+        xaxis=dict(title="Change vs. prior period (%)", showgrid=True, gridcolor="#e4eaf2",
+                   tickfont=dict(family="IBM Plex Mono", size=10),
+                   zeroline=True, zerolinecolor="#c8d8e4", zerolinewidth=1.5),
+        yaxis=dict(title="", tickfont=dict(family="IBM Plex Sans", size=11)),
+        plot_bgcolor="#ffffff", paper_bgcolor="#f7f9fc",
+        font=dict(family="IBM Plex Sans", size=11, color="#0d1f2d"),
+    )
+    _fig_mom.update_traces(marker_line_width=0, opacity=0.88)
+    st.plotly_chart(_fig_mom, use_container_width=True)
+
 st.divider()
 
 # ── SECTION: Analytics Table ──────────────────────────────────────────────────
@@ -693,7 +781,7 @@ with _tbl_hdr:
 with _desc_toggle:
     st.markdown('<div style="padding-top:4px"></div>', unsafe_allow_html=True)
 
-with st.expander("📖 Column Descriptions", expanded=False):
+with st.expander("Column Descriptions", expanded=False):
     items = [(k, v) for k, v in COLUMN_DESCRIPTIONS.items() if k in df_analytics.columns]
     mid = (len(items) + 1) // 2
     left_col, right_col = st.columns(2)
@@ -707,35 +795,38 @@ with st.expander("📖 Column Descriptions", expanded=False):
         target.markdown("")
 
 col_cfg = {
-    "Cluster":               st.column_config.TextColumn("Cluster Name", width="large"),
-    "Gesamt":                st.column_config.NumberColumn("Gesamt", format="%d"),
-    "# Companies":           st.column_config.NumberColumn("# Companies", format="%d"),
-    "⌀ Angestellte":         st.column_config.NumberColumn("⌀ Angestellte", format="%.1f"),
-    "⌀ Year Founded":        st.column_config.NumberColumn("⌀ Year Founded", format="%d"),
-    "% Recently Founded":    st.column_config.NumberColumn("% Recently Founded", format="%.1f %%",
+    "Cluster":               st.column_config.TextColumn("Cluster", width="large"),
+    "Gesamt":                st.column_config.NumberColumn("Total Rows", format="%d"),
+    "# Companies":           st.column_config.NumberColumn("Companies",  format="%d"),
+    "⌀ Angestellte":         st.column_config.NumberColumn("Avg Employees", format="%.0f"),
+    "⌀ Year Founded":        st.column_config.NumberColumn("Founded",    format="%d"),
+    "% Recently Founded":    st.column_config.ProgressColumn(
+                                "Recent (%)", format="%.1f%%", min_value=0, max_value=100,
                                 help=f"% companies founded ≥ {_ref_year - 5}"),
-    "# Deals":               st.column_config.NumberColumn("# Deals", format="%d"),
-    "Deal Momentum":         st.column_config.NumberColumn("Deal Momentum", format="%+.0f %%",
+    "# Deals":               st.column_config.NumberColumn("Deals",      format="%d"),
+    "Deal Momentum":         st.column_config.NumberColumn("Deal Mom.",   format="%+.0f%%",
                                 help=f"Count({_ref_year-1}–{_ref_year}) / Count({_ref_year-3}–{_ref_year-2}) − 1"),
-    "⌀ Total Raised (m€)":  st.column_config.NumberColumn("⌀ Total Raised", format="%.1f m€"),
-    "Σ Total Raised (m€)":  st.column_config.NumberColumn("Σ Total Raised", format="%.1f m€"),
-    "Σ Invested (4 J.)":    st.column_config.NumberColumn("Σ Invested (4 J.)", format="%.1f m€",
+    "⌀ Total Raised (m€)":  st.column_config.NumberColumn("Avg Raised",  format="%.1f m€"),
+    "Σ Total Raised (m€)":  st.column_config.NumberColumn("Total Raised", format="%.1f m€"),
+    "Σ Invested (4 J.)":    st.column_config.NumberColumn("4Y Invested",  format="%.1f m€",
                                 help=f"Sum of deal sizes {_ref_year-3}–{_ref_year}"),
-    "Funding Momentum":      st.column_config.NumberColumn("Funding Momentum", format="%+.1f %%",
+    "Funding Momentum":      st.column_config.NumberColumn("Funding Mom.", format="%+.1f%%",
                                 help=f"(Sum {_ref_year-1}–{_ref_year}) / (Sum {_ref_year-3}–{_ref_year-2}) − 1"),
-    "Capital Invested Mean":   st.column_config.NumberColumn("Invested Mean",   format="%.2f m€"),
-    "Capital Invested Median": st.column_config.NumberColumn("Invested Median", format="%.2f m€"),
-    "Abweichung M/M":        st.column_config.NumberColumn("Abweichung M/M", format="%.2f",
+    "Capital Invested Mean":   st.column_config.NumberColumn("Deal Mean",   format="%.2f m€"),
+    "Capital Invested Median": st.column_config.NumberColumn("Deal Median", format="%.2f m€"),
+    "Abweichung M/M":        st.column_config.NumberColumn("Mean/Median", format="%.2f",
                                 help="Invested Mean ÷ Invested Median"),
-    "VC Graduation Rate":    st.column_config.NumberColumn("VC Graduation Rate", format="%.1f %%",
+    "VC Graduation Rate":    st.column_config.ProgressColumn(
+                                "Graduation", format="%.1f%%", min_value=0, max_value=100,
                                 help="Acquired / Publicly held / PE-backed (excl. bankrupt)"),
-    "Mortality Rate":        st.column_config.NumberColumn("Mortality Rate", format="%.1f %%",
+    "Mortality Rate":        st.column_config.ProgressColumn(
+                                "Mortality",  format="%.1f%%", min_value=0, max_value=100,
                                 help="Business Status = Out of Business or Bankruptcy"),
-    "Marktanteil (HHI)":    st.column_config.NumberColumn("Marktanteil (HHI)", format="%d",
-                                help="HHI 0–10 000. >2 500 = concentrated."),
-    "Marktreife":            st.column_config.NumberColumn("Marktreife", format="%.1f",
+    "Marktanteil (HHI)":    st.column_config.NumberColumn("HHI",        format="%d",
+                                help="0–10 000. > 2 500 = highly concentrated."),
+    "Marktreife":            st.column_config.NumberColumn("Maturity",   format="%.1f",
                                 help="Avg. deal stage (Seed=1 … E+=6)"),
-    "⌀ Patentierte Erf.":   st.column_config.NumberColumn("⌀ Patentierte Erf.", format="%.1f"),
+    "⌀ Patentierte Erf.":   st.column_config.NumberColumn("Avg Patents", format="%.1f"),
 }
 
 st.dataframe(
@@ -743,10 +834,56 @@ st.dataframe(
     column_config=col_cfg,
     use_container_width=True,
     hide_index=True,
-    height=min(60 + 35 * (len(df_analytics) + 1), 700),
+    height=40 + 36 * (len(df_analytics) + 1),
 )
 
-st.caption("Cyan = best in category  ·  Green = 2nd best  ·  ↑ higher is better  ·  ↓ lower is better")
+st.caption("Cyan = #1 in category  ·  Green = #2  ·  ↑ higher is better  ·  ↓ lower is better")
+
+# ── SECTION: Growth vs. Funding scatter ───────────────────────────────────────
+
+_gf_x = "Deal Momentum"
+_gf_y = "⌀ Total Raised (m€)" if "⌀ Total Raised (m€)" in df_analytics.columns else None
+_gf_sz = "# Companies"        if "# Companies"         in df_analytics.columns else None
+
+if _gf_x in df_analytics.columns and _gf_y:
+    st.markdown('<div class="hy-section-title" style="margin-top:20px;margin-bottom:4px">Growth vs. Funding</div>', unsafe_allow_html=True)
+    st.caption("Each bubble is a cluster. X = deal activity growth · Y = avg funding raised · Size = number of companies.")
+
+    _gf_cols = ["Cluster", _gf_x, _gf_y] + ([_gf_sz] if _gf_sz else [])
+    _gf_df   = df_analytics[_gf_cols].dropna(subset=[_gf_x, _gf_y]).copy()
+
+    if not _gf_df.empty:
+        _fig_gf = px.scatter(
+            _gf_df,
+            x=_gf_x, y=_gf_y,
+            size=_gf_sz if _gf_sz else None,
+            color="Cluster",
+            color_discrete_map=_chart_color_map,
+            text="Cluster",
+            size_max=55,
+            height=420,
+        )
+        _fig_gf.update_traces(
+            textposition="top center",
+            textfont=dict(family="IBM Plex Sans", size=10, color="#0d1f2d"),
+            marker=dict(opacity=0.80, line=dict(width=1, color="#ffffff")),
+        )
+        _fig_gf.update_layout(
+            showlegend=False,
+            margin=dict(l=0, r=0, t=10, b=0),
+            xaxis=dict(
+                title="Deal Momentum (%)", showgrid=True, gridcolor="#e4eaf2",
+                zeroline=True, zerolinecolor="#c8d8e4", zerolinewidth=1.5,
+                tickfont=dict(family="IBM Plex Mono", size=10),
+            ),
+            yaxis=dict(
+                title="Avg Total Raised (m€)", showgrid=True, gridcolor="#e4eaf2",
+                tickfont=dict(family="IBM Plex Mono", size=10),
+            ),
+            plot_bgcolor="#ffffff", paper_bgcolor="#f7f9fc",
+            font=dict(family="IBM Plex Sans", size=11, color="#0d1f2d"),
+        )
+        st.plotly_chart(_fig_gf, use_container_width=True)
 
 st.divider()
 
