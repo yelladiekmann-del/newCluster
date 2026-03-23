@@ -518,7 +518,7 @@ def _compute_ranking(df: pd.DataFrame) -> pd.DataFrame:
 
 _hdr_col, _export_col = st.columns([4, 1])
 with _hdr_col:
-    page_header("Analytics", "Cluster performance, rankings, and export.")
+    page_header("Analytics v2", "Cluster performance, rankings, and export.")
 
 _confirmed = st.session_state.get("clusters_confirmed", False)
 _clustered = (
