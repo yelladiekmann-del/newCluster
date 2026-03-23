@@ -17,7 +17,7 @@ _MAX_WORKERS = 10
 _DIALOG_STATE_KEYS = (
     "cr_company_editor_cluster", "cr_move_company", "cr_company_detail",
     "cr_add_companies_cluster", "cr_merge_pending", "cr_delete_pending",
-    "cr_add_cluster_pending",
+    "cr_add_cluster_pending", "cr_delete_company_pending",
 )
 
 _EDITOR_PAGE_SIZE = 25
@@ -521,7 +521,7 @@ def _move_company_dialog(
     df_clean: pd.DataFrame,
     company_col: str,
 ):
-    destinations = [_OUTLIER_LABEL] + [c for c in named_clusters if c != cluster_name]
+    destinations = [c for c in ([_OUTLIER_LABEL] + named_clusters) if c != cluster_name]
     st.markdown(f"Move **{company_name}** to:")
     target = st.selectbox("Destination", options=destinations, label_visibility="collapsed")
     col_ok, col_no = st.columns(2)
@@ -535,6 +535,24 @@ def _move_company_dialog(
     with col_no:
         if st.button("Cancel", width="stretch", key="move_co_cancel"):
             st.session_state["cr_move_company"] = None
+            st.rerun()
+
+
+@st.dialog("Remove company", width="small")
+def _confirm_delete_company_dialog(cluster_name: str, company_name: str, company_col: str) -> None:
+    st.markdown(f"Remove **{company_name}** from **{cluster_name}**?")
+    st.caption("The company will be moved to Outliers.")
+    col_ok, col_no = st.columns(2)
+    with col_ok:
+        if st.button("Remove", type="primary", width="stretch"):
+            df_out = st.session_state["df_clean"].copy()
+            df_out.loc[df_out[company_col] == company_name, "Cluster"] = _OUTLIER_LABEL
+            st.session_state.df_clean = df_out
+            st.session_state["cr_delete_company_pending"] = None
+            st.rerun()
+    with col_no:
+        if st.button("Cancel", width="stretch", key="del_co_cancel"):
+            st.session_state["cr_delete_company_pending"] = None
             st.rerun()
 
 
@@ -573,19 +591,15 @@ def _company_editor_dialog(
         mask = df_cluster[company_col].astype(str).str.contains(search, case=False, na=False)
         df_show = df_cluster[mask]
 
-    # ── Company list (paginated to keep widget count low) ─────────────────────
+    # ── Company list ──────────────────────────────────────────────────────────
     total = len(df_show)
-    page = st.session_state.get("cr_company_editor_page", 0)
-    n_pages = max(1, (total + _EDITOR_PAGE_SIZE - 1) // _EDITOR_PAGE_SIZE)
-    page = min(page, n_pages - 1)
-    df_page = df_show.iloc[page * _EDITOR_PAGE_SIZE : (page + 1) * _EDITOR_PAGE_SIZE]
 
     with st.container():
         st.markdown('<span class="hy-cr-co-list-marker"></span>', unsafe_allow_html=True)
         if total == 0:
             st.markdown('<div class="hy-co-empty">No companies match.</div>', unsafe_allow_html=True)
         else:
-            for i, (_, row) in enumerate(df_page.iterrows()):
+            for i, (_, row) in enumerate(df_show.iterrows()):
                 name = str(row.get(company_col, "") or "")
                 _nc, _mc, _dc = st.columns([10, 0.5, 0.5])
                 with _nc:
@@ -598,26 +612,8 @@ def _company_editor_dialog(
                 with _dc:
                     if st.button(" ", icon=":material/delete_outline:", key=f"ced_rm_{i}",
                                  type="secondary", help=f"Remove {name} from cluster"):
-                        df_out = st.session_state["df_clean"].copy()
-                        df_out.loc[df_out[company_col] == name, "Cluster"] = _OUTLIER_LABEL
-                        st.session_state.df_clean = df_out
+                        st.session_state["cr_delete_company_pending"] = {"cluster": cluster_name, "company": name}
                         st.rerun()
-
-    # ── Pagination nav ────────────────────────────────────────────────────────
-    if n_pages > 1:
-        _pn_col, _pp_col, _pc_col = st.columns([1, 1, 2])
-        with _pn_col:
-            if page > 0 and st.button("← Prev", key="ced_prev", use_container_width=True):
-                st.session_state["cr_company_editor_page"] = page - 1
-                st.rerun()
-        with _pp_col:
-            if page < n_pages - 1 and st.button("Next →", key="ced_next", use_container_width=True):
-                st.session_state["cr_company_editor_page"] = page + 1
-                st.rerun()
-        with _pc_col:
-            _start = page * _EDITOR_PAGE_SIZE + 1
-            _end = min((page + 1) * _EDITOR_PAGE_SIZE, total)
-            st.caption(f"{_start}–{_end} of {total}")
 
     st.divider()
     if st.button("Close", key="ced_close", use_container_width=True):
@@ -647,6 +643,7 @@ def render_cluster_review(
     st.session_state.setdefault("cr_company_editor_cluster", None)
     st.session_state.setdefault("cr_company_editor_page", 0)
     st.session_state.setdefault("cr_add_cluster_pending", False)
+    st.session_state.setdefault("cr_delete_company_pending", None)
 
     all_clusters   = df_clean["Cluster"].unique().tolist()
     named_clusters = sorted(
@@ -663,6 +660,9 @@ def render_cluster_review(
         _merge_dialog(merge_pending, named_clusters, df_clean)
     elif delete_pending and delete_pending in named_clusters:
         _delete_dialog(delete_pending, named_clusters, df_clean)
+    elif st.session_state.get("cr_delete_company_pending"):
+        _dpend = st.session_state["cr_delete_company_pending"]
+        _confirm_delete_company_dialog(_dpend["cluster"], _dpend["company"], company_col)
     elif st.session_state.get("cr_add_companies_cluster"):
         _add_companies_dialog(st.session_state["cr_add_companies_cluster"], df_clean, company_col)
     elif st.session_state.get("cr_move_company"):
@@ -712,18 +712,62 @@ def render_cluster_review(
             with st.expander("Edit cluster", expanded=False):
                 _render_named_cluster(cluster_name, df_cluster, company_col, dimensions)
 
-    # ── Outliers (collapsed) ──────────────────────────────────────────────────
+    # ── Outliers (styled list with move option) ───────────────────────────────
     if len(df_outliers) > 0:
         n_out = len(df_outliers)
-        with st.expander(
-            f"Outliers  ·  {n_out} {'company' if n_out == 1 else 'companies'}  (read-only)",
-            expanded=False,
-        ):
-            show_cols = [c for c in [company_col] + dimensions if c in df_outliers.columns]
-            st.dataframe(
-                df_outliers.reset_index(drop=True)[show_cols],
-                use_container_width=True, hide_index=True, height=300,
+        with st.container(border=True):
+            with st.container():
+                st.markdown('<span class="hy-cr-icon-row-marker"></span>', unsafe_allow_html=True)
+                st.markdown(
+                    f'<div style="display:flex;align-items:center;gap:8px;padding:2px 0 6px">'
+                    f'<span style="font-size:14px;font-weight:700;color:#0d1f2d;letter-spacing:-0.01em">Outliers</span>'
+                    f'<span style="font-size:11px;color:#7496b2;background:#f7f9fc;border:1px solid #e4eaf2;'
+                    f'border-radius:20px;padding:1px 8px;white-space:nowrap">'
+                    f'{n_out} {"company" if n_out == 1 else "companies"}</span>'
+                    f'<span style="font-size:10px;color:#aac0d1;margin-left:2px">→ move to assign to a cluster</span>'
+                    f'</div>',
+                    unsafe_allow_html=True,
+                )
+            _out_search = st.text_input(
+                "Filter outliers", key="cr_out_search",
+                placeholder="Search outliers…", label_visibility="collapsed",
             )
+            df_out_show = df_outliers.reset_index(drop=True)
+            if _out_search:
+                _omask = df_out_show[company_col].astype(str).str.contains(
+                    _out_search, case=False, na=False, regex=False
+                )
+                df_out_show = df_out_show[_omask]
+
+            with st.container():
+                st.markdown('<span class="hy-cr-co-list-marker"></span>', unsafe_allow_html=True)
+                if df_out_show.empty:
+                    st.markdown('<div class="hy-co-empty">No outliers match.</div>', unsafe_allow_html=True)
+                else:
+                    for _oi, (_, _orow) in enumerate(df_out_show.iterrows()):
+                        _oname = str(_orow.get(company_col, "") or "")
+                        _oscore = _orow.get("Outlier score")
+                        _oscore_str = (
+                            f"{float(_oscore):.2f}"
+                            if _oscore is not None and not (isinstance(_oscore, float) and pd.isna(_oscore))
+                            else None
+                        )
+                        _onc, _omc = st.columns([10, 0.5])
+                        with _onc:
+                            _score_badge = (
+                                f'<span style="font-size:10px;color:#aac0d1;'
+                                f'font-family:IBM Plex Mono,monospace;margin-left:6px">·  {_oscore_str}</span>'
+                                if _oscore_str else ""
+                            )
+                            st.markdown(
+                                f'<span class="hy-co-item-name">{_oname}</span>{_score_badge}',
+                                unsafe_allow_html=True,
+                            )
+                        with _omc:
+                            if st.button(" ", icon=":material/arrow_forward:", key=f"out_mv_{_oi}",
+                                         type="secondary", help=f"Move {_oname} to a cluster"):
+                                st.session_state["cr_move_company"] = {"cluster": _OUTLIER_LABEL, "company": _oname}
+                                st.rerun()
 
     # ── Add cluster ───────────────────────────────────────────────────────────
     if st.button("➕ Add cluster", key="cr_add_btn", width="stretch"):
