@@ -6,9 +6,10 @@ from utils import SESSION_DEFAULTS
 from styles import inject_global_css
 
 def _logo_b64() -> str | None:
-    p = pathlib.Path(__file__).parent / "static" / "logo.png"
-    if p.exists():
-        return base64.b64encode(p.read_bytes()).decode()
+    for name in ("logo.png", "logo.jpg", "logo.jpeg", "logo.svg"):
+        p = pathlib.Path(__file__).parent / "static" / name
+        if p.exists():
+            return base64.b64encode(p.read_bytes()).decode()
     return None
 
 st.set_page_config(page_title="Cluster Intelligence", page_icon="🗂️", layout="wide")
