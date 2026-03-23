@@ -320,10 +320,14 @@ def _highlight_top2(col: pd.Series) -> list[str]:
     return out
 
 
+# ProgressColumn columns handle their own visual — skip Styler highlights for them
+_PROGRESS_COLS = {"% Recently Founded", "VC Graduation Rate", "Mortality Rate"}
+
+
 def _style(df: pd.DataFrame):
     s = df.style
     for col in df.columns:
-        if col in METRIC_DIRECTION:
+        if col in METRIC_DIRECTION and col not in _PROGRESS_COLS:
             s = s.apply(_highlight_top2, subset=[col])
     return s
 
@@ -794,47 +798,55 @@ with st.expander("Column Descriptions", expanded=False):
         )
         target.markdown("")
 
+# Drop the redundant "Gesamt" column (always == # Companies when no duplicates)
+_tbl_df = df_analytics.drop(columns=["Gesamt"], errors="ignore").copy()
+
+# Coerce all non-Cluster columns to numeric so NaN renders as empty (not "None")
+for _c in _tbl_df.columns:
+    if _c != "Cluster":
+        _tbl_df[_c] = pd.to_numeric(_tbl_df[_c], errors="coerce")
+
 col_cfg = {
     "Cluster":               st.column_config.TextColumn("Cluster", width="large"),
-    "Gesamt":                st.column_config.NumberColumn("Total Rows", format="%d"),
-    "# Companies":           st.column_config.NumberColumn("Companies",  format="%d"),
-    "⌀ Angestellte":         st.column_config.NumberColumn("Avg Employees", format="%.0f"),
-    "⌀ Year Founded":        st.column_config.NumberColumn("Founded",    format="%d"),
+    "# Companies":           st.column_config.NumberColumn("Companies",        format="%d"),
+    "⌀ Angestellte":         st.column_config.NumberColumn("Avg Employees",    format="%.0f"),
+    "⌀ Year Founded":        st.column_config.NumberColumn("Founded",          format="%d"),
     "% Recently Founded":    st.column_config.ProgressColumn(
-                                "Recent (%)", format="%.1f%%", min_value=0, max_value=100,
+                                "Recently Founded", format="%.1f%%", min_value=0, max_value=100,
                                 help=f"% companies founded ≥ {_ref_year - 5}"),
-    "# Deals":               st.column_config.NumberColumn("Deals",      format="%d"),
-    "Deal Momentum":         st.column_config.NumberColumn("Deal Mom.",   format="%+.0f%%",
+    "# Deals":               st.column_config.NumberColumn("Deals",            format="%d"),
+    "Deal Momentum":         st.column_config.NumberColumn("Deal Momentum",    format="%+.0f%%",
                                 help=f"Count({_ref_year-1}–{_ref_year}) / Count({_ref_year-3}–{_ref_year-2}) − 1"),
-    "⌀ Total Raised (m€)":  st.column_config.NumberColumn("Avg Raised",  format="%.1f m€"),
-    "Σ Total Raised (m€)":  st.column_config.NumberColumn("Total Raised", format="%.1f m€"),
-    "Σ Invested (4 J.)":    st.column_config.NumberColumn("4Y Invested",  format="%.1f m€",
+    "⌀ Total Raised (m€)":  st.column_config.NumberColumn("Avg Raised (m€)",  format="%.1f"),
+    "Σ Total Raised (m€)":  st.column_config.NumberColumn("Total Raised (m€)", format="%.1f"),
+    "Σ Invested (4 J.)":    st.column_config.NumberColumn("4Y Invested (m€)",  format="%.1f",
                                 help=f"Sum of deal sizes {_ref_year-3}–{_ref_year}"),
-    "Funding Momentum":      st.column_config.NumberColumn("Funding Mom.", format="%+.1f%%",
+    "Funding Momentum":      st.column_config.NumberColumn("Funding Momentum", format="%+.1f%%",
                                 help=f"(Sum {_ref_year-1}–{_ref_year}) / (Sum {_ref_year-3}–{_ref_year-2}) − 1"),
-    "Capital Invested Mean":   st.column_config.NumberColumn("Deal Mean",   format="%.2f m€"),
-    "Capital Invested Median": st.column_config.NumberColumn("Deal Median", format="%.2f m€"),
-    "Abweichung M/M":        st.column_config.NumberColumn("Mean/Median", format="%.2f",
+    "Capital Invested Mean":   st.column_config.NumberColumn("Deal Mean (m€)",   format="%.2f"),
+    "Capital Invested Median": st.column_config.NumberColumn("Deal Median (m€)", format="%.2f"),
+    "Abweichung M/M":        st.column_config.NumberColumn("Mean / Median",    format="%.2f",
                                 help="Invested Mean ÷ Invested Median"),
     "VC Graduation Rate":    st.column_config.ProgressColumn(
-                                "Graduation", format="%.1f%%", min_value=0, max_value=100,
+                                "Graduation Rate", format="%.1f%%", min_value=0, max_value=100,
                                 help="Acquired / Publicly held / PE-backed (excl. bankrupt)"),
     "Mortality Rate":        st.column_config.ProgressColumn(
-                                "Mortality",  format="%.1f%%", min_value=0, max_value=100,
+                                "Mortality Rate",  format="%.1f%%", min_value=0, max_value=100,
                                 help="Business Status = Out of Business or Bankruptcy"),
-    "Marktanteil (HHI)":    st.column_config.NumberColumn("HHI",        format="%d",
+    "Marktanteil (HHI)":    st.column_config.NumberColumn("HHI",               format="%d",
                                 help="0–10 000. > 2 500 = highly concentrated."),
-    "Marktreife":            st.column_config.NumberColumn("Maturity",   format="%.1f",
+    "Marktreife":            st.column_config.NumberColumn("Maturity",          format="%.1f",
                                 help="Avg. deal stage (Seed=1 … E+=6)"),
-    "⌀ Patentierte Erf.":   st.column_config.NumberColumn("Avg Patents", format="%.1f"),
+    "⌀ Patentierte Erf.":   st.column_config.NumberColumn("Avg Patents",       format="%.1f"),
 }
 
+# Height: 38px header + 35px per data row, no cap — all clusters always visible
 st.dataframe(
-    _style(df_analytics),
+    _style(_tbl_df),
     column_config=col_cfg,
     use_container_width=True,
     hide_index=True,
-    height=40 + 36 * (len(df_analytics) + 1),
+    height=38 + 35 * len(_tbl_df),
 )
 
 st.caption("Cyan = #1 in category  ·  Green = #2  ·  ↑ higher is better  ·  ↓ lower is better")
