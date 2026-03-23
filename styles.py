@@ -509,7 +509,7 @@ div[data-testid="stVerticalBlock"]:has(> .element-container .hy-cr-co-list-marke
   border: 1px solid #e4eaf2 !important;
   border-radius: 10px !important;
   overflow-y: auto !important;
-  max-height: 460px !important;
+  max-height: 320px !important;
   margin-top: 8px;
 }
 /* Hide the marker span element-container */

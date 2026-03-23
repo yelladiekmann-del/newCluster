@@ -565,15 +565,27 @@ def _company_editor_dialog(
     named_clusters: list[str],
 ) -> None:
     n = len(df_cluster)
-    # ── Header row: count + add button ───────────────────────────────────────
+
+    # ── Cluster identity header (matches show_companies_dialog style) ─────────
+    _color = (st.session_state.get("cr_color_map") or {}).get(cluster_name, "#26B4D2")
+    st.markdown(
+        f'<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">'
+        f'<div style="width:12px;height:12px;border-radius:50%;background:{_color}"></div>'
+        f'<span style="font-size:15px;font-weight:700;color:#0d1f2d">{cluster_name}</span>'
+        f'<span style="font-size:11px;color:#7496b2;background:#f7f9fc;border:1px solid #e4eaf2;'
+        f'border-radius:20px;padding:2px 10px">{n} companies</span>'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
+
+    # ── Search + add button row ───────────────────────────────────────────────
     with st.container():
         st.markdown('<span class="hy-cr-add-row-marker"></span>', unsafe_allow_html=True)
-        _hcol, _acol = st.columns([9, 0.5])
-        with _hcol:
-            st.markdown(
-                f'<div style="font-size:12px;font-weight:700;color:#0d1f2d;letter-spacing:-0.01em;'
-                f'padding:4px 0">Companies ({n})</div>',
-                unsafe_allow_html=True,
+        _scol, _acol = st.columns([9, 0.5])
+        with _scol:
+            search = st.text_input(
+                "Filter", key="ced_search",
+                placeholder="Search companies…", label_visibility="collapsed",
             )
         with _acol:
             if st.button(" ", icon=":material/add:", key="ced_add",
@@ -581,17 +593,12 @@ def _company_editor_dialog(
                 st.session_state["cr_add_companies_cluster"] = cluster_name
                 st.rerun()
 
-    # ── Search ────────────────────────────────────────────────────────────────
-    search = st.text_input(
-        "Filter", key="ced_search",
-        placeholder="Search companies…", label_visibility="collapsed",
-    )
     df_show = df_cluster
     if search:
         mask = df_cluster[company_col].astype(str).str.contains(search, case=False, na=False)
         df_show = df_cluster[mask]
 
-    # ── Company list ──────────────────────────────────────────────────────────
+    # ── Company list with alternating rows ────────────────────────────────────
     total = len(df_show)
 
     with st.container():
@@ -601,9 +608,13 @@ def _company_editor_dialog(
         else:
             for i, (_, row) in enumerate(df_show.iterrows()):
                 name = str(row.get(company_col, "") or "")
+                _row_bg = "background:#f7f9fc;" if i % 2 != 0 else ""
                 _nc, _mc, _dc = st.columns([10, 0.5, 0.5])
                 with _nc:
-                    st.markdown(f'<span class="hy-co-item-name">{name}</span>', unsafe_allow_html=True)
+                    st.markdown(
+                        f'<span class="hy-co-item-name" style="{_row_bg}display:block;padding:2px 0">{name}</span>',
+                        unsafe_allow_html=True,
+                    )
                 with _mc:
                     if st.button(" ", icon=":material/arrow_forward:", key=f"ced_mv_{i}",
                                  type="secondary", help=f"Move {name}"):
@@ -644,6 +655,8 @@ def render_cluster_review(
     st.session_state.setdefault("cr_company_editor_page", 0)
     st.session_state.setdefault("cr_add_cluster_pending", False)
     st.session_state.setdefault("cr_delete_company_pending", None)
+    st.session_state.setdefault("cr_sorting", False)
+    st.session_state["cr_color_map"] = color_map or {}
 
     all_clusters   = df_clean["Cluster"].unique().tolist()
     named_clusters = sorted(
@@ -794,14 +807,19 @@ def render_cluster_review(
                 help="When ON, outlier companies are also sent to Gemini and may be sorted into a cluster.",
             )
         with col_rerun:
+            _is_sorting = st.session_state.get("cr_sorting", False)
             if st.button(
-                "▶ Sort now",
+                "⏳ Sorting…" if _is_sorting else "▶ Sort now",
                 key="cr_rerun",
                 type="primary",
                 width="stretch",
                 help="Gemini reads each company's description and reassigns it to the best cluster.",
-                disabled=not api_key,
+                disabled=not api_key or _is_sorting,
             ):
+                # Clear all dialog state immediately so no stale dialogs reopen
+                _clear_dialog_state()
+                st.session_state["cr_sorting"] = True
+
                 named_now = sorted(
                     [c for c in df_clean["Cluster"].unique() if c != _OUTLIER_LABEL],
                     key=lambda c: -(df_clean["Cluster"] == c).sum(),
@@ -814,6 +832,7 @@ def render_cluster_review(
                 )
 
                 if not assignments:
+                    st.session_state["cr_sorting"] = False
                     st.error("Reassignment returned no results. Check your API key and try again.")
                     return
 
@@ -848,6 +867,7 @@ def render_cluster_review(
                     "switches": switches,
                 }
                 st.session_state.df_clean = df_out
+                st.session_state["cr_sorting"] = False
                 _clear_dialog_state()
                 st.rerun()
 
