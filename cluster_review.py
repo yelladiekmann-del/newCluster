@@ -877,33 +877,103 @@ def render_cluster_review(
     # ── Sort report ───────────────────────────────────────────────────────────
     report = st.session_state.get("cr_rerun_report")
     if report:
-        col_rep, col_dismiss = st.columns([5, 1])
-        with col_rep:
-            st.info(
-                f"**{report['n_switched']}** {'company' if report['n_switched'] == 1 else 'companies'} "
-                f"changed cluster. **{report['n_outliers_after']}** outliers remaining."
-                + (f" **{report['pulled_in']}** outlier{'s' if report['pulled_in'] != 1 else ''} pulled in." if report["pulled_in"] > 0 else "")
+        n_sw   = report["n_switched"]
+        n_out  = report["n_outliers_after"]
+        n_pull = report["pulled_in"]
+
+        # Stat chips
+        chips_html = (
+            f'<div class="hy-sr-chip"><b>{n_sw}</b> '
+            f'{"company" if n_sw == 1 else "companies"} moved</div>'
+            f'<div class="hy-sr-chip"><b>{n_out}</b> outliers remaining</div>'
+        )
+        if n_pull > 0:
+            chips_html += (
+                f'<div class="hy-sr-chip green"><b>{n_pull}</b> '
+                f'outlier{"s" if n_pull != 1 else ""} pulled in</div>'
             )
-        with col_dismiss:
-            st.write("")
-            if st.button("Dismiss", key="cr_dismiss_report"):
+
+        st.markdown(
+            f'<div class="hy-sr-banner">'
+            f'<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">'
+            f'<span style="font-size:11px;font-weight:700;text-transform:uppercase;'
+            f'letter-spacing:0.06em;color:#7496b2;white-space:nowrap">Sort Report</span>'
+            f'<div class="hy-sr-chips">{chips_html}</div>'
+            f'</div>'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+
+        _dismiss_col, _ = st.columns([1, 5])
+        with _dismiss_col:
+            if st.button("✕ Dismiss", key="cr_dismiss_report", type="secondary", use_container_width=True):
                 st.session_state["cr_rerun_report"] = None
                 st.rerun()
 
         with st.expander("Sort report details"):
+            # Cluster size changes table
             all_cluster_names = sorted(set(list(report["before"].keys()) + list(report["after"].keys())))
-            size_rows = []
-            for name in all_cluster_names:
+            size_rows_html = ""
+            for i, name in enumerate(all_cluster_names):
                 before = report["before"].get(name, 0)
                 after  = report["after"].get(name, 0)
                 diff   = after - before
-                size_rows.append({"Cluster": name, "Before": before, "After": after,
-                                   "Change": f"+{diff}" if diff > 0 else str(diff)})
-            st.dataframe(pd.DataFrame(size_rows), use_container_width=True, hide_index=True)
+                if diff > 0:
+                    change_html = f'<span class="hy-sr-pos">+{diff}</span>'
+                elif diff < 0:
+                    change_html = f'<span class="hy-sr-neg">{diff}</span>'
+                else:
+                    change_html = f'<span class="hy-sr-neu">—</span>'
+                _bg = "background:#f7f9fc;" if i % 2 != 0 else ""
+                size_rows_html += (
+                    f'<tr style="{_bg}">'
+                    f'<td style="text-align:left;padding:6px 12px;border-bottom:1px solid #f0f4f8">{name}</td>'
+                    f'<td style="padding:6px 12px;border-bottom:1px solid #f0f4f8">{before}</td>'
+                    f'<td style="padding:6px 12px;border-bottom:1px solid #f0f4f8">{after}</td>'
+                    f'<td style="padding:6px 12px;border-bottom:1px solid #f0f4f8">{change_html}</td>'
+                    f'</tr>'
+                )
+            st.markdown(
+                f'<div class="hy-sr-section" style="margin-bottom:6px">Cluster sizes</div>'
+                f'<div class="hy-sr-wrap" style="margin-bottom:14px">'
+                f'<table class="hy-sr-tbl">'
+                f'<thead><tr>'
+                f'<th style="text-align:left">Cluster</th>'
+                f'<th>Before</th><th>After</th><th>Change</th>'
+                f'</tr></thead>'
+                f'<tbody>{size_rows_html}</tbody>'
+                f'</table></div>',
+                unsafe_allow_html=True,
+            )
 
             if report["switches"]:
-                st.markdown(f"**Companies that switched ({len(report['switches'])}):**")
                 switch_df = pd.DataFrame(report["switches"], columns=["Company", "From", "To", "Reason"])
-                if switch_df["Reason"].str.strip().eq("").all():
-                    switch_df = switch_df.drop(columns=["Reason"])
-                st.dataframe(switch_df, use_container_width=True, hide_index=True)
+                has_reason = not switch_df["Reason"].str.strip().eq("").all()
+                sw_rows_html = ""
+                for i, row in switch_df.iterrows():
+                    _bg = "background:#f7f9fc;" if i % 2 != 0 else ""
+                    reason_td = f'<td style="text-align:left;padding:6px 12px;border-bottom:1px solid #f0f4f8;color:#516e81;font-style:italic">{row["Reason"]}</td>' if has_reason else ""
+                    sw_rows_html += (
+                        f'<tr style="{_bg}">'
+                        f'<td style="text-align:left;padding:6px 12px;border-bottom:1px solid #f0f4f8;font-weight:500">{row["Company"]}</td>'
+                        f'<td style="text-align:left;padding:6px 12px;border-bottom:1px solid #f0f4f8;color:#516e81">{row["From"]}</td>'
+                        f'<td style="text-align:left;padding:6px 12px;border-bottom:1px solid #f0f4f8">'
+                        f'<span class="hy-sr-pos">{row["To"]}</span></td>'
+                        f'{reason_td}'
+                        f'</tr>'
+                    )
+                reason_th = '<th style="text-align:left">Reason</th>' if has_reason else ""
+                st.markdown(
+                    f'<div class="hy-sr-section" style="margin-bottom:6px">Companies moved ({len(report["switches"])})</div>'
+                    f'<div class="hy-sr-wrap">'
+                    f'<table class="hy-sr-tbl">'
+                    f'<thead><tr>'
+                    f'<th style="text-align:left">Company</th>'
+                    f'<th style="text-align:left">From</th>'
+                    f'<th style="text-align:left">To</th>'
+                    f'{reason_th}'
+                    f'</tr></thead>'
+                    f'<tbody>{sw_rows_html}</tbody>'
+                    f'</table></div>',
+                    unsafe_allow_html=True,
+                )
