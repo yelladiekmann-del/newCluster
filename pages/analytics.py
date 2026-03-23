@@ -997,31 +997,35 @@ if _dbg_search and _company_col in df_co.columns:
             else:
                 _de = pd.DataFrame()
 
-            # ── Company summary card ───────────────────────────────────────────
+            # ── Company summary table ──────────────────────────────────────────
             def _raw_val(col_key):
                 col = _cmap.get(col_key)
                 if col and col in _match_row.index:
                     v = _match_row[col]
-                    return "—" if (v is None or (isinstance(v, float) and pd.isna(v))) else v
+                    return "—" if (v is None or (isinstance(v, float) and pd.isna(v))) else str(v)
                 return "—"
 
-            _card_lines = [
-                f"Cluster: <b>{_match_cluster}</b> &nbsp;·&nbsp; {len(_co)} companies in cluster",
-                f"Employees: {_raw_val('employees')} &nbsp;·&nbsp; Founded: {_raw_val('year_founded')}",
-                f"Total Raised: {_raw_val('total_raised')} m€ &nbsp;·&nbsp; Business Status: {_raw_val('business_status')}",
-                f"Ownership: {_raw_val('ownership_status')} &nbsp;·&nbsp; Patents: {_raw_val('total_patent_families')}",
-            ]
-            st.markdown(
-                f'<div class="hy-cl-card" style="border-top:3px solid #26B4D2;margin-bottom:16px">'
-                f'<div class="hy-cl-name">{_match_name}</div>'
-                + "".join(
-                    f'<div style="font-family:IBM Plex Mono,monospace;font-size:11px;'
-                    f'color:#7496b2;margin-top:4px">{line}</div>'
-                    for line in _card_lines
-                )
-                + "</div>",
-                unsafe_allow_html=True,
-            )
+            _summary = pd.DataFrame([{
+                "Field": "Company",        "Value": _match_name,
+            }, {
+                "Field": "Cluster",        "Value": _match_cluster,
+            }, {
+                "Field": "Cluster size",   "Value": f"{len(_co)} companies",
+            }, {
+                "Field": "Employees",      "Value": _raw_val("employees"),
+            }, {
+                "Field": "Year Founded",   "Value": _raw_val("year_founded"),
+            }, {
+                "Field": "Total Raised",   "Value": _raw_val("total_raised"),
+            }, {
+                "Field": "Business Status","Value": _raw_val("business_status"),
+            }, {
+                "Field": "Ownership",      "Value": _raw_val("ownership_status"),
+            }, {
+                "Field": "Patents",        "Value": _raw_val("total_patent_families"),
+            }])
+            st.dataframe(_summary, use_container_width=True, hide_index=True,
+                         height=38 + 35 * len(_summary))
 
             # ── Build metric trace ─────────────────────────────────────────────
             _trace = []
@@ -1233,11 +1237,9 @@ if _dbg_search and _company_col in df_co.columns:
                 if _hhi_total > 0:
                     _shares = _hhi_v / _hhi_total
                     _hhi_val = int(round((_shares ** 2).sum() * 10000))
-                    _top3 = (
-                        _co[[_company_col, _tr_k]].copy()
-                        .assign(_sh=_shares.values)
-                        .nlargest(3, _tr_k)
-                    )
+                    _top3 = _co[[_company_col, _tr_k]].copy()
+                    _top3[_tr_k] = pd.to_numeric(_top3[_tr_k], errors="coerce")
+                    _top3 = _top3.assign(_sh=_shares.values).nlargest(3, _tr_k)
                     _top3_str = ", ".join(
                         f"{r[_company_col]} ({r['_sh']:.1%})"
                         for _, r in _top3.iterrows()
