@@ -92,6 +92,156 @@ GROUPS: dict[str, list[str]] = {
     "Technologie":      ["⌀ Patentierte Erf."],
 }
 
+GROUP_COLORS: dict[str, str] = {
+    "Größe":            "#2E3B55",
+    "Neuheit":          "#2E3B55",
+    "Deals":            "#C06020",
+    "Funding":          "#1868A8",
+    "Risikoverteilung": "#453D8A",
+    "Absolutes Risiko": "#882040",
+    "Markt":            "#154038",
+    "Technologie":      "#1A3840",
+}
+
+COL_DISPLAY_NAMES: dict[str, str] = {
+    "Cluster":               "Cluster",
+    "# Companies":           "Companies",
+    "⌀ Angestellte":         "Avg Empl.",
+    "⌀ Year Founded":        "Founded",
+    "% Recently Founded":    "Rec. Founded",
+    "# Deals":               "# Deals",
+    "Deal Momentum":         "Deal Mom.",
+    "⌀ Total Raised (m€)":  "Avg Raised",
+    "Σ Total Raised (m€)":  "Σ Raised",
+    "Σ Invested (4 J.)":    "Σ Invested",
+    "Funding Momentum":      "Fund. Mom.",
+    "Capital Invested Mean":   "Mean (m€)",
+    "Capital Invested Median": "Median (m€)",
+    "Abweichung M/M":        "Mean/Med.",
+    "VC Graduation Rate":    "Grad. Rate",
+    "Mortality Rate":        "Mortality",
+    "Marktanteil (HHI)":    "HHI",
+    "Marktreife":            "Maturity",
+    "⌀ Patentierte Erf.":   "Patents",
+}
+
+
+def _fmt_cell(col: str, val) -> str:
+    """Format a single cell value for the HTML analytics table."""
+    if val is None or (isinstance(val, float) and pd.isna(val)):
+        return "—"
+    fmt = {
+        "# Companies":           lambda v: f"{int(v):,}",
+        "⌀ Angestellte":         lambda v: f"{v:.1f}",
+        "⌀ Year Founded":        lambda v: str(int(v)),
+        "% Recently Founded":    lambda v: f"{v:.1f}%",
+        "# Deals":               lambda v: f"{int(v):,}",
+        "Deal Momentum":         lambda v: f"{v:+.0f}%",
+        "⌀ Total Raised (m€)":  lambda v: f"{v:.1f}",
+        "Σ Total Raised (m€)":  lambda v: f"{v:,.1f}",
+        "Σ Invested (4 J.)":    lambda v: f"{v:,.1f}",
+        "Funding Momentum":      lambda v: f"{v:+.1f}%",
+        "Capital Invested Mean":   lambda v: f"{v:.1f}",
+        "Capital Invested Median": lambda v: f"{v:.1f}",
+        "Abweichung M/M":        lambda v: f"{v:.2f}",
+        "VC Graduation Rate":    lambda v: f"{v:.1f}%",
+        "Mortality Rate":        lambda v: f"{v:.1f}%",
+        "Marktanteil (HHI)":    lambda v: f"{int(v):,}",
+        "Marktreife":            lambda v: f"{v:.1f}",
+        "⌀ Patentierte Erf.":   lambda v: f"{v:.1f}",
+    }
+    fn = fmt.get(col)
+    return fn(val) if fn else str(val)
+
+
+def _build_analytics_html(df: pd.DataFrame) -> str:
+    """Build the full HTML table string with colored group headers and top-4 blue-shade highlighting."""
+    data_cols = [c for c in df.columns if c != "Cluster"]
+
+    # Compute rank per column (1 = best)
+    col_ranks: dict[str, pd.Series] = {}
+    for col in data_cols:
+        if col in METRIC_DIRECTION:
+            direction = METRIC_DIRECTION[col]
+            vals = pd.to_numeric(df[col], errors="coerce")
+            col_ranks[col] = vals.rank(
+                ascending=(direction == "lower"), method="min", na_option="bottom"
+            )
+
+    # Map each column to its group
+    col_to_group: dict[str, str] = {}
+    for gname, gcols in GROUPS.items():
+        for c in gcols:
+            if c in df.columns:
+                col_to_group[c] = gname
+
+    html = ['<div class="hy-tbl-wrap"><table class="hy-tbl"><thead>']
+
+    # Row 1: group header spans (in order of first appearance)
+    html.append('<tr>')
+    html.append('<th class="hy-th-fixed" rowspan="2" style="min-width:24px">#</th>')
+    html.append('<th class="hy-th-fixed hy-th-cluster" rowspan="2">Cluster</th>')
+    seen_groups: list[str | None] = []
+    group_spans: dict[str | None, int] = {}
+    for col in data_cols:
+        grp = col_to_group.get(col)
+        if grp not in group_spans:
+            seen_groups.append(grp)
+            group_spans[grp] = 0
+        group_spans[grp] += 1
+    for grp in seen_groups:
+        span = group_spans[grp]
+        color = GROUP_COLORS.get(grp, "#7496b2") if grp else "#7496b2"
+        label = grp or ""
+        html.append(f'<th class="hy-th-group" colspan="{span}" style="background:{color}">{label}</th>')
+    html.append('</tr>')
+
+    # Row 2: individual column headers
+    html.append('<tr>')
+    for col in data_cols:
+        grp = col_to_group.get(col)
+        color = GROUP_COLORS.get(grp, "#7496b2") if grp else "#7496b2"
+        label = COL_DISPLAY_NAMES.get(col, col)
+        html.append(f'<th class="hy-th-col" style="background:{color}">{label}</th>')
+    html.append('</tr>')
+    html.append('</thead><tbody>')
+
+    # Data rows
+    for i, (_, row) in enumerate(df.iterrows()):
+        stripe = "hy-tr-odd" if i % 2 == 0 else "hy-tr-even"
+        html.append(f'<tr class="{stripe}">')
+        html.append(f'<td class="hy-td-idx">{i + 1}</td>')
+        html.append(f'<td class="hy-td-cluster">{row["Cluster"]}</td>')
+        for col in data_cols:
+            val = row[col]
+            txt = _fmt_cell(col, val)
+            classes = ["hy-td"]
+            ranks = col_ranks.get(col)
+            if ranks is not None and len(ranks) > i:
+                r = ranks.iloc[i]
+                if r == 1:
+                    classes.append("hy-td-rank1")
+                elif r == 2:
+                    classes.append("hy-td-rank2")
+                elif r == 3:
+                    classes.append("hy-td-rank3")
+                elif r == 4:
+                    classes.append("hy-td-rank4")
+            if col in ("Deal Momentum", "Funding Momentum"):
+                try:
+                    fv = float(val)
+                    if fv > 0:
+                        classes.append("hy-td-pos")
+                    elif fv < 0:
+                        classes.append("hy-td-neg")
+                except (TypeError, ValueError):
+                    pass
+            html.append(f'<td class="{" ".join(c for c in classes if c)}">{txt}</td>')
+        html.append('</tr>')
+
+    html.append('</tbody></table></div>')
+    return "\n".join(html)
+
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -806,50 +956,8 @@ for _c in _tbl_df.columns:
     if _c != "Cluster":
         _tbl_df[_c] = pd.to_numeric(_tbl_df[_c], errors="coerce")
 
-col_cfg = {
-    "Cluster":               st.column_config.TextColumn("Cluster", width="large"),
-    "# Companies":           st.column_config.NumberColumn("Companies",        format="%d"),
-    "⌀ Angestellte":         st.column_config.NumberColumn("Avg Employees",    format="%.0f"),
-    "⌀ Year Founded":        st.column_config.NumberColumn("Founded",          format="%d"),
-    "% Recently Founded":    st.column_config.ProgressColumn(
-                                "Recently Founded", format="%.1f%%", min_value=0, max_value=100,
-                                help=f"% companies founded ≥ {_ref_year - 2}"),
-    "# Deals":               st.column_config.NumberColumn("Deals",            format="%d"),
-    "Deal Momentum":         st.column_config.NumberColumn("Deal Momentum",    format="%+.0f%%",
-                                help=f"Count({_ref_year}) / Count({_ref_year-1}) − 1  (year-over-year)"),
-    "⌀ Total Raised (m€)":  st.column_config.NumberColumn("Avg Raised (m€)",  format="%.1f"),
-    "Σ Total Raised (m€)":  st.column_config.NumberColumn("Total Raised (m€)", format="%.1f"),
-    "Σ Invested (4 J.)":    st.column_config.NumberColumn("4Y Invested (m€)",  format="%.1f",
-                                help=f"Sum of deal sizes {_ref_year-3}–{_ref_year}"),
-    "Funding Momentum":      st.column_config.NumberColumn("Funding Momentum", format="%+.1f%%",
-                                help=f"(Sum {_ref_year-1}+{_ref_year}) / (Sum {_ref_year-3}+{_ref_year-2}) − 1"),
-    "Capital Invested Mean":   st.column_config.NumberColumn("Deal Mean (m€)",   format="%.2f"),
-    "Capital Invested Median": st.column_config.NumberColumn("Deal Median (m€)", format="%.2f"),
-    "Abweichung M/M":        st.column_config.NumberColumn("Mean / Median",    format="%.2f",
-                                help="Invested Mean ÷ Invested Median"),
-    "VC Graduation Rate":    st.column_config.ProgressColumn(
-                                "Graduation Rate", format="%.1f%%", min_value=0, max_value=100,
-                                help="Acquired / Publicly held / PE-backed (excl. bankrupt)"),
-    "Mortality Rate":        st.column_config.ProgressColumn(
-                                "Mortality Rate",  format="%.1f%%", min_value=0, max_value=100,
-                                help="Business Status = Out of Business or Bankruptcy"),
-    "Marktanteil (HHI)":    st.column_config.NumberColumn("HHI",               format="%d",
-                                help="0–10 000. > 2 500 = highly concentrated."),
-    "Marktreife":            st.column_config.NumberColumn("Maturity",          format="%.1f",
-                                help="Avg. deal stage (Seed=1 … E+=6)"),
-    "⌀ Patentierte Erf.":   st.column_config.NumberColumn("Avg Patents",       format="%.1f"),
-}
-
-# Height: 38px header + 35px per data row, no cap — all clusters always visible
-st.dataframe(
-    _style(_tbl_df),
-    column_config=col_cfg,
-    use_container_width=True,
-    hide_index=True,
-    height=38 + 35 * len(_tbl_df),
-)
-
-st.caption("Cyan = #1 in category  ·  Green = #2  ·  ↑ higher is better  ·  ↓ lower is better")
+st.markdown(_build_analytics_html(_tbl_df), unsafe_allow_html=True)
+st.caption("Darkest blue = #1  ·  progressively lighter = #2 #3 #4  ·  ↑ higher is better  ·  ↓ lower is better")
 
 # ── SECTION: Growth vs. Funding scatter ───────────────────────────────────────
 
