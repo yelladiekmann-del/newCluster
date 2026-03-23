@@ -15,7 +15,7 @@ from utils import (
     DIMENSIONS,
     GEN_URL,
     _EMBED_WORKERS,
-    _fmt_secs,
+
     build_cluster_profile,
     generate_cluster_descriptions,
     get_per_dimension_embedding,
@@ -161,11 +161,10 @@ else:
         if st.button("Embed", type="primary", disabled=_embed_disabled, key="embed_btn"):
             total = len(df_clean)
 
+            st.toast("Starting embedding…")
             _weights = st.session_state.get("custom_weights") or dict(DIMENSION_WEIGHTS)
             prog   = st.progress(0)
             status = st.empty()
-            import time as _time
-            _start = _time.time()
 
             def _embed_one(i):
                 row = df_clean.iloc[i]
@@ -183,14 +182,9 @@ else:
                     if np.all(vec == 0):
                         errors += 1
                     prog.progress(done_n / total)
-                    elapsed = _time.time() - _start
-                    if done_n > 1:
-                        rem = int((elapsed / done_n) * (total - done_n))
-                        status.caption(
-                            f"{done_n}/{total} · ✗ {errors} · {_fmt_secs(rem)} remaining"
-                        )
-                    else:
-                        status.caption(f"{done_n}/{total}")
+                    status.caption(
+                        f"{done_n}/{total}" + (f" · ✗ {errors} errors" if errors else "")
+                    )
 
             prog.empty()
             status.empty()
@@ -255,12 +249,14 @@ else:
         if _df is None:
             st.error("No data available. Go to Setup and upload your CSV.")
             st.stop()
-        df_result, embedded_2d, n_c, n_o, metrics = run_clustering(
-            _df,
-            st.session_state["feature_matrix"],
-            min_cluster_size, min_samples, cluster_epsilon,
-            umap_cluster_dims=umap_cluster_dims,
-        )
+        st.toast("Running clustering…")
+        with st.spinner("Running UMAP + HDBSCAN…"):
+            df_result, embedded_2d, n_c, n_o, metrics = run_clustering(
+                _df,
+                st.session_state["feature_matrix"],
+                min_cluster_size, min_samples, cluster_epsilon,
+                umap_cluster_dims=umap_cluster_dims,
+            )
         st.session_state["df_clean"]        = df_result
         st.session_state["embedded_2d"]     = embedded_2d
         st.session_state["cluster_metrics"] = metrics
@@ -459,7 +455,7 @@ if _clustered:
                 for i, c in enumerate(_unique_cl)
             }
 
-            with st.spinner(f"Naming {len(_profiles)} clusters… (~5–10s)"):
+            with st.spinner("Naming clusters…"):
                 _llm_names = name_all_clusters(_profiles, api_key)
 
             if _llm_names:

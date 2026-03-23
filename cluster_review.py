@@ -251,10 +251,7 @@ def _llm_reassign_all(
 
     results: dict[int, str] = {}
     n_batches = max(1, (len(companies) + _BATCH_SIZE - 1) // _BATCH_SIZE)
-    _rounds = max(1, (n_batches + _MAX_WORKERS - 1) // _MAX_WORKERS)
-    _eta_secs = _rounds * 4
-    _eta_str = f"~{_eta_secs}s" if _eta_secs < 60 else f"~{_eta_secs // 60}m {_eta_secs % 60}s"
-    prog = st.progress(0, text=f"Reassigning companies via Gemini… (est. {_eta_str}, {_MAX_WORKERS} parallel calls)")
+    prog = st.progress(0, text="Reassigning companies via Gemini…")
     _reassign_start = time.time()
 
     batches = [companies[b * _BATCH_SIZE: (b + 1) * _BATCH_SIZE] for b in range(n_batches)]
@@ -275,17 +272,7 @@ def _llm_reassign_all(
                 if err:
                     error_msgs.append(err)
                 completed += 1
-                _elapsed = time.time() - _reassign_start
-                if completed > 1 and completed < n_batches:
-                    _rate = _elapsed / completed
-                    _remaining = int(_rate * (n_batches - completed))
-                    _rem_str = f"~{_remaining}s" if _remaining < 60 else f"~{_remaining // 60}m {_remaining % 60}s"
-                    prog.progress(
-                        completed / n_batches,
-                        text=f"{completed}/{n_batches} batches — {_rem_str} remaining…",
-                    )
-                else:
-                    prog.progress(completed / n_batches, text=f"{completed}/{n_batches} batches…")
+                prog.progress(completed / n_batches, text=f"{completed}/{n_batches} batches…")
     finally:
         prog.empty()
     for msg in error_msgs:
@@ -703,7 +690,7 @@ def render_cluster_review(
         _add_cluster_dialog(df_clean, company_col)
     elif st.session_state.get("cr_company_editor_cluster"):
         _cec = st.session_state["cr_company_editor_cluster"]
-        _df_cec = df_clean[df_clean["Cluster"] == _cec].reset_index(drop=True)
+        _df_cec = df_clean[df_clean["Cluster"] == _cec]
         _company_editor_dialog(_cec, _df_cec, company_col, df_clean, named_clusters)
 
     # ── Cluster list ──────────────────────────────────────────────────────────
@@ -761,7 +748,7 @@ def render_cluster_review(
                 "Filter outliers", key="cr_out_search",
                 placeholder="Search outliers…", label_visibility="collapsed",
             )
-            df_out_show = df_outliers.reset_index(drop=True)
+            df_out_show = df_outliers
             if _out_search:
                 _omask = df_out_show[company_col].astype(str).str.contains(
                     _out_search, case=False, na=False, regex=False
@@ -836,6 +823,7 @@ def render_cluster_review(
                 _clear_dialog_state()
                 st.session_state["cr_sorting"] = True
 
+                st.toast("Starting Gemini re-sort…")
                 try:
                     named_now = sorted(
                         [c for c in df_clean["Cluster"].unique() if c != _OUTLIER_LABEL],
