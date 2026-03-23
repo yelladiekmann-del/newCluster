@@ -45,7 +45,7 @@ _analytics_page = st.Page("pages/analytics.py",     title="Analytics")
 _b64 = _logo_b64()
 _logo_tag = (
     f'<img src="data:image/png;base64,{_b64}" '
-    f'width="52" height="52" style="border-radius:10px;flex-shrink:0">'
+    f'width="44" height="44" style="border-radius:10px;flex-shrink:0">'
     if _b64 else
     '<div style="width:36px;height:36px;border-radius:10px;border:2px solid #26B4D2;'
     'display:flex;align-items:center;justify-content:center;'
@@ -55,13 +55,13 @@ _logo_tag = (
 with st.sidebar:
     st.markdown(
         f"""
-        <div style="display:flex;align-items:center;gap:0;padding:16px 0 12px 0">
+        <div style="display:flex;align-items:center;gap:10px;padding:16px 0 12px 0">
           {_logo_tag}
-          <div>
-            <div style="font-size:13px;font-weight:700;color:#eef2f7;letter-spacing:-0.01em">
+          <div style="min-width:0">
+            <div style="font-size:13px;font-weight:700;color:#eef2f7;letter-spacing:-0.01em;white-space:nowrap">
               Cluster Intelligence
             </div>
-            <div style="font-size:10px;color:#516e81;letter-spacing:0.02em">
+            <div style="font-size:10px;color:#516e81;letter-spacing:0.02em;white-space:nowrap">
               Powered by Gemini
             </div>
           </div>
