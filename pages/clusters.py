@@ -19,7 +19,7 @@ _clustered = (
 )
 
 if not _confirmed or not _clustered:
-    page_header("Review & Edit v3", "Inspect, rename, merge, and chat about your clusters.")
+    page_header("Review & Edit v4", "Inspect, rename, merge, and chat about your clusters.")
     st.info(
         "Confirm your clustering first — go to **Embed & Cluster**, run the pipeline, "
         "and click **Confirm clusters** when you're happy."
@@ -70,7 +70,7 @@ n_out    = int((df["Cluster"] == "Outliers").sum())
 # ── Header ─────────────────────────────────────────────────────────────────────
 _hdr_col, _export_col = st.columns([4, 1])
 with _hdr_col:
-    page_header("Review & Edit v3", "Inspect, rename, merge, delete, and chat about your clusters.")
+    page_header("Review & Edit v4", "Inspect, rename, merge, delete, and chat about your clusters.")
 with _export_col:
     show_cols_dl = [
         c for c in [company_col, "Cluster", "Outlier score"] + DIMENSIONS if c in df.columns
