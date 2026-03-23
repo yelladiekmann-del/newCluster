@@ -45,7 +45,7 @@ _analytics_page = st.Page("pages/analytics.py",     title="Analytics")
 _b64 = _logo_b64()
 _logo_tag = (
     f'<img src="data:image/png;base64,{_b64}" '
-    f'width="36" height="36" style="border-radius:8px;flex-shrink:0">'
+    f'width="52" height="52" style="border-radius:10px;flex-shrink:0">'
     if _b64 else
     '<div style="width:36px;height:36px;border-radius:10px;border:2px solid #26B4D2;'
     'display:flex;align-items:center;justify-content:center;'
