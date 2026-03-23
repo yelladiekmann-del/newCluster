@@ -175,6 +175,7 @@ if uploaded and df_input is not None:
 
         if _fresh:
             df_input = st.session_state["df_enriched"]
+            st.session_state["df_clean"] = df_input.copy()
             col_msg, col_regen, col_dl = st.columns([4, 1, 1])
             with col_msg:
                 st.markdown(
