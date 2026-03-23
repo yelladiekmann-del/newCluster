@@ -4,7 +4,6 @@ import datetime
 
 import numpy as np
 import pandas as pd
-import plotly.express as px
 import streamlit as st
 
 from styles import inject_global_css, page_header
@@ -428,7 +427,7 @@ with _map_status_col_r:
             unsafe_allow_html=True,
         )
 
-with st.expander("⚙️ Column Mapping", expanded=not bool(_saved_map)):
+with st.expander("Column Mapping", expanded=not bool(_saved_map)):
     st.caption("Map CSV columns to analytics fields. Unmapped fields show as N/A.")
 
     st.markdown("**Companies CSV**")
@@ -510,19 +509,12 @@ if df_analytics.empty:
 
 df_rank = _compute_ranking(df_analytics)
 
-# ── Build color map for charts ────────────────────────────────────────────────
-
-_named_sorted = sorted(df_analytics["Cluster"].tolist())
-_chart_color_map = {
-    cname: CLUSTER_COLORS[i % len(CLUSTER_COLORS)]
-    for i, cname in enumerate(_named_sorted)
-}
-
-# ── KPI values ────────────────────────────────────────────────────────────────
+# ── KPI values (all aggregate — whole market, not per-cluster peaks) ──────────
 
 _n_companies_total = int(df_co["Cluster"].notna().sum()) if "Cluster" in df_co.columns else len(df_co)
 _n_clusters        = len(df_analytics)
 
+# Total Capital Raised — sum across all companies
 _tr_col = _cmap.get("total_raised")
 _total_capital = (
     pd.to_numeric(df_co[_tr_col], errors="coerce").sum()
@@ -530,26 +522,46 @@ _total_capital = (
     else None
 )
 
-_peak_momentum = None
-_peak_mom_cluster = None
-if "Deal Momentum" in df_analytics.columns:
-    _mom_vals = pd.to_numeric(df_analytics["Deal Momentum"], errors="coerce")
-    if _mom_vals.notna().any():
-        _peak_idx = _mom_vals.idxmax()
-        _peak_momentum = _mom_vals[_peak_idx]
-        _peak_mom_cluster = df_analytics.loc[_peak_idx, "Cluster"]
+# Total Deals — sum across all clusters
+_total_deals = None
+if "# Deals" in df_analytics.columns:
+    _deal_vals = pd.to_numeric(df_analytics["# Deals"], errors="coerce").dropna()
+    if len(_deal_vals):
+        _total_deals = int(_deal_vals.sum())
 
+# Market Momentum — deal-count-weighted average of per-cluster Deal Momentum
+_market_momentum = None
+if "Deal Momentum" in df_analytics.columns and "# Deals" in df_analytics.columns:
+    _mom_vals    = pd.to_numeric(df_analytics["Deal Momentum"], errors="coerce")
+    _deal_w      = pd.to_numeric(df_analytics["# Deals"],       errors="coerce").fillna(0)
+    _valid       = _mom_vals.notna() & (_deal_w > 0)
+    if _valid.any():
+        _market_momentum = round(
+            float((_mom_vals[_valid] * _deal_w[_valid]).sum() / _deal_w[_valid].sum()), 1
+        )
+
+# Market Maturity — deal-count-weighted average of Marktreife (avg deal stage)
+_market_maturity = None
+if "Marktreife" in df_analytics.columns and "# Deals" in df_analytics.columns:
+    _mat_vals = pd.to_numeric(df_analytics["Marktreife"], errors="coerce")
+    _deal_w   = pd.to_numeric(df_analytics["# Deals"],   errors="coerce").fillna(0)
+    _valid    = _mat_vals.notna() & (_deal_w > 0)
+    if _valid.any():
+        _market_maturity = round(
+            float((_mat_vals[_valid] * _deal_w[_valid]).sum() / _deal_w[_valid].sum()), 2
+        )
+
+# VC Graduation Rate — company-count-weighted average across clusters
 _avg_grad = None
 if "VC Graduation Rate" in df_analytics.columns:
-    _grad_vals = pd.to_numeric(df_analytics["VC Graduation Rate"], errors="coerce").dropna()
-    if len(_grad_vals):
-        _avg_grad = round(float(_grad_vals.mean()), 1)
-
-_avg_mort = None
-if "Mortality Rate" in df_analytics.columns:
-    _mort_vals = pd.to_numeric(df_analytics["Mortality Rate"], errors="coerce").dropna()
-    if len(_mort_vals):
-        _avg_mort = round(float(_mort_vals.mean()), 1)
+    _grad_vals  = pd.to_numeric(df_analytics["VC Graduation Rate"], errors="coerce")
+    _co_weights = pd.to_numeric(df_analytics["# Companies"],        errors="coerce").fillna(
+                    df_analytics.get("Gesamt", pd.Series(dtype=float)))
+    _valid = _grad_vals.notna() & (_co_weights > 0)
+    if _valid.any():
+        _avg_grad = round(
+            float((_grad_vals[_valid] * _co_weights[_valid]).sum() / _co_weights[_valid].sum()), 1
+        )
 
 
 def _kpi_card(label: str, value: str, sub: str = "") -> str:
@@ -568,32 +580,39 @@ def _kpi_card(label: str, value: str, sub: str = "") -> str:
 st.markdown('<div class="hy-section-title" style="margin-top:20px">Overview</div>', unsafe_allow_html=True)
 
 _capital_str = f"{_total_capital:,.0f} m€" if _total_capital is not None else "N/A"
-_capital_sub = "total funding raised" if _total_capital is not None else ""
+_deals_str   = f"{_total_deals:,}" if _total_deals is not None else "N/A"
 
-if _peak_momentum is not None:
-    _sign = "+" if _peak_momentum >= 0 else ""
-    _mom_str = f"{_sign}{_peak_momentum:.0f}%"
-    _mom_color = "#15803d" if _peak_momentum >= 0 else "#dc2626"
-    _mom_sub = f'<span style="color:{_mom_color}">{_peak_mom_cluster}</span>' if _peak_mom_cluster else ""
+if _market_momentum is not None:
+    _sign = "+" if _market_momentum >= 0 else ""
+    _mom_str = f"{_sign}{_market_momentum:.1f}%"
+    _mom_color = "#15803d" if _market_momentum >= 0 else "#dc2626"
+    _mom_sub = f'<span style="color:{_mom_color}">deal-weighted avg</span>'
 else:
     _mom_str = "N/A"
     _mom_sub = ""
-    _mom_color = "#7496b2"
+
+# Maturity label: map numeric avg stage to a human-readable label
+_STAGE_LABELS = {0: "Pre-Seed", 1: "Seed", 2: "Series A", 3: "Series B",
+                 4: "Series C", 5: "Series D", 6: "Late Stage", 7: "IPO"}
+if _market_maturity is not None:
+    _mat_str = f"{_market_maturity:.1f}"
+    _mat_stage = _STAGE_LABELS.get(round(_market_maturity), "")
+    _mat_sub = _mat_stage if _mat_stage else "avg deal stage (0–7)"
+else:
+    _mat_str = "N/A"
+    _mat_sub = "avg deal stage"
 
 _grad_str = f"{_avg_grad:.1f}%" if _avg_grad is not None else "N/A"
-_grad_sub = "avg VC graduation rate" if _avg_grad is not None else ""
-
-_mort_str = f"{_avg_mort:.1f}%" if _avg_mort is not None else "N/A"
-_mort_sub = "avg mortality rate" if _avg_mort is not None else ""
+_grad_sub  = "weighted by cluster size" if _avg_grad is not None else ""
 
 _kpis_html = (
     f'<div style="display:flex;gap:12px;margin-bottom:16px">'
-    + _kpi_card("Total Companies", f"{_n_companies_total:,}", "across all clusters")
-    + _kpi_card("Active Clusters", str(_n_clusters), "named clusters")
-    + _kpi_card("Total Capital Raised", _capital_str, _capital_sub)
-    + _kpi_card("Peak Deal Momentum", _mom_str, _mom_sub)
-    + _kpi_card("Avg Graduation Rate", _grad_str, _grad_sub)
-    + _kpi_card("Avg Mortality Rate", _mort_str, _mort_sub)
+    + _kpi_card("Total Companies",    f"{_n_companies_total:,}", "across all clusters")
+    + _kpi_card("Active Clusters",    str(_n_clusters),          "named clusters")
+    + _kpi_card("Total Capital Raised", _capital_str,            "all clusters combined")
+    + _kpi_card("Total Deals",        _deals_str,                "all clusters combined")
+    + _kpi_card("Market Momentum",    _mom_str,                  _mom_sub)
+    + _kpi_card("Market Maturity",    _mat_str,                  _mat_sub)
     + '</div>'
 )
 st.markdown(_kpis_html, unsafe_allow_html=True)
@@ -663,50 +682,6 @@ if _spotlights:
                     f'<span class="hy-cl-chip">{_sp["metric"]}</span>',
                     unsafe_allow_html=True,
                 )
-
-# ── SECTION: Cluster Comparison Chart ─────────────────────────────────────────
-
-if not df_rank.empty:
-    st.markdown('<div class="hy-section-title" style="margin-top:20px;margin-bottom:4px">Cluster Comparison</div>', unsafe_allow_html=True)
-    st.caption("Overall score: each metric normalised 0–1, averaged across all dimensions.")
-
-    _chart_df = df_rank.sort_values("Score", ascending=True)
-    _chart_colors = [_chart_color_map.get(c, "#26B4D2") for c in _chart_df["Cluster"]]
-
-    fig = px.bar(
-        _chart_df,
-        x="Score",
-        y="Cluster",
-        orientation="h",
-        height=max(200, 44 * len(_chart_df)),
-        color="Cluster",
-        color_discrete_map=_chart_color_map,
-        text="Score",
-    )
-    fig.update_traces(
-        marker_line_width=0,
-        opacity=0.88,
-        texttemplate="%{text:.1f}",
-        textposition="outside",
-        textfont=dict(family="IBM Plex Mono", size=11, color="#0d1f2d"),
-    )
-    fig.update_layout(
-        showlegend=False,
-        margin=dict(l=0, r=60, t=10, b=10),
-        xaxis=dict(
-            title="Overall Score (0–100)",
-            range=[0, 110],
-            showgrid=True,
-            gridcolor="#e4eaf2",
-            gridwidth=1,
-            tickfont=dict(family="IBM Plex Mono", size=11),
-        ),
-        yaxis=dict(title="", tickfont=dict(family="IBM Plex Sans", size=12)),
-        plot_bgcolor="#ffffff",
-        paper_bgcolor="#f7f9fc",
-        font=dict(family="IBM Plex Sans", size=12, color="#0d1f2d"),
-    )
-    st.plotly_chart(fig, use_container_width=True)
 
 st.divider()
 
