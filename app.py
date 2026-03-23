@@ -1,6 +1,15 @@
+import base64
+import pathlib
+
 import streamlit as st
 from utils import SESSION_DEFAULTS
 from styles import inject_global_css
+
+def _logo_b64() -> str | None:
+    p = pathlib.Path(__file__).parent / "static" / "logo.png"
+    if p.exists():
+        return base64.b64encode(p.read_bytes()).decode()
+    return None
 
 st.set_page_config(page_title="Cluster Intelligence", page_icon="🗂️", layout="wide")
 
@@ -32,15 +41,21 @@ _review_page    = st.Page("pages/clusters.py",      title="Review & Edit",   def
 _analytics_page = st.Page("pages/analytics.py",     title="Analytics")
 
 # ── Sidebar branding ───────────────────────────────────────────────────────────
+_b64 = _logo_b64()
+_logo_tag = (
+    f'<img src="data:image/png;base64,{_b64}" '
+    f'width="36" height="36" style="border-radius:8px;flex-shrink:0">'
+    if _b64 else
+    '<div style="width:36px;height:36px;border-radius:10px;border:2px solid #26B4D2;'
+    'display:flex;align-items:center;justify-content:center;'
+    'font-size:16px;font-weight:700;color:#26B4D2;background:#001f2b;flex-shrink:0">hy</div>'
+)
+
 with st.sidebar:
     st.markdown(
         """
         <div style="display:flex;align-items:center;gap:10px;padding:16px 0 12px 0">
-          <div style="width:36px;height:36px;border-radius:10px;border:2px solid #26B4D2;
-               display:flex;align-items:center;justify-content:center;
-               font-size:16px;font-weight:700;color:#26B4D2;background:#001f2b;flex-shrink:0">
-            hy
-          </div>
+          {_logo_tag}
           <div>
             <div style="font-size:13px;font-weight:700;color:#eef2f7;letter-spacing:-0.01em">
               Cluster Intelligence
