@@ -228,7 +228,13 @@ def _compute(
                     r["Σ Invested (4 J.)"] = round(float(deal_vals[mask_4yr].sum()), 1)
                     rec_sum  = deal_vals[mask_rec].sum()
                     prev_sum = deal_vals[mask_prev].sum()
-                    r["Funding Momentum"] = round((rec_sum / prev_sum - 1) * 100, 1) if prev_sum > 0 else None
+                    if prev_sum > 0:
+                        r["Funding Momentum"] = round((rec_sum / prev_sum - 1) * 100, 1)
+                    else:
+                        # Y−1 has no sized deals — fall back to 2-year window comparison
+                        _fb_rec  = deal_vals[(yrs >= Y - 1) & (yrs <= Y) & valid_size].sum()
+                        _fb_prev = deal_vals[(yrs >= Y - 3) & (yrs <= Y - 2) & valid_size].sum()
+                        r["Funding Momentum"] = round((_fb_rec / _fb_prev - 1) * 100, 1) if _fb_prev > 0 else None
                 else:
                     r["Σ Invested (4 J.)"] = None
                     r["Funding Momentum"]   = None
@@ -1152,12 +1158,24 @@ if _dbg_search and _company_col in df_co.columns:
                                 "Result":     f"{_fm:+.1f}%",
                             })
                         else:
-                            _trace.append({
-                                "Metric":     "Funding Momentum",
-                                "Formula":    f"Sum({_ref_year}) / Sum({_ref_year-1}) − 1) × 100",
-                                "Key Inputs": f"Y−1={_ref_year-1} sum = 0 → ratio undefined",
-                                "Result":     "N/A",
-                            })
+                            # Fallback: 2-year window
+                            _fb_rec  = float(_dsv[(_dyrs2 >= _ref_year - 1) & (_dyrs2 <= _ref_year) & _dsv.notna()].sum())
+                            _fb_prv  = float(_dsv[(_dyrs2 >= _ref_year - 3) & (_dyrs2 <= _ref_year - 2) & _dsv.notna()].sum())
+                            if _fb_prv > 0:
+                                _fm2 = round((_fb_rec / _fb_prv - 1) * 100, 1)
+                                _trace.append({
+                                    "Metric":     "Funding Momentum",
+                                    "Formula":    f"[Y-1 no data] fallback: Sum({_ref_year}+{_ref_year-1}) / Sum({_ref_year-2}+{_ref_year-3}) − 1) × 100",
+                                    "Key Inputs": f"Recent {_ref_year}+{_ref_year-1}: {_fb_rec:,.1f} m€  ·  Prev {_ref_year-2}+{_ref_year-3}: {_fb_prv:,.1f} m€",
+                                    "Result":     f"{_fm2:+.1f}%",
+                                })
+                            else:
+                                _trace.append({
+                                    "Metric":     "Funding Momentum",
+                                    "Formula":    f"Sum({_ref_year}) / Sum({_ref_year-1}) − 1) × 100",
+                                    "Key Inputs": f"Y−1={_ref_year-1} and fallback window also have no sized deals",
+                                    "Result":     "N/A",
+                                })
 
                     _valid_sz = _dsv.dropna()
                     if len(_valid_sz):
