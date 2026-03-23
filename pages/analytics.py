@@ -70,7 +70,7 @@ COLUMN_DESCRIPTIONS: dict[str, str] = {
     "⌀ Total Raised (m€)": "Average total funding raised per company (from companies file).",
     "Σ Total Raised (m€)": "Total funding raised across all companies in the cluster.",
     "Σ Invested (4 J.)":   "Sum of all deal sizes in years Y, Y−1, Y−2, Y−3.",
-    "Funding Momentum":     "Year-over-year change in invested capital: Sum(Y) / Sum(Y−1) − 1. Positive = growing investment volume.",
+    "Funding Momentum":     "Funding trend: Sum deal sizes(Y & Y−1) / Sum deal sizes(Y−2 & Y−3) − 1. Positive = growing investment volume.",
     "Capital Invested Mean":   "Average deal size across all deals in the cluster.",
     "Capital Invested Median": "Median deal size. Less sensitive to outliers than the mean.",
     "Abweichung M/M":       "Mean ÷ Median of deal sizes. Close to 1.0 = symmetric distribution. Higher = a few very large deals skew the mean upward.",
@@ -223,18 +223,12 @@ def _compute(
                 if dd and dd in de.columns:
                     yrs = _to_year(de[dd])
                     mask_4yr  = (yrs >= Y - 3) & (yrs <= Y) & valid_size
-                    mask_rec  = (yrs == Y) & valid_size
-                    mask_prev = (yrs == (Y - 1)) & valid_size
+                    mask_rec  = (yrs >= Y - 1) & (yrs <= Y) & valid_size
+                    mask_prev = (yrs >= Y - 3) & (yrs <= Y - 2) & valid_size
                     r["Σ Invested (4 J.)"] = round(float(deal_vals[mask_4yr].sum()), 1)
                     rec_sum  = deal_vals[mask_rec].sum()
                     prev_sum = deal_vals[mask_prev].sum()
-                    if prev_sum > 0:
-                        r["Funding Momentum"] = round((rec_sum / prev_sum - 1) * 100, 1)
-                    else:
-                        # Y−1 has no sized deals — fall back to 2-year window comparison
-                        _fb_rec  = deal_vals[(yrs >= Y - 1) & (yrs <= Y) & valid_size].sum()
-                        _fb_prev = deal_vals[(yrs >= Y - 3) & (yrs <= Y - 2) & valid_size].sum()
-                        r["Funding Momentum"] = round((_fb_rec / _fb_prev - 1) * 100, 1) if _fb_prev > 0 else None
+                    r["Funding Momentum"] = round((rec_sum / prev_sum - 1) * 100, 1) if prev_sum > 0 else None
                 else:
                     r["Σ Invested (4 J.)"] = None
                     r["Funding Momentum"]   = None
@@ -637,8 +631,9 @@ st.markdown(_kpis_html, unsafe_allow_html=True)
 
 st.caption(
     f"Reference year **Y = {_ref_year}** · "
-    f"Momentum: {_ref_year} vs {_ref_year - 1} (year-over-year) · "
-    f"Recently Founded threshold: ≥ {_ref_year - 2}"
+    f"Deal Momentum: {_ref_year} vs {_ref_year-1} (YoY) · "
+    f"Funding Momentum: {_ref_year-1}+{_ref_year} vs {_ref_year-3}+{_ref_year-2} · "
+    f"Recently Founded: ≥ {_ref_year - 2}"
 )
 
 # ── SECTION: Spotlight (top performers) ───────────────────────────────────────
@@ -827,7 +822,7 @@ col_cfg = {
     "Σ Invested (4 J.)":    st.column_config.NumberColumn("4Y Invested (m€)",  format="%.1f",
                                 help=f"Sum of deal sizes {_ref_year-3}–{_ref_year}"),
     "Funding Momentum":      st.column_config.NumberColumn("Funding Momentum", format="%+.1f%%",
-                                help=f"Sum deal sizes {_ref_year} / Sum deal sizes {_ref_year-1} − 1  (year-over-year)"),
+                                help=f"(Sum {_ref_year-1}+{_ref_year}) / (Sum {_ref_year-3}+{_ref_year-2}) − 1"),
     "Capital Invested Mean":   st.column_config.NumberColumn("Deal Mean (m€)",   format="%.2f"),
     "Capital Invested Median": st.column_config.NumberColumn("Deal Median (m€)", format="%.2f"),
     "Abweichung M/M":        st.column_config.NumberColumn("Mean / Median",    format="%.2f",
@@ -1138,8 +1133,8 @@ if _dbg_search and _company_col in df_co.columns:
                     if _dd_k and _dd_k in _de.columns:
                         _dyrs2     = _to_year(_de[_dd_k])
                         _m4        = (_dyrs2 >= _ref_year - 3) & (_dyrs2 <= _ref_year) & _dsv.notna()
-                        _m_rec     = (_dyrs2 == _ref_year) & _dsv.notna()
-                        _m_prv     = (_dyrs2 == (_ref_year - 1)) & _dsv.notna()
+                        _m_rec     = (_dyrs2 >= _ref_year - 1) & (_dyrs2 <= _ref_year) & _dsv.notna()
+                        _m_prv     = (_dyrs2 >= _ref_year - 3) & (_dyrs2 <= _ref_year - 2) & _dsv.notna()
                         _inv4      = float(_dsv[_m4].sum())
                         _inv_rec   = float(_dsv[_m_rec].sum())
                         _inv_prv   = float(_dsv[_m_prv].sum())
@@ -1153,29 +1148,17 @@ if _dbg_search and _company_col in df_co.columns:
                             _fm = round((_inv_rec / _inv_prv - 1) * 100, 1)
                             _trace.append({
                                 "Metric":     "Funding Momentum",
-                                "Formula":    f"Sum({_ref_year}) / Sum({_ref_year-1}) − 1) × 100",
-                                "Key Inputs": f"Y={_ref_year}: {_inv_rec:,.1f} m€  ·  Y−1={_ref_year-1}: {_inv_prv:,.1f} m€",
+                                "Formula":    f"(Sum {_ref_year-1}+{_ref_year}) / (Sum {_ref_year-3}+{_ref_year-2}) − 1) × 100",
+                                "Key Inputs": f"Recent ({_ref_year-1}+{_ref_year}): {_inv_rec:,.1f} m€  ·  Prev ({_ref_year-3}+{_ref_year-2}): {_inv_prv:,.1f} m€",
                                 "Result":     f"{_fm:+.1f}%",
                             })
                         else:
-                            # Fallback: 2-year window
-                            _fb_rec  = float(_dsv[(_dyrs2 >= _ref_year - 1) & (_dyrs2 <= _ref_year) & _dsv.notna()].sum())
-                            _fb_prv  = float(_dsv[(_dyrs2 >= _ref_year - 3) & (_dyrs2 <= _ref_year - 2) & _dsv.notna()].sum())
-                            if _fb_prv > 0:
-                                _fm2 = round((_fb_rec / _fb_prv - 1) * 100, 1)
-                                _trace.append({
-                                    "Metric":     "Funding Momentum",
-                                    "Formula":    f"[Y-1 no data] fallback: Sum({_ref_year}+{_ref_year-1}) / Sum({_ref_year-2}+{_ref_year-3}) − 1) × 100",
-                                    "Key Inputs": f"Recent {_ref_year}+{_ref_year-1}: {_fb_rec:,.1f} m€  ·  Prev {_ref_year-2}+{_ref_year-3}: {_fb_prv:,.1f} m€",
-                                    "Result":     f"{_fm2:+.1f}%",
-                                })
-                            else:
-                                _trace.append({
-                                    "Metric":     "Funding Momentum",
-                                    "Formula":    f"Sum({_ref_year}) / Sum({_ref_year-1}) − 1) × 100",
-                                    "Key Inputs": f"Y−1={_ref_year-1} and fallback window also have no sized deals",
-                                    "Result":     "N/A",
-                                })
+                            _trace.append({
+                                "Metric":     "Funding Momentum",
+                                "Formula":    f"(Sum {_ref_year-1}+{_ref_year}) / (Sum {_ref_year-3}+{_ref_year-2}) − 1) × 100",
+                                "Key Inputs": f"Prev window ({_ref_year-3}+{_ref_year-2}) has no sized deals",
+                                "Result":     "N/A",
+                            })
 
                     _valid_sz = _dsv.dropna()
                     if len(_valid_sz):
