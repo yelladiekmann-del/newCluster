@@ -568,6 +568,59 @@ div[data-testid="stVerticalBlock"]:has(> .element-container .hy-cr-co-list-marke
 div[data-testid="stVerticalBlock"]:has(> .element-container .hy-cr-co-list-marker) [data-testid="stColumn"]:nth-child(3) button:hover {
   color: #c0392b !important;
 }
+
+/* ── Analytics KPI cards ── */
+.hy-kpi-card {
+  background: #ffffff;
+  border: 1px solid #e4eaf2;
+  border-radius: 12px;
+  padding: 16px 18px 14px;
+  flex: 1;
+}
+.hy-kpi-label {
+  font-size: 9px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.07em; color: #7496b2;
+  font-family: 'IBM Plex Mono', monospace;
+  margin-bottom: 6px;
+}
+.hy-kpi-value {
+  font-size: 22px; font-weight: 700;
+  font-family: 'IBM Plex Mono', monospace;
+  color: #0d1f2d; line-height: 1.1;
+}
+.hy-kpi-sub {
+  font-size: 10px; color: #7496b2; margin-top: 4px;
+}
+
+/* ── Analytics rank cards ── */
+.hy-rank-card {
+  display: flex; align-items: center; gap: 14px;
+  background: #ffffff; border: 1px solid #e4eaf2;
+  border-radius: 10px; padding: 12px 16px;
+  margin-bottom: 8px;
+}
+.hy-rank-badge {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px; font-weight: 700;
+  background: #001f2b; color: #ffffff;
+  border-radius: 6px; padding: 3px 7px;
+  flex-shrink: 0;
+}
+.hy-rank-badge-gold { background: #26B4D2 !important; color: #001f2b !important; }
+.hy-rank-name {
+  font-size: 13px; font-weight: 600; color: #0d1f2d;
+  flex: 1; min-width: 0;
+}
+.hy-rank-bar-wrap {
+  width: 140px; background: #e4eaf2;
+  border-radius: 4px; height: 6px; flex-shrink: 0;
+}
+.hy-rank-bar { background: #26B4D2; border-radius: 4px; height: 6px; }
+.hy-rank-score {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px; font-weight: 700; color: #0d1f2d;
+  flex-shrink: 0; min-width: 44px; text-align: right;
+}
 """
 
 

@@ -4,13 +4,20 @@ import datetime
 
 import numpy as np
 import pandas as pd
+import plotly.express as px
 import streamlit as st
 
-from styles import inject_global_css, page_header, chip
+from styles import inject_global_css, page_header
 
 inject_global_css()
 
 # ── Constants ─────────────────────────────────────────────────────────────────
+
+CLUSTER_COLORS = [
+    "#26B4D2", "#F76664", "#7A6ECC", "#F7D864",
+    "#4AC596", "#e8845c", "#516e81", "#7496b2",
+    "#a78bfa", "#34d399", "#fb923c", "#60a5fa",
+]
 
 SERIES_SCORE: dict[str, float] = {
     "pre-seed": 0, "pre seed": 0, "preseed": 0,
@@ -211,7 +218,6 @@ def _compute(
             dd = cmap.get("deal_date")
             if ds and ds in de.columns:
                 deal_vals = pd.to_numeric(de[ds], errors="coerce")
-                # Only include rows where deal size is actually present
                 valid_size = deal_vals.notna()
 
                 if dd and dd in de.columns:
@@ -299,16 +305,16 @@ def _compute(
 # ── Styling ───────────────────────────────────────────────────────────────────
 
 def _highlight_top2(col: pd.Series) -> list[str]:
-    """Gold = rank 1, teal = rank 2, per METRIC_DIRECTION."""
+    """Cyan = rank 1, soft green = rank 2, per METRIC_DIRECTION."""
     direction = METRIC_DIRECTION.get(col.name, "higher")
     vals = pd.to_numeric(col, errors="coerce")
     ranks = vals.rank(ascending=(direction == "lower"), method="min", na_option="bottom")
     out = []
     for r in ranks:
         if r == 1:
-            out.append("background-color: #ffd700; font-weight: bold")
+            out.append("background-color: #e8f7fb; color: #0a7c96; font-weight: 700")
         elif r == 2:
-            out.append("background-color: #b8e0d4")
+            out.append("background-color: #dff0e8; color: #15803d")
         else:
             out.append("")
     return out
@@ -356,7 +362,9 @@ def _compute_ranking(df: pd.DataFrame) -> pd.DataFrame:
 
 # ── Page ──────────────────────────────────────────────────────────────────────
 
-page_header("Analytics", "Cluster metrics, rankings, and export.")
+_hdr_col, _export_col = st.columns([4, 1])
+with _hdr_col:
+    page_header("Analytics", "Cluster performance, rankings, and export.")
 
 _confirmed = st.session_state.get("clusters_confirmed", False)
 _clustered = (
@@ -389,8 +397,6 @@ if df_de is None:
         if st.button("Go to Setup →", width="stretch"):
             st.switch_page("pages/setup.py")
 
-st.divider()
-
 # ── Column mapping ────────────────────────────────────────────────────────────
 
 _saved_map: dict = st.session_state.get("analytics_col_map", {})
@@ -414,15 +420,11 @@ def _sel(label, options, key, candidates=None):
     return st.selectbox(label, options, index=idx, key=f"cmap_{key}")
 
 
-_map_header_col, _map_status_col = st.columns([3, 1])
-with _map_header_col:
-    pass  # expander title serves as header
-with _map_status_col:
+_map_status_col_r, _ = st.columns([1, 3])
+with _map_status_col_r:
     if _saved_map:
         st.markdown(
-            '<div style="text-align:right;padding-top:6px">'
-            '<span class="hy-chip hy-chip-green">✓ Mapping applied</span>'
-            '</div>',
+            '<span class="hy-chip hy-chip-green">✓ Mapping applied</span>',
             unsafe_allow_html=True,
         )
 
@@ -493,10 +495,8 @@ with st.expander("⚙️ Column Mapping", expanded=not bool(_saved_map)):
 
 _cmap = st.session_state.get("analytics_col_map", {})
 
-st.divider()
-
 if not _cmap:
-    st.info("Set up the column mapping above and click **Apply mapping** to generate the table.")
+    st.info("Set up the column mapping above and click **Apply mapping** to generate the analytics.")
     st.stop()
 
 # ── Compute ───────────────────────────────────────────────────────────────────
@@ -508,47 +508,215 @@ if df_analytics.empty:
     st.warning("No clusters found (Outliers excluded).")
     st.stop()
 
-# ── Summary stat cards ────────────────────────────────────────────────────────
+df_rank = _compute_ranking(df_analytics)
+
+# ── Build color map for charts ────────────────────────────────────────────────
+
+_named_sorted = sorted(df_analytics["Cluster"].tolist())
+_chart_color_map = {
+    cname: CLUSTER_COLORS[i % len(CLUSTER_COLORS)]
+    for i, cname in enumerate(_named_sorted)
+}
+
+# ── KPI values ────────────────────────────────────────────────────────────────
 
 _n_companies_total = int(df_co["Cluster"].notna().sum()) if "Cluster" in df_co.columns else len(df_co)
 _n_clusters        = len(df_analytics)
+
 _tr_col = _cmap.get("total_raised")
 _total_capital = (
     pd.to_numeric(df_co[_tr_col], errors="coerce").sum()
     if _tr_col and _tr_col in df_co.columns
     else None
 )
-_peak_momentum = None
-if "Deal Momentum" in df_analytics.columns:
-    _mom_vals = pd.to_numeric(df_analytics["Deal Momentum"], errors="coerce").dropna()
-    if len(_mom_vals):
-        _peak_momentum = _mom_vals.max()
 
-_sc1, _sc2, _sc3, _sc4 = st.columns(4)
-with _sc1:
-    st.metric("Total Companies", _n_companies_total)
-with _sc2:
-    st.metric("Active Clusters", _n_clusters)
-with _sc3:
-    if _total_capital is not None:
-        st.metric("Total Capital Raised", f"{_total_capital:,.0f} m€")
-    else:
-        st.metric("Total Capital Raised", "N/A")
-with _sc4:
-    if _peak_momentum is not None:
-        _sign = "+" if _peak_momentum >= 0 else ""
-        st.metric("Peak Deal Momentum", f"{_sign}{_peak_momentum:.0f}%")
-    else:
-        st.metric("Peak Deal Momentum", "N/A")
+_peak_momentum = None
+_peak_mom_cluster = None
+if "Deal Momentum" in df_analytics.columns:
+    _mom_vals = pd.to_numeric(df_analytics["Deal Momentum"], errors="coerce")
+    if _mom_vals.notna().any():
+        _peak_idx = _mom_vals.idxmax()
+        _peak_momentum = _mom_vals[_peak_idx]
+        _peak_mom_cluster = df_analytics.loc[_peak_idx, "Cluster"]
+
+_avg_grad = None
+if "VC Graduation Rate" in df_analytics.columns:
+    _grad_vals = pd.to_numeric(df_analytics["VC Graduation Rate"], errors="coerce").dropna()
+    if len(_grad_vals):
+        _avg_grad = round(float(_grad_vals.mean()), 1)
+
+_avg_mort = None
+if "Mortality Rate" in df_analytics.columns:
+    _mort_vals = pd.to_numeric(df_analytics["Mortality Rate"], errors="coerce").dropna()
+    if len(_mort_vals):
+        _avg_mort = round(float(_mort_vals.mean()), 1)
+
+
+def _kpi_card(label: str, value: str, sub: str = "") -> str:
+    sub_html = f'<div class="hy-kpi-sub">{sub}</div>' if sub else ""
+    return (
+        f'<div class="hy-kpi-card">'
+        f'<div class="hy-kpi-label">{label}</div>'
+        f'<div class="hy-kpi-value">{value}</div>'
+        f'{sub_html}'
+        f'</div>'
+    )
+
+
+# ── SECTION: KPI Overview ─────────────────────────────────────────────────────
+
+st.markdown('<div class="hy-section-title" style="margin-top:20px">Overview</div>', unsafe_allow_html=True)
+
+_capital_str = f"{_total_capital:,.0f} m€" if _total_capital is not None else "N/A"
+_capital_sub = "total funding raised" if _total_capital is not None else ""
+
+if _peak_momentum is not None:
+    _sign = "+" if _peak_momentum >= 0 else ""
+    _mom_str = f"{_sign}{_peak_momentum:.0f}%"
+    _mom_color = "#15803d" if _peak_momentum >= 0 else "#dc2626"
+    _mom_sub = f'<span style="color:{_mom_color}">{_peak_mom_cluster}</span>' if _peak_mom_cluster else ""
+else:
+    _mom_str = "N/A"
+    _mom_sub = ""
+    _mom_color = "#7496b2"
+
+_grad_str = f"{_avg_grad:.1f}%" if _avg_grad is not None else "N/A"
+_grad_sub = "avg VC graduation rate" if _avg_grad is not None else ""
+
+_mort_str = f"{_avg_mort:.1f}%" if _avg_mort is not None else "N/A"
+_mort_sub = "avg mortality rate" if _avg_mort is not None else ""
+
+_kpis_html = (
+    f'<div style="display:flex;gap:12px;margin-bottom:16px">'
+    + _kpi_card("Total Companies", f"{_n_companies_total:,}", "across all clusters")
+    + _kpi_card("Active Clusters", str(_n_clusters), "named clusters")
+    + _kpi_card("Total Capital Raised", _capital_str, _capital_sub)
+    + _kpi_card("Peak Deal Momentum", _mom_str, _mom_sub)
+    + _kpi_card("Avg Graduation Rate", _grad_str, _grad_sub)
+    + _kpi_card("Avg Mortality Rate", _mort_str, _mort_sub)
+    + '</div>'
+)
+st.markdown(_kpis_html, unsafe_allow_html=True)
 
 st.caption(
-    f"Reference year **Y = {_ref_year}** (max deal year in Deals CSV) · "
+    f"Reference year **Y = {_ref_year}** · "
     f"Recent window: {_ref_year - 1}–{_ref_year} · "
     f"Previous window: {_ref_year - 3}–{_ref_year - 2} · "
     f"Recently Founded threshold: ≥ {_ref_year - 5}"
 )
 
-# ── Column descriptions ───────────────────────────────────────────────────────
+# ── SECTION: Spotlight (top performers) ───────────────────────────────────────
+
+_spotlights = []
+
+# Top Funded
+_tr_metric = "Σ Total Raised (m€)" if "Σ Total Raised (m€)" in df_analytics.columns else "⌀ Total Raised (m€)"
+if _tr_metric in df_analytics.columns:
+    _tr_vals = pd.to_numeric(df_analytics[_tr_metric], errors="coerce")
+    if _tr_vals.notna().any():
+        _top_idx = _tr_vals.idxmax()
+        _spotlights.append({
+            "label": "Top Funded",
+            "cluster": df_analytics.loc[_top_idx, "Cluster"],
+            "metric": f"{_tr_vals[_top_idx]:,.1f} m€",
+            "color": "#26B4D2",
+        })
+
+# Fastest Growing (Deal Momentum)
+if "Deal Momentum" in df_analytics.columns:
+    _dm_vals = pd.to_numeric(df_analytics["Deal Momentum"], errors="coerce")
+    if _dm_vals.notna().any():
+        _top_idx = _dm_vals.idxmax()
+        _dm_v = _dm_vals[_top_idx]
+        _sign = "+" if _dm_v >= 0 else ""
+        _spotlights.append({
+            "label": "Fastest Growing",
+            "cluster": df_analytics.loc[_top_idx, "Cluster"],
+            "metric": f"{_sign}{_dm_v:.0f}% deal momentum",
+            "color": "#4AC596",
+        })
+
+# Most Active (# Deals)
+if "# Deals" in df_analytics.columns:
+    _deal_vals = pd.to_numeric(df_analytics["# Deals"], errors="coerce")
+    if _deal_vals.notna().any():
+        _top_idx = _deal_vals.idxmax()
+        _spotlights.append({
+            "label": "Most Active",
+            "cluster": df_analytics.loc[_top_idx, "Cluster"],
+            "metric": f"{int(_deal_vals[_top_idx]):,} deals",
+            "color": "#7A6ECC",
+        })
+
+if _spotlights:
+    st.markdown('<div class="hy-section-title" style="margin-top:4px;margin-bottom:10px">Spotlight</div>', unsafe_allow_html=True)
+    _spot_cols = st.columns(len(_spotlights))
+    for _col, _sp in zip(_spot_cols, _spotlights):
+        with _col:
+            with st.container(border=True):
+                st.markdown(
+                    f'<div style="font-size:9px;font-weight:700;text-transform:uppercase;'
+                    f'letter-spacing:0.07em;color:{_sp["color"]};font-family:IBM Plex Mono,monospace;'
+                    f'margin-bottom:6px">{_sp["label"]}</div>'
+                    f'<div style="font-size:14px;font-weight:700;color:#0d1f2d;'
+                    f'letter-spacing:-0.01em;margin-bottom:8px">{_sp["cluster"]}</div>'
+                    f'<span class="hy-cl-chip">{_sp["metric"]}</span>',
+                    unsafe_allow_html=True,
+                )
+
+# ── SECTION: Cluster Comparison Chart ─────────────────────────────────────────
+
+if not df_rank.empty:
+    st.markdown('<div class="hy-section-title" style="margin-top:20px;margin-bottom:4px">Cluster Comparison</div>', unsafe_allow_html=True)
+    st.caption("Overall score: each metric normalised 0–1, averaged across all dimensions.")
+
+    _chart_df = df_rank.sort_values("Score", ascending=True)
+    _chart_colors = [_chart_color_map.get(c, "#26B4D2") for c in _chart_df["Cluster"]]
+
+    fig = px.bar(
+        _chart_df,
+        x="Score",
+        y="Cluster",
+        orientation="h",
+        height=max(200, 44 * len(_chart_df)),
+        color="Cluster",
+        color_discrete_map=_chart_color_map,
+        text="Score",
+    )
+    fig.update_traces(
+        marker_line_width=0,
+        opacity=0.88,
+        texttemplate="%{text:.1f}",
+        textposition="outside",
+        textfont=dict(family="IBM Plex Mono", size=11, color="#0d1f2d"),
+    )
+    fig.update_layout(
+        showlegend=False,
+        margin=dict(l=0, r=60, t=10, b=10),
+        xaxis=dict(
+            title="Overall Score (0–100)",
+            range=[0, 110],
+            showgrid=True,
+            gridcolor="#e4eaf2",
+            gridwidth=1,
+            tickfont=dict(family="IBM Plex Mono", size=11),
+        ),
+        yaxis=dict(title="", tickfont=dict(family="IBM Plex Sans", size=12)),
+        plot_bgcolor="#ffffff",
+        paper_bgcolor="#f7f9fc",
+        font=dict(family="IBM Plex Sans", size=12, color="#0d1f2d"),
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+st.divider()
+
+# ── SECTION: Analytics Table ──────────────────────────────────────────────────
+
+_tbl_hdr, _desc_toggle = st.columns([3, 1])
+with _tbl_hdr:
+    st.markdown('<div class="hy-section-title">Analytics Table</div>', unsafe_allow_html=True)
+with _desc_toggle:
+    st.markdown('<div style="padding-top:4px"></div>', unsafe_allow_html=True)
 
 with st.expander("📖 Column Descriptions", expanded=False):
     items = [(k, v) for k, v in COLUMN_DESCRIPTIONS.items() if k in df_analytics.columns]
@@ -562,19 +730,6 @@ with st.expander("📖 Column Descriptions", expanded=False):
             unsafe_allow_html=True,
         )
         target.markdown("")
-
-# ── Group header bar ──────────────────────────────────────────────────────────
-
-group_cols = st.columns([2] + [len(v) for v in GROUPS.values()])
-group_cols[0].markdown("")
-for i, (gname, gcols) in enumerate(GROUPS.items()):
-    if any(c in df_analytics.columns for c in gcols):
-        group_cols[i + 1].markdown(
-            f"<div class='hy-group-header'>{gname}</div>",
-            unsafe_allow_html=True,
-        )
-
-# ── Column config ─────────────────────────────────────────────────────────────
 
 col_cfg = {
     "Cluster":               st.column_config.TextColumn("Cluster Name", width="large"),
@@ -616,36 +771,35 @@ st.dataframe(
     height=min(60 + 35 * (len(df_analytics) + 1), 700),
 )
 
-st.caption("🥇 Gold = best in category  ·  🟩 Teal = 2nd best  ·  ↑ higher is better  ·  ↓ lower is better")
+st.caption("Cyan = best in category  ·  Green = 2nd best  ·  ↑ higher is better  ·  ↓ lower is better")
 
 st.divider()
 
-# ── Ranking ───────────────────────────────────────────────────────────────────
-
-st.markdown(
-    '<div style="font-size:15px;font-weight:700;color:#0d1f2d;letter-spacing:-0.02em;'
-    'margin-bottom:4px">Cluster Ranking</div>',
-    unsafe_allow_html=True,
-)
-st.caption(
-    "Each metric is normalised 0–1 (best = 1, worst = 0) per column and averaged. "
-    "Excludes size/neutral columns (Gesamt, ⌀ Year Founded)."
-)
-
-df_rank = _compute_ranking(df_analytics)
+# ── SECTION: Cluster Ranking ──────────────────────────────────────────────────
 
 if not df_rank.empty:
-    rank_cfg = {
-        "Rank":    st.column_config.NumberColumn("Rank", format="%d", width="small"),
-        "Cluster": st.column_config.TextColumn("Cluster", width="large"),
-        "Score":   st.column_config.ProgressColumn(
-                       "Overall Score",
-                       format="%.1f %%",
-                       min_value=0,
-                       max_value=100,
-                   ),
-    }
-    st.dataframe(df_rank, column_config=rank_cfg, hide_index=True, use_container_width=True)
+    st.markdown('<div class="hy-section-title">Cluster Ranking</div>', unsafe_allow_html=True)
+    st.caption(
+        "Each metric normalised 0–1 (best = 1, worst = 0) and averaged. "
+        "Excludes size/neutral columns."
+    )
+
+    _rank_cards_html = ""
+    for _, row in df_rank.iterrows():
+        _rank = int(row["Rank"])
+        _name = row["Cluster"]
+        _score = float(row["Score"])
+        _badge_class = "hy-rank-badge hy-rank-badge-gold" if _rank == 1 else "hy-rank-badge"
+        _bar_pct = _score  # score is already 0–100
+        _rank_cards_html += (
+            f'<div class="hy-rank-card">'
+            f'<span class="{_badge_class}">#{_rank}</span>'
+            f'<span class="hy-rank-name">{_name}</span>'
+            f'<div class="hy-rank-bar-wrap"><div class="hy-rank-bar" style="width:{_bar_pct:.1f}%"></div></div>'
+            f'<span class="hy-rank-score">{_score:.1f}</span>'
+            f'</div>'
+        )
+    st.markdown(_rank_cards_html, unsafe_allow_html=True)
 
 st.divider()
 
@@ -661,7 +815,7 @@ if not df_rank.empty:
 _exp_col1, _exp_col2 = st.columns([3, 1])
 with _exp_col2:
     st.download_button(
-        "⬇ Download analytics CSV",
+        "Download analytics CSV",
         export_df.to_csv(index=False),
         "cluster_analytics.csv",
         "text/csv",
