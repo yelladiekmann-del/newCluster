@@ -46,11 +46,13 @@ with st.container(border=True):
         "You'll also need your Gemini API key for the AI chat."
     )
 
-    _resume_col1, _resume_col2 = st.columns(2)
+    _resume_col1, _resume_col2, _resume_col3 = st.columns(3)
     with _resume_col1:
         _resume_file = st.file_uploader("cluster_results.csv", type=["csv"], key="resume_upload")
     with _resume_col2:
         _resume_npz  = st.file_uploader("embeddings.npz", type=["npz"], key="resume_npz")
+    with _resume_col3:
+        _resume_companies = st.file_uploader("Original companies CSV", type=["csv", "xlsx", "xls"], key="resume_companies")
 
     if _resume_file:
         try:
@@ -61,6 +63,37 @@ with st.container(border=True):
                 _resume_company_col = _resume_df.columns[0]
                 _n_companies = len(_resume_df)
                 _n_clusters  = _resume_df["Cluster"].nunique() - (1 if "Outliers" in _resume_df["Cluster"].values else 0)
+
+                # Merge original companies CSV to restore description + any extra columns
+                if _resume_companies:
+                    try:
+                        _orig_df = (
+                            pd.read_csv(_resume_companies)
+                            if _resume_companies.name.endswith(".csv")
+                            else pd.read_excel(_resume_companies)
+                        )
+                        # Bring in columns not already present in the results CSV
+                        _extra_cols = [c for c in _orig_df.columns if c not in _resume_df.columns]
+                        if _extra_cols and _resume_company_col in _orig_df.columns:
+                            _resume_df = _resume_df.merge(
+                                _orig_df[[_resume_company_col] + _extra_cols],
+                                on=_resume_company_col,
+                                how="left",
+                            )
+                        # Let user pick the description column
+                        _desc_options = [c for c in _orig_df.columns if c != _resume_company_col]
+                        if _desc_options:
+                            _desc_default = (
+                                _desc_options.index("Description")
+                                if "Description" in _desc_options else 0
+                            )
+                            _picked_desc = st.selectbox(
+                                "Description column", _desc_options, index=_desc_default,
+                                key="resume_desc_col",
+                            )
+                            st.session_state["desc_col"] = _picked_desc
+                    except Exception as e:
+                        st.warning(f"Could not load companies file: {e}")
 
                 # Load embeddings.npz if provided — gives us UMAP coords instantly
                 if _resume_npz:
@@ -80,6 +113,8 @@ with st.container(border=True):
                 st.session_state["clusters_confirmed"] = True
 
                 _chips = f'<span class="hy-chip hy-chip-green">✓ {_n_companies} companies · {_n_clusters} clusters restored</span>'
+                if _resume_companies:
+                    _chips += '&nbsp;<span class="hy-chip hy-chip-green">✓ Descriptions merged</span>'
                 if _resume_npz:
                     _chips += '&nbsp;<span class="hy-chip hy-chip-green">✓ Embeddings loaded</span>'
                 st.markdown(_chips, unsafe_allow_html=True)
