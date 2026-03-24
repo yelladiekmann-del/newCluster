@@ -399,7 +399,8 @@ def show_companies_dialog(cname: str, df_cluster: pd.DataFrame, cluster_company_
         unsafe_allow_html=True,
     )
 
-    _desc_col = "Description" if "Description" in df_cluster.columns else None
+    _desc_col_name = st.session_state.get("desc_col") or "Description"
+    _desc_col = _desc_col_name if _desc_col_name in df_cluster.columns else None
     _url_cols = ["website", "url", "URL", "Website", "web", "Website URL", "homepage", "Homepage"]
     _url_col  = next((c for c in _url_cols if c in df_cluster.columns), None)
 
