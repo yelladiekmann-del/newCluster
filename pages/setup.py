@@ -98,7 +98,7 @@ with st.container(border=True):
                 # Load embeddings.npz if provided — gives us UMAP coords instantly
                 if _resume_npz:
                     try:
-                        _npz = np.load(io.BytesIO(_resume_npz.read()))
+                        _npz = np.load(io.BytesIO(_resume_npz.read()), allow_pickle=True)
                         _embedded_2d = _npz["embedded_2d"]
                         _resume_df = _resume_df.copy()
                         _resume_df["_x"] = _embedded_2d[:, 0]
@@ -366,7 +366,7 @@ with st.container(border=True):
     emb_file = st.file_uploader("Upload embeddings.npz", type=["npz"], key="emb_upload")
     if emb_file:
         try:
-            npz = np.load(io.BytesIO(emb_file.read()))
+            npz = np.load(io.BytesIO(emb_file.read()), allow_pickle=True)
             st.session_state["feature_matrix"] = npz["feature_matrix"]
             st.session_state["embedded_2d"]    = npz["embedded_2d"]
             st.session_state["npz_preloaded"]  = True
