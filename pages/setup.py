@@ -1,18 +1,10 @@
 """Setup page — API key, data upload, optional embeddings upload, dimension extraction."""
 
 import io
-from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
 import pandas as pd
 import streamlit as st
-
-try:
-    import umap as umap_lib
-except ImportError:
-    import subprocess
-    subprocess.run(["pip", "install", "umap-learn", "-q"])
-    import umap as umap_lib
 
 from dimension_extraction import (
     EXTRACTED_DIMENSIONS,
@@ -20,7 +12,6 @@ from dimension_extraction import (
     extract_dimensions,
 )
 from styles import inject_global_css, page_header, step_label, chip
-from utils import get_per_dimension_embedding
 
 inject_global_css()
 
@@ -50,10 +41,17 @@ with _status_col:
 with st.container(border=True):
     step_label(0, "Resume saved results (optional)", done=False)
     st.caption(
-        "Already have a `cluster_results.csv` from a previous run? "
-        "Upload it here to skip straight to Review & Edit."
+        "Already ran the full pipeline? Upload your `cluster_results.csv` and `embeddings.npz` "
+        "to jump straight back to Review & Edit — no re-embedding needed. "
+        "You'll also need your Gemini API key for the AI chat."
     )
-    _resume_file = st.file_uploader("cluster_results.csv", type=["csv"], key="resume_upload")
+
+    _resume_col1, _resume_col2 = st.columns(2)
+    with _resume_col1:
+        _resume_file = st.file_uploader("cluster_results.csv", type=["csv"], key="resume_upload")
+    with _resume_col2:
+        _resume_npz  = st.file_uploader("embeddings.npz", type=["npz"], key="resume_npz")
+
     if _resume_file:
         try:
             _resume_df = pd.read_csv(_resume_file)
@@ -63,51 +61,30 @@ with st.container(border=True):
                 _resume_company_col = _resume_df.columns[0]
                 _n_companies = len(_resume_df)
                 _n_clusters  = _resume_df["Cluster"].nunique() - (1 if "Outliers" in _resume_df["Cluster"].values else 0)
-                _resume_dims = [d for d in EXTRACTED_DIMENSIONS if d in _resume_df.columns]
-                _can_embed   = bool(api_key) and len(_resume_dims) > 0
+
+                # Load embeddings.npz if provided — gives us UMAP coords instantly
+                if _resume_npz:
+                    try:
+                        _npz = np.load(io.BytesIO(_resume_npz.read()))
+                        _embedded_2d = _npz["embedded_2d"]
+                        _resume_df = _resume_df.copy()
+                        _resume_df["_x"] = _embedded_2d[:, 0]
+                        _resume_df["_y"] = _embedded_2d[:, 1]
+                        st.session_state["feature_matrix"] = _npz["feature_matrix"]
+                        st.session_state["embedded_2d"]    = _embedded_2d
+                    except Exception as e:
+                        st.warning(f"Could not load embeddings.npz: {e} — continuing without UMAP.")
 
                 st.session_state["df_clean"]           = _resume_df
                 st.session_state["company_col"]        = _resume_company_col
                 st.session_state["clusters_confirmed"] = True
-                st.session_state["feature_matrix"]     = None
 
-                st.markdown(
-                    f'<span class="hy-chip hy-chip-green">✓ {_n_companies} companies · {_n_clusters} clusters restored</span>',
-                    unsafe_allow_html=True,
-                )
-                if not _can_embed:
-                    st.caption("Enter your Gemini API key above to also compute the UMAP visualisation.")
+                _chips = f'<span class="hy-chip hy-chip-green">✓ {_n_companies} companies · {_n_clusters} clusters restored</span>'
+                if _resume_npz:
+                    _chips += '&nbsp;<span class="hy-chip hy-chip-green">✓ Embeddings loaded</span>'
+                st.markdown(_chips, unsafe_allow_html=True)
 
-                if st.button(
-                    "Restore & compute UMAP →" if _can_embed else "Go to Review & Edit →",
-                    type="primary",
-                    key="resume_goto_review",
-                ):
-                    if _can_embed:
-                        with st.spinner(f"Embedding {_n_companies} companies… (this may take a minute)"):
-                            def _embed_row(row):
-                                return get_per_dimension_embedding(row, _resume_dims, api_key)
-                            with ThreadPoolExecutor(max_workers=10) as _ex:
-                                _vecs = list(_ex.map(_embed_row, [_resume_df.iloc[i] for i in range(_n_companies)]))
-                            _feature_matrix = np.stack(_vecs)
-                            st.session_state["feature_matrix"] = _feature_matrix
-
-                        with st.spinner("Computing UMAP 2D visualisation…"):
-                            _n = len(_feature_matrix)
-                            _reducer = umap_lib.UMAP(
-                                n_components=2,
-                                n_neighbors=min(15, _n - 1),
-                                min_dist=0.05,
-                                metric="cosine",
-                                random_state=42,
-                            )
-                            _embedded_2d = _reducer.fit_transform(_feature_matrix)
-                            st.session_state["embedded_2d"] = _embedded_2d
-                            _resume_df = _resume_df.copy()
-                            _resume_df["_x"] = _embedded_2d[:, 0]
-                            _resume_df["_y"] = _embedded_2d[:, 1]
-                            st.session_state["df_clean"] = _resume_df
-
+                if st.button("Go to Review & Edit →", type="primary", key="resume_goto_review"):
                     st.switch_page("pages/clusters.py")
         except Exception as e:
             st.error(f"Could not load file: {e}")
