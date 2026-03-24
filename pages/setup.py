@@ -90,9 +90,9 @@ with st.container(border=True):
                             # Let user pick the description column
                             _desc_options = [c for c in _orig_df.columns if c != _resume_company_col]
                             if _desc_options:
-                                _desc_default = (
-                                    _desc_options.index("Description")
-                                    if "Description" in _desc_options else 0
+                                _desc_default = next(
+                                    (i for i, c in enumerate(_desc_options) if "desc" in c.lower()),
+                                    0,
                                 )
                                 _picked_desc = st.selectbox(
                                     "Description column", _desc_options, index=_desc_default,
