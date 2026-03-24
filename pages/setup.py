@@ -65,6 +65,7 @@ with st.container(border=True):
                 _n_clusters  = _resume_df["Cluster"].nunique() - (1 if "Outliers" in _resume_df["Cluster"].values else 0)
 
                 # Merge original companies CSV to restore description + any extra columns
+                _descriptions_merged = False
                 if _resume_companies:
                     try:
                         _orig_df = (
@@ -72,26 +73,32 @@ with st.container(border=True):
                             if _resume_companies.name.endswith(".csv")
                             else pd.read_excel(_resume_companies)
                         )
-                        # Bring in columns not already present in the results CSV
-                        _extra_cols = [c for c in _orig_df.columns if c not in _resume_df.columns]
-                        if _extra_cols and _resume_company_col in _orig_df.columns:
-                            _resume_df = _resume_df.merge(
-                                _orig_df[[_resume_company_col] + _extra_cols],
-                                on=_resume_company_col,
-                                how="left",
+                        if _resume_company_col not in _orig_df.columns:
+                            st.warning(
+                                f"Company column '{_resume_company_col}' not found in the companies file — "
+                                "descriptions could not be merged. Make sure both files use the same company column name."
                             )
-                        # Let user pick the description column
-                        _desc_options = [c for c in _orig_df.columns if c != _resume_company_col]
-                        if _desc_options:
-                            _desc_default = (
-                                _desc_options.index("Description")
-                                if "Description" in _desc_options else 0
-                            )
-                            _picked_desc = st.selectbox(
-                                "Description column", _desc_options, index=_desc_default,
-                                key="resume_desc_col",
-                            )
-                            st.session_state["desc_col"] = _picked_desc
+                        else:
+                            _extra_cols = [c for c in _orig_df.columns if c not in _resume_df.columns]
+                            if _extra_cols:
+                                _resume_df = _resume_df.merge(
+                                    _orig_df[[_resume_company_col] + _extra_cols],
+                                    on=_resume_company_col,
+                                    how="left",
+                                )
+                                _descriptions_merged = True
+                            # Let user pick the description column
+                            _desc_options = [c for c in _orig_df.columns if c != _resume_company_col]
+                            if _desc_options:
+                                _desc_default = (
+                                    _desc_options.index("Description")
+                                    if "Description" in _desc_options else 0
+                                )
+                                _picked_desc = st.selectbox(
+                                    "Description column", _desc_options, index=_desc_default,
+                                    key="resume_desc_col",
+                                )
+                                st.session_state["desc_col"] = _picked_desc
                     except Exception as e:
                         st.warning(f"Could not load companies file: {e}")
 
@@ -113,7 +120,7 @@ with st.container(border=True):
                 st.session_state["clusters_confirmed"] = True
 
                 _chips = f'<span class="hy-chip hy-chip-green">✓ {_n_companies} companies · {_n_clusters} clusters restored</span>'
-                if _resume_companies:
+                if _descriptions_merged:
                     _chips += '&nbsp;<span class="hy-chip hy-chip-green">✓ Descriptions merged</span>'
                 if _resume_npz:
                     _chips += '&nbsp;<span class="hy-chip hy-chip-green">✓ Embeddings loaded</span>'
