@@ -37,6 +37,36 @@ with _status_col:
             unsafe_allow_html=True,
         )
 
+# ── Resume from saved results ─────────────────────────────────────────────────
+with st.container(border=True):
+    step_label(0, "Resume saved results (optional)", done=False)
+    st.caption(
+        "Already have a `cluster_results.csv` from a previous run? "
+        "Upload it here to skip straight to Review & Edit."
+    )
+    _resume_file = st.file_uploader("cluster_results.csv", type=["csv"], key="resume_upload")
+    if _resume_file:
+        try:
+            _resume_df = pd.read_csv(_resume_file)
+            if "Cluster" not in _resume_df.columns or "Outlier score" not in _resume_df.columns:
+                st.error("This doesn't look like a cluster_results.csv — missing 'Cluster' or 'Outlier score' columns.")
+            else:
+                _resume_company_col = _resume_df.columns[0]
+                _n_companies = len(_resume_df)
+                _n_clusters  = _resume_df["Cluster"].nunique() - (1 if "Outliers" in _resume_df["Cluster"].values else 0)
+                st.session_state["df_clean"]           = _resume_df
+                st.session_state["company_col"]        = _resume_company_col
+                st.session_state["clusters_confirmed"] = True
+                st.session_state["feature_matrix"]     = None
+                st.markdown(
+                    f'<span class="hy-chip hy-chip-green">✓ {_n_companies} companies · {_n_clusters} clusters restored</span>',
+                    unsafe_allow_html=True,
+                )
+                if st.button("Go to Review & Edit →", type="primary", key="resume_goto_review"):
+                    st.switch_page("pages/clusters.py")
+        except Exception as e:
+            st.error(f"Could not load file: {e}")
+
 # ── Step 1: API Key ───────────────────────────────────────────────────────────
 with st.container(border=True):
     step_label(1, "Gemini API Key", done=bool(api_key))

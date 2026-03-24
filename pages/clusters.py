@@ -133,27 +133,32 @@ def _make_scatter(df, hover_cols, color_map_items, cluster_order):
     )
     return fig
 
-hover_cols = tuple(c for c in [company_col, "Outlier score"] + DIMENSIONS if c in df.columns)
-_umap_sig = (df.shape[0], round(float(df["_x"].sum()), 2), round(float(df["_y"].sum()), 2))
+_has_umap = "_x" in df.columns and "_y" in df.columns
 
-# Auto-build only on first visit or when UMAP coordinates change (new clustering run).
-# On data edits (renames, company moves) the chart stays frozen until user clicks Reload.
-if "scatter_fig" not in st.session_state or st.session_state.get("scatter_umap_sig") != _umap_sig:
-    st.session_state["scatter_fig"] = _make_scatter(
-        df, hover_cols, tuple(sorted(_color_map.items())), tuple(_cluster_order)
-    )
-    st.session_state["scatter_umap_sig"] = _umap_sig
+if _has_umap:
+    hover_cols = tuple(c for c in [company_col, "Outlier score"] + DIMENSIONS if c in df.columns)
+    _umap_sig = (df.shape[0], round(float(df["_x"].sum()), 2), round(float(df["_y"].sum()), 2))
 
-st.plotly_chart(st.session_state["scatter_fig"], use_container_width=True)
-
-_, _reload_col = st.columns([8, 1])
-with _reload_col:
-    st.markdown('<span class="hy-reload-btn-marker"></span>', unsafe_allow_html=True)
-    if st.button("↻ reload chart", key="reload_scatter", type="secondary", use_container_width=True):
-        _make_scatter.clear()
+    # Auto-build only on first visit or when UMAP coordinates change (new clustering run).
+    # On data edits (renames, company moves) the chart stays frozen until user clicks Reload.
+    if "scatter_fig" not in st.session_state or st.session_state.get("scatter_umap_sig") != _umap_sig:
         st.session_state["scatter_fig"] = _make_scatter(
             df, hover_cols, tuple(sorted(_color_map.items())), tuple(_cluster_order)
         )
+        st.session_state["scatter_umap_sig"] = _umap_sig
+
+    st.plotly_chart(st.session_state["scatter_fig"], use_container_width=True)
+
+    _, _reload_col = st.columns([8, 1])
+    with _reload_col:
+        st.markdown('<span class="hy-reload-btn-marker"></span>', unsafe_allow_html=True)
+        if st.button("↻ reload chart", key="reload_scatter", type="secondary", use_container_width=True):
+            _make_scatter.clear()
+            st.session_state["scatter_fig"] = _make_scatter(
+                df, hover_cols, tuple(sorted(_color_map.items())), tuple(_cluster_order)
+            )
+else:
+    st.info("UMAP chart not available — go to Embed & Cluster and re-run the pipeline to generate the visualisation.")
 
 # ── SECTION 1: Cluster overview cards ─────────────────────────────────────────
 CLUSTER_COLORS = [
