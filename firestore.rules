@@ -1,0 +1,29 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Sessions: each user can only access their own session
+    // The session doc id equals the Firebase Auth UID
+    match /sessions/{sessionId} {
+      allow read, write: if request.auth != null && request.auth.uid == sessionId;
+
+      match /companies/{companyId} {
+        allow read, write: if request.auth != null && request.auth.uid == sessionId;
+      }
+
+      match /clusters/{clusterId} {
+        allow read, write: if request.auth != null && request.auth.uid == sessionId;
+      }
+
+      match /chatHistory/{messageId} {
+        allow read, write: if request.auth != null && request.auth.uid == sessionId;
+      }
+    }
+
+    // Deny everything else
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

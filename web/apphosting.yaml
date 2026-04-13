@@ -1,0 +1,54 @@
+# Firebase App Hosting configuration
+# https://firebase.google.com/docs/app-hosting/configure
+
+runConfig:
+  minInstances: 0
+  maxInstances: 10
+  concurrency: 80
+  cpu: 2
+  memoryMiB: 1024
+  timeoutSeconds: 300
+
+env:
+  # These are set via Firebase App Hosting environment management
+  # (firebase apphosting:secrets:grantaccess)
+  - variable: NEXT_PUBLIC_FIREBASE_PROJECT_ID
+    value: hy-clustering-2
+    availability:
+      - BUILD
+      - RUNTIME
+
+  - variable: NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN
+    value: hy-clustering-2.firebaseapp.com
+    availability:
+      - BUILD
+      - RUNTIME
+
+  - variable: NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET
+    value: hy-clustering-2.firebasestorage.app
+    availability:
+      - BUILD
+      - RUNTIME
+
+  - variable: CLOUD_RUN_ML_URL
+    secret: CLOUD_RUN_ML_URL
+    availability:
+      - RUNTIME
+
+  - variable: NEXT_PUBLIC_FIREBASE_API_KEY
+    secret: NEXT_PUBLIC_FIREBASE_API_KEY
+    availability:
+      - BUILD
+      - RUNTIME
+
+  - variable: NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID
+    secret: NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID
+    availability:
+      - BUILD
+      - RUNTIME
+
+  - variable: NEXT_PUBLIC_FIREBASE_APP_ID
+    secret: NEXT_PUBLIC_FIREBASE_APP_ID
+    availability:
+      - BUILD
+      - RUNTIME
