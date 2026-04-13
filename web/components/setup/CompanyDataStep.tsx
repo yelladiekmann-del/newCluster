@@ -58,6 +58,7 @@ export function CompanyDataStep() {
           header: true,
           skipEmptyLines: true,
           complete: async (results) => {
+            try {
             const rows = results.data;
             if (!rows.length) {
               toast.error("File appears to be empty");
@@ -141,6 +142,11 @@ export function CompanyDataStep() {
               `Loaded ${rows.length.toLocaleString()} companies`
             );
             setLoading(false);
+            } catch (err) {
+              console.error("[Upload] Failed:", err);
+              toast.error("Upload failed — " + (err instanceof Error ? err.message : String(err)));
+              setLoading(false);
+            }
           },
           error: (err) => {
             toast.error(`Parse error: ${err.message}`);
