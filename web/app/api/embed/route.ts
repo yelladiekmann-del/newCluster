@@ -1,9 +1,7 @@
 import type { NextRequest } from "next/server";
-import { GoogleAuth } from "google-auth-library";
+import { embedAll } from "@/lib/gemini/embed";
 
 export const maxDuration = 300;
-
-const ML_URL = process.env.CLOUD_RUN_ML_URL;
 
 export async function POST(req: NextRequest) {
   try {
@@ -12,37 +10,36 @@ export async function POST(req: NextRequest) {
       return Response.json({ error: "Missing x-gemini-key header" }, { status: 401 });
     }
 
-    if (!ML_URL) {
-      return Response.json(
-        { error: "CLOUD_RUN_ML_URL is not configured" },
-        { status: 500 }
-      );
+    const body = await req.json();
+    const { companies, weights } = body as {
+      companies: Array<{ id: string; dimensions: Record<string, string> }>;
+      weights?: Record<string, number> | null;
+    };
+
+    if (!companies?.length) {
+      return Response.json({ error: "companies is empty" }, { status: 400 });
     }
 
-    const body = await req.json();
+    // Stream SSE progress back to the client
+    const stream = new ReadableStream({
+      async start(controller) {
+        const enc = new TextEncoder();
+        const send = (data: object) =>
+          controller.enqueue(enc.encode(`data: ${JSON.stringify(data)}\n\n`));
 
-    // Get an ID token for Cloud Run authentication
-    const auth = new GoogleAuth();
-    const client = await auth.getIdTokenClient(ML_URL);
-    const idToken = await client.getRequestHeaders();
-
-    // Forward to Cloud Run — it streams SSE back
-    const mlRes = await fetch(`${ML_URL}/embed`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...idToken,
+        try {
+          for await (const event of embedAll(companies, apiKey, weights)) {
+            send(event);
+          }
+        } catch (err) {
+          send({ type: "error", message: err instanceof Error ? err.message : String(err) });
+        } finally {
+          controller.close();
+        }
       },
-      body: JSON.stringify({ ...body, apiKey }),
     });
 
-    if (!mlRes.ok || !mlRes.body) {
-      const text = await mlRes.text();
-      return Response.json({ error: text }, { status: mlRes.status });
-    }
-
-    // Pass the SSE stream directly to the client
-    return new Response(mlRes.body, {
+    return new Response(stream, {
       headers: {
         "Content-Type": "text/event-stream",
         "Cache-Control": "no-cache, no-transform",

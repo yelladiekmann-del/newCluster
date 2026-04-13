@@ -81,7 +81,7 @@ export function EmbedPageClient() {
           if (data.type === "progress") {
             setEmbedProgress({ done: data.done, total: data.total, errors: data.errors });
           } else if (data.type === "done") {
-            matrix = data.feature_matrix;
+            matrix = data.featureMatrix ?? data.feature_matrix;
           } else if (data.type === "error") {
             toast.error(`Embedding error: ${data.message}`);
           }
