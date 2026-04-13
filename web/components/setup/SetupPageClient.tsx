@@ -30,9 +30,10 @@ export function SetupPageClient() {
     !!companies[0]?.dimensions &&
     Object.keys(companies[0].dimensions).length > 0;
 
+  // Allow continue if: companies loaded + (dimensions extracted OR npz preloaded OR already past setup)
   const canContinue =
     companies.length > 0 &&
-    (pipelineStep >= 1 || npzPreloaded || hasDimensions);
+    (hasDimensions || npzPreloaded || pipelineStep >= 1);
 
   const handleContinue = useCallback(async () => {
     if (!uid) return;

@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/dialog";
 import { useSession } from "@/lib/store/session";
 import { persistSession } from "@/lib/firebase/hooks";
+import { Progress } from "@/components/ui/progress";
 import { doc, writeBatch } from "firebase/firestore";
 import { getFirebaseDb } from "@/lib/firebase/client";
 import { toast } from "sonner";
@@ -44,7 +45,7 @@ export function CompanyDataStep() {
   const [columns, setColumns] = useState<string[]>([]);
   const [preview, setPreview] = useState<Record<string, unknown>[]>([]);
   const [previewOpen, setPreviewOpen] = useState(false);
-  const [saving, setSaving] = useState(false);
+  const [saveProgress, setSaveProgress] = useState<{ done: number; total: number } | null>(null);
 
   const handleFile = useCallback(
     (file: File) => {
@@ -94,7 +95,7 @@ export function CompanyDataStep() {
             toast.warning("Not signed in — data loaded locally but not saved");
             return;
           }
-          setSaving(true);
+          setSaveProgress({ done: 0, total: companyDocs.length });
           (async () => {
             try {
               const db = getFirebaseDb();
@@ -105,6 +106,7 @@ export function CompanyDataStep() {
                   batch.set(doc(db, "sessions", uid, "companies", c.id), c);
                 }
                 await batch.commit();
+                setSaveProgress({ done: Math.min(i + batchSize, companyDocs.length), total: companyDocs.length });
               }
               const storage = getFirebaseStorage();
               await uploadBytes(ref(storage, `sessions/${uid}/companies.csv`), file);
@@ -114,7 +116,7 @@ export function CompanyDataStep() {
               console.error("[Upload] Save failed:", err);
               toast.error("Save failed — " + (err instanceof Error ? err.message : String(err)));
             } finally {
-              setSaving(false);
+              setSaveProgress(null);
             }
           })();
         },
@@ -187,10 +189,14 @@ export function CompanyDataStep() {
             />
           </label>
 
-          {saving && (
-            <p className="text-xs text-muted-foreground animate-pulse">
-              Saving to cloud…
-            </p>
+          {saveProgress && (
+            <div className="flex flex-col gap-1">
+              <div className="flex justify-between text-xs text-muted-foreground">
+                <span>Saving to cloud…</span>
+                <span>{saveProgress.done}/{saveProgress.total}</span>
+              </div>
+              <Progress value={Math.round((saveProgress.done / saveProgress.total) * 100)} className="h-1.5" />
+            </div>
           )}
 
           {/* Column selectors */}

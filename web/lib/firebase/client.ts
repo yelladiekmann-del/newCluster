@@ -2,12 +2,7 @@
 
 import { initializeApp, getApps, type FirebaseApp } from "firebase/app";
 import { getAuth, signInAnonymously, onAuthStateChanged, type Auth } from "firebase/auth";
-import {
-  initializeFirestore,
-  persistentLocalCache,
-  persistentMultipleTabManager,
-  type Firestore,
-} from "firebase/firestore";
+import { getFirestore, type Firestore } from "firebase/firestore";
 import { getStorage, type FirebaseStorage } from "firebase/storage";
 
 const firebaseConfig = {
@@ -40,9 +35,7 @@ export function getFirebaseAuth(): Auth {
 
 export function getFirebaseDb(): Firestore {
   if (!db) {
-    db = initializeFirestore(getFirebaseApp(), {
-      localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
-    });
+    db = getFirestore(getFirebaseApp());
   }
   return db;
 }
