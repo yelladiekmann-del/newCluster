@@ -78,26 +78,24 @@ async def embed_endpoint(request: Request):
         raise HTTPException(status_code=400, detail="companies is empty")
 
     async def stream() -> AsyncGenerator[str, None]:
-        feature_matrix: list[list[float]] = []
+        try:
+            feature_matrix: list[list[float]] = []
 
-        for event in embed_all(companies, api_key, weights, dim_per_field):
-            if event["type"] == "progress":
-                yield f"data: {json.dumps(event)}\n\n"
-            elif event["type"] == "done":
-                feature_matrix = event["feature_matrix"]
+            for event in embed_all(companies, api_key, weights, dim_per_field):
+                if event["type"] == "progress":
+                    yield f"data: {json.dumps(event)}\n\n"
+                elif event["type"] == "done":
+                    feature_matrix = event["feature_matrix"]
 
-        # Write embeddings back to Firestore companies (umapX/umapY left null until cluster step)
-        # Store the raw feature_matrix in Firestore session for use in clustering
-        session_ref = db.collection("sessions").document(session_id)
-        session_ref.update({
-            "embeddingsStoragePath": f"sessions/{session_id}/embeddings.npz",
-            "updatedAt": firestore.SERVER_TIMESTAMP,
-        })
+            session_ref = db.collection("sessions").document(session_id)
+            session_ref.update({
+                "embeddingsStoragePath": f"sessions/{session_id}/embeddings.npz",
+                "updatedAt": firestore.SERVER_TIMESTAMP,
+            })
 
-        # Store feature matrix as a session-level field (chunked if needed)
-        # For large matrices use Storage; for simplicity here we signal done
-        # and the Next.js API route handles Storage upload from the client
-        yield f"data: {json.dumps({'type': 'done', 'feature_matrix': feature_matrix})}\n\n"
+            yield f"data: {json.dumps({'type': 'done', 'feature_matrix': feature_matrix})}\n\n"
+        except Exception as e:
+            yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
 
     return StreamingResponse(stream(), media_type="text/event-stream")
 
@@ -144,13 +142,16 @@ async def cluster_endpoint(request: Request):
     if not feature_matrix:
         raise HTTPException(status_code=400, detail="featureMatrix is empty")
 
-    result = run_clustering(
-        feature_matrix,
-        min_cluster_size=min_cluster_size,
-        min_samples=min_samples,
-        cluster_epsilon=cluster_epsilon,
-        umap_cluster_dims=umap_cluster_dims,
-    )
+    try:
+        result = run_clustering(
+            feature_matrix,
+            min_cluster_size=min_cluster_size,
+            min_samples=min_samples,
+            cluster_epsilon=cluster_epsilon,
+            umap_cluster_dims=umap_cluster_dims,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
     labels = result["labels"]
     embedded_2d = result["embedded_2d"]
