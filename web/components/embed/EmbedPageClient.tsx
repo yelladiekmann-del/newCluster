@@ -69,7 +69,8 @@ export function EmbedPageClient() {
       });
 
       if (!res.ok || !res.body) {
-        toast.error("Embedding request failed");
+        const errText = await res.text().catch(() => res.statusText);
+        toast.error(`Embedding failed (${res.status}): ${errText}`);
         return;
       }
 

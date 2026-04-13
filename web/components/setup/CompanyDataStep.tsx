@@ -73,12 +73,17 @@ export function CompanyDataStep() {
             cols.find((c) => /desc/i.test(c)) ||
             null;
 
+          // Auto-detect pre-extracted dimension columns in the CSV
+          const dimCols = DIMENSIONS.filter((d) => cols.includes(d));
+
           const companyDocs: CompanyDoc[] = rows.map((row, i) => ({
             id: `r${i}`,
             rowIndex: i,
             name: String(row[nameCol] ?? ""),
             originalData: row,
-            dimensions: {},
+            dimensions: dimCols.length > 0
+              ? Object.fromEntries(dimCols.map((d) => [d, String(row[d] ?? "")]))
+              : {},
             clusterId: null,
             outlierScore: null,
             umapX: null,
