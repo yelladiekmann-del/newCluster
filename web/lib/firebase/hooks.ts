@@ -12,6 +12,7 @@ import {
 import { getFirebaseDb, ensureSignedIn, onAuthChange } from "./client";
 import { useSession } from "@/lib/store/session";
 import type { CompanyDoc, ClusterDoc, ChatMessage, SessionDoc } from "@/types";
+import { toast } from "sonner";
 
 /** Top-level hook: signs in, creates/restores session, hydrates Zustand store. */
 export function useFirebaseSession() {
@@ -112,6 +113,9 @@ export function useFirebaseSession() {
         setClusters(clusters);
         setChatMessages(msgs);
       });
+    }).catch((err: unknown) => {
+      console.error("[Firebase] Session init failed:", err);
+      toast.error("Session init failed — " + (err instanceof Error ? err.message : String(err)));
     });
 
     return () => {

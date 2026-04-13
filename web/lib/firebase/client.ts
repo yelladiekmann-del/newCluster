@@ -3,9 +3,10 @@
 import { initializeApp, getApps, type FirebaseApp } from "firebase/app";
 import { getAuth, signInAnonymously, onAuthStateChanged, type Auth } from "firebase/auth";
 import {
-  getFirestore,
+  initializeFirestore,
+  persistentLocalCache,
+  persistentMultipleTabManager,
   type Firestore,
-  enableMultiTabIndexedDbPersistence,
 } from "firebase/firestore";
 import { getStorage, type FirebaseStorage } from "firebase/storage";
 
@@ -39,9 +40,9 @@ export function getFirebaseAuth(): Auth {
 
 export function getFirebaseDb(): Firestore {
   if (!db) {
-    db = getFirestore(getFirebaseApp());
-    // Enable offline persistence (best-effort, ignores errors)
-    enableMultiTabIndexedDbPersistence(db).catch(() => {});
+    db = initializeFirestore(getFirebaseApp(), {
+      localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
+    });
   }
   return db;
 }

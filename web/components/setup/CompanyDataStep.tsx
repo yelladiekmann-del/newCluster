@@ -82,16 +82,8 @@ export function CompanyDataStep() {
             setCompanyCol(nameCol);
             setDescCol(dCol);
 
-            // Write companies to Firestore — wait up to 5s for sign-in
-            let resolvedUid = uid;
-            if (!resolvedUid) {
-              for (let i = 0; i < 10; i++) {
-                await new Promise((r) => setTimeout(r, 500));
-                resolvedUid = useSession.getState().uid;
-                if (resolvedUid) break;
-              }
-            }
-            if (!resolvedUid) {
+            // Write companies to Firestore
+            if (!uid) {
               toast.error("Not signed in yet — please wait a moment and try again");
               setLoading(false);
               return;
@@ -120,7 +112,7 @@ export function CompanyDataStep() {
                 const ref = doc(
                   db,
                   "sessions",
-                  resolvedUid,
+                  uid,
                   "companies",
                   c.id
                 );
@@ -135,11 +127,11 @@ export function CompanyDataStep() {
             const storage = getFirebaseStorage();
             const storageRef = ref(
               storage,
-              `sessions/${resolvedUid}/companies.csv`
+              `sessions/${uid}/companies.csv`
             );
             await uploadBytes(storageRef, file);
 
-            await persistSession(resolvedUid, {
+            await persistSession(uid, {
               companyCol: nameCol,
               descCol: dCol,
               pipelineStep: 0,
