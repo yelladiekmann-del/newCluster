@@ -177,7 +177,11 @@ export function CompanyDataStep() {
 
           {/* Drop zone */}
           <label
-            className="flex flex-col items-center justify-center gap-2 border border-dashed border-border rounded-lg p-6 cursor-pointer hover:border-primary/60 hover:bg-muted/30 transition-colors"
+            className={`flex flex-col items-center justify-center gap-2 border rounded-lg p-6 cursor-pointer transition-colors ${
+              companies.length > 0
+                ? "border-primary/50 bg-primary/5 hover:bg-primary/10"
+                : "border-dashed border-border hover:border-primary/60 hover:bg-muted/30"
+            }`}
             onDrop={(e) => {
               e.preventDefault();
               const file = e.dataTransfer.files[0];
@@ -185,14 +189,28 @@ export function CompanyDataStep() {
             }}
             onDragOver={(e) => e.preventDefault()}
           >
-            <Upload className="h-5 w-5 text-muted-foreground" />
-            <span className="text-sm text-muted-foreground text-center">
-              Drop CSV / Excel here or{" "}
-              <span className="text-primary">browse</span>
-            </span>
-            <span className="text-xs text-muted-foreground">
-              .csv, .xlsx, .xls
-            </span>
+            {companies.length > 0 ? (
+              <>
+                <CheckCircle2 className="h-5 w-5 text-primary" />
+                <span className="text-sm text-primary font-medium">
+                  {companies.length.toLocaleString()} companies loaded
+                </span>
+                <span className="text-xs text-muted-foreground">
+                  Drop a new file to replace
+                </span>
+              </>
+            ) : (
+              <>
+                <Upload className="h-5 w-5 text-muted-foreground" />
+                <span className="text-sm text-muted-foreground text-center">
+                  Drop CSV / Excel here or{" "}
+                  <span className="text-primary">browse</span>
+                </span>
+                <span className="text-xs text-muted-foreground">
+                  .csv, .xlsx, .xls
+                </span>
+              </>
+            )}
             <input
               type="file"
               accept=".csv,.xlsx,.xls"

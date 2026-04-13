@@ -25,9 +25,14 @@ export function SetupPageClient() {
     setPipelineStep,
   } = useSession();
 
+  const hasDimensions =
+    companies.length > 0 &&
+    !!companies[0]?.dimensions &&
+    Object.keys(companies[0].dimensions).length > 0;
+
   const canContinue =
     companies.length > 0 &&
-    (pipelineStep >= 1 || npzPreloaded);
+    (pipelineStep >= 1 || npzPreloaded || hasDimensions);
 
   const handleContinue = useCallback(async () => {
     if (!uid) return;
