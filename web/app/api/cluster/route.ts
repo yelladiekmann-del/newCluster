@@ -1,5 +1,4 @@
 import type { NextRequest } from "next/server";
-import { GoogleAuth } from "google-auth-library";
 
 export const maxDuration = 300;
 
@@ -16,16 +15,9 @@ export async function POST(req: NextRequest) {
 
     const body = await req.json();
 
-    const auth = new GoogleAuth();
-    const client = await auth.getIdTokenClient(ML_URL);
-    const idToken = await client.getRequestHeaders();
-
     const mlRes = await fetch(`${ML_URL}/cluster`, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...idToken,
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
 
