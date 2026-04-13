@@ -22,11 +22,7 @@ import {
 } from "@/components/ui/dialog";
 import { useSession } from "@/lib/store/session";
 import { persistSession } from "@/lib/firebase/hooks";
-import {
-  doc,
-  writeBatch,
-  collection,
-} from "firebase/firestore";
+import { doc, writeBatch } from "firebase/firestore";
 import { getFirebaseDb } from "@/lib/firebase/client";
 import { toast } from "sonner";
 import type { CompanyDoc } from "@/types";
@@ -48,115 +44,84 @@ export function CompanyDataStep() {
   const [columns, setColumns] = useState<string[]>([]);
   const [preview, setPreview] = useState<Record<string, unknown>[]>([]);
   const [previewOpen, setPreviewOpen] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   const handleFile = useCallback(
-    async (file: File) => {
-      setLoading(true);
-      try {
-        Papa.parse<Record<string, unknown>>(file, {
-          header: true,
-          skipEmptyLines: true,
-          complete: async (results) => {
+    (file: File) => {
+      Papa.parse<Record<string, unknown>>(file, {
+        header: true,
+        skipEmptyLines: true,
+        complete: (results) => {
+          const rows = results.data;
+          if (!rows.length) {
+            toast.error("File appears to be empty");
+            return;
+          }
+
+          const cols = Object.keys(rows[0]);
+          setColumns(cols);
+          setPreview(rows.slice(0, 10));
+
+          // Auto-detect columns
+          const nameCol =
+            cols.find((c) => /^name$/i.test(c)) ||
+            cols.find((c) => /company/i.test(c)) ||
+            cols[0];
+          const dCol =
+            cols.find((c) => /description/i.test(c)) ||
+            cols.find((c) => /desc/i.test(c)) ||
+            null;
+
+          const companyDocs: CompanyDoc[] = rows.map((row, i) => ({
+            id: `r${i}`,
+            rowIndex: i,
+            name: String(row[nameCol] ?? ""),
+            originalData: row,
+            dimensions: {},
+            clusterId: null,
+            outlierScore: null,
+            umapX: null,
+            umapY: null,
+          }));
+
+          // Update UI immediately — don't wait for Firestore
+          setCompanyCol(nameCol);
+          setDescCol(dCol);
+          setCompanies(companyDocs);
+
+          // Persist to Firestore in background
+          if (!uid) {
+            toast.warning("Not signed in — data loaded locally but not saved");
+            return;
+          }
+          setSaving(true);
+          (async () => {
             try {
-            const rows = results.data;
-            if (!rows.length) {
-              toast.error("File appears to be empty");
-              setLoading(false);
-              return;
-            }
-
-            const cols = Object.keys(rows[0]);
-            setColumns(cols);
-            setPreview(rows.slice(0, 10));
-
-            // Auto-detect columns
-            const nameCol =
-              cols.find((c) => /^name$/i.test(c)) ||
-              cols.find((c) => /company/i.test(c)) ||
-              cols[0];
-            const dCol =
-              cols.find((c) => /description/i.test(c)) ||
-              cols.find((c) => /desc/i.test(c)) ||
-              null;
-
-            setCompanyCol(nameCol);
-            setDescCol(dCol);
-
-            // Write companies to Firestore
-            if (!uid) {
-              toast.error("Not signed in yet — please wait a moment and try again");
-              setLoading(false);
-              return;
-            }
-
-            const db = getFirebaseDb();
-            // Clear existing companies
-            const batchSize = 400; // Firestore batch limit is 500
-            const companyDocs: CompanyDoc[] = rows.map((row, i) => ({
-              id: `r${i}`,
-              rowIndex: i,
-              name: String(row[nameCol] ?? ""),
-              originalData: row,
-              dimensions: {},
-              clusterId: null,
-              outlierScore: null,
-              umapX: null,
-              umapY: null,
-            }));
-
-            // Write in batches
-            for (let i = 0; i < companyDocs.length; i += batchSize) {
-              const batch = writeBatch(db);
-              const chunk = companyDocs.slice(i, i + batchSize);
-              for (const c of chunk) {
-                const ref = doc(
-                  db,
-                  "sessions",
-                  uid,
-                  "companies",
-                  c.id
-                );
-                batch.set(ref, c);
+              const db = getFirebaseDb();
+              const batchSize = 400;
+              for (let i = 0; i < companyDocs.length; i += batchSize) {
+                const batch = writeBatch(db);
+                for (const c of companyDocs.slice(i, i + batchSize)) {
+                  batch.set(doc(db, "sessions", uid, "companies", c.id), c);
+                }
+                await batch.commit();
               }
-              await batch.commit();
-            }
-
-            setCompanies(companyDocs);
-
-            // Upload original CSV to Storage
-            const storage = getFirebaseStorage();
-            const storageRef = ref(
-              storage,
-              `sessions/${uid}/companies.csv`
-            );
-            await uploadBytes(storageRef, file);
-
-            await persistSession(uid, {
-              companyCol: nameCol,
-              descCol: dCol,
-              pipelineStep: 0,
-            });
-
-            toast.success(
-              `Loaded ${rows.length.toLocaleString()} companies`
-            );
-            setLoading(false);
+              const storage = getFirebaseStorage();
+              await uploadBytes(ref(storage, `sessions/${uid}/companies.csv`), file);
+              await persistSession(uid, { companyCol: nameCol, descCol: dCol, pipelineStep: 0 });
+              toast.success(`${rows.length.toLocaleString()} companies saved`);
             } catch (err) {
-              console.error("[Upload] Failed:", err);
-              toast.error("Upload failed — " + (err instanceof Error ? err.message : String(err)));
-              setLoading(false);
+              console.error("[Upload] Save failed:", err);
+              toast.error("Save failed — " + (err instanceof Error ? err.message : String(err)));
+            } finally {
+              setSaving(false);
             }
-          },
-          error: (err) => {
-            toast.error(`Parse error: ${err.message}`);
-            setLoading(false);
-          },
-        });
-      } catch (err) {
-        toast.error(String(err));
-        setLoading(false);
-      }
+          })();
+        },
+        error: (err) => {
+          toast.error(`Parse error: ${err.message}`);
+        },
+      });
     },
     [uid, setCompanies, setCompanyCol, setDescCol]
   );
@@ -222,9 +187,9 @@ export function CompanyDataStep() {
             />
           </label>
 
-          {loading && (
+          {saving && (
             <p className="text-xs text-muted-foreground animate-pulse">
-              Uploading…
+              Saving to cloud…
             </p>
           )}
 
