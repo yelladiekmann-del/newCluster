@@ -5,15 +5,22 @@ import { useSession } from "@/lib/store/session";
 import { ClusterOverviewGrid } from "./ClusterOverviewGrid";
 import { ClusterEditorPanel } from "./ClusterEditorPanel";
 import { AiChatPanel } from "./AiChatPanel";
+import { ResortPanel } from "./ResortPanel";
 import { Button } from "@/components/ui/button";
 import { ArrowRight, Download } from "lucide-react";
 import { UmapScatter } from "@/components/embed/UmapScatter";
 import { saveAs } from "file-saver";
 import Papa from "papaparse";
 
+function qualityLabel(score: number): string {
+  if (score >= 0.5) return "Good";
+  if (score >= 0.3) return "Fair";
+  return "Poor";
+}
+
 export function ReviewPageClient() {
   const router = useRouter();
-  const { companies, clusters, companyCol } = useSession();
+  const { companies, clusters, companyCol, clusterMetrics } = useSession();
 
   const handleDownload = () => {
     const rows = companies.map((c) => {
@@ -38,6 +45,21 @@ export function ReviewPageClient() {
           <p className="text-xs text-muted-foreground mt-0.5">
             {companies.length} companies · {clusters.filter((c) => !c.isOutliers).length} clusters
           </p>
+          {clusterMetrics?.silhouette != null && (
+            <div className="flex gap-3 text-xs text-muted-foreground mt-1">
+              <span>
+                Silhouette:{" "}
+                <span className="text-foreground font-mono">{clusterMetrics.silhouette.toFixed(2)}</span>{" "}
+                ({qualityLabel(clusterMetrics.silhouette)})
+              </span>
+              {clusterMetrics.daviesBouldin != null && (
+                <span>
+                  Davies-Bouldin:{" "}
+                  <span className="text-foreground font-mono">{clusterMetrics.daviesBouldin.toFixed(2)}</span>
+                </span>
+              )}
+            </div>
+          )}
         </div>
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={handleDownload} className="gap-1.5">
@@ -60,6 +82,9 @@ export function ReviewPageClient() {
       <div className="px-6 pt-4">
         <UmapScatter />
       </div>
+
+      {/* Re-sort panel */}
+      <ResortPanel />
 
       {/* Two-column editor + chat */}
       <div className="flex gap-0 mt-5 border-t border-border min-h-[600px]">

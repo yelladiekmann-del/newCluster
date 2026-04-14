@@ -20,6 +20,35 @@ const SUGGESTED_PROMPTS = [
   "Compare cluster sizes and gaps",
 ];
 
+const CLUSTER_REVIEW_PROMPT = `Please review all clusters in this analysis and provide structured recommendations:
+
+**1. KEEP** — List clusters that are well-defined and should remain exactly as they are. Briefly explain why each is cohesive.
+
+**2. DELETE** — List clusters that are too small, too vague, overlap heavily with another, or add no analytical value. Explain why each should be removed.
+
+**3. MERGE** — Identify pairs or groups of clusters that are too similar and should be combined. For each merge, specify which clusters to combine and suggest a name for the result.
+
+**4. ADD** — Identify important market segments that are absent from the current clustering. For each new cluster to add, provide: a proposed name, a one-sentence description, and 3–5 example companies from the dataset that would belong there.
+
+Ground all recommendations in the specific companies and cluster compositions you know.
+
+After your prose recommendations, append a machine-readable action list using EXACTLY this format (no explanation, no extra text around the tags):
+
+<actions>
+[
+  {"type": "delete", "clusterName": "<exact cluster name>"},
+  {"type": "merge", "sources": ["<cluster A>", "<cluster B>"], "newName": "<merged name>"},
+  {"type": "add", "name": "<new cluster name>", "description": "<one sentence>", "companies": ["<company1>", "<company2>", "<company3>"]}
+]
+</actions>
+
+Only include delete, merge, and add actions — omit KEEP entries entirely. Use exact cluster and company names as they appear in the data.`;
+
+function expandPrompt(p: string): string {
+  if (p === "✦ Request cluster review") return CLUSTER_REVIEW_PROMPT;
+  return p;
+}
+
 export function AiChatPanel() {
   const {
     uid, apiKey, clusters, companies,
@@ -255,7 +284,7 @@ export function AiChatPanel() {
           {SUGGESTED_PROMPTS.map((p) => (
             <button
               key={p}
-              onClick={() => handleSend(p)}
+              onClick={() => handleSend(expandPrompt(p))}
               className="text-xs px-2.5 py-1 rounded-full border border-border text-muted-foreground hover:text-primary hover:border-primary transition-colors"
             >
               {p}
