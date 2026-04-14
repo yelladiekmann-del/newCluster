@@ -30,7 +30,7 @@ export function ReviewPageClient() {
   };
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="overflow-y-auto h-full">
       {/* Header */}
       <div className="px-6 py-5 border-b border-border flex items-center justify-between">
         <div>
@@ -62,11 +62,11 @@ export function ReviewPageClient() {
       </div>
 
       {/* Two-column editor + chat */}
-      <div className="flex flex-1 gap-0 mt-5 min-h-0 border-t border-border">
-        <div className="flex-1 border-r border-border overflow-y-auto p-5">
+      <div className="flex gap-0 mt-5 border-t border-border min-h-[600px]">
+        <div className="flex-1 border-r border-border p-5">
           <ClusterEditorPanel />
         </div>
-        <div className="w-[420px] shrink-0 overflow-y-auto">
+        <div className="w-[420px] shrink-0">
           <AiChatPanel />
         </div>
       </div>

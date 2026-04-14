@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { useSession } from "@/lib/store/session";
@@ -12,7 +12,8 @@ import { UmapScatter } from "./UmapScatter";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
-import { ArrowRight, Cpu, GitBranch, RefreshCw, Sparkles } from "lucide-react";
+import { saveAs } from "file-saver";
+import { ArrowRight, Cpu, Download, GitBranch, RefreshCw, Sparkles } from "lucide-react";
 import { createParser } from "eventsource-parser";
 import { doc, writeBatch, collection, setDoc } from "firebase/firestore";
 import { getFirebaseDb } from "@/lib/firebase/client";
@@ -36,6 +37,8 @@ export function EmbedPageClient() {
   const [embedProgress, setEmbedProgress] = useState<{ done: number; total: number; errors: number } | null>(null);
   const [embedding, setEmbedding] = useState(false);
   const [clustering, setClustering] = useState(false);
+  const [clusterProgress, setClusterProgress] = useState(0);
+  const clusterTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [clusterResult, setClusterResult] = useState<{
     labels: number[];
@@ -107,11 +110,34 @@ export function EmbedPageClient() {
     }
   }, [apiKey, uid, companies, customWeights]);
 
+  // ── Download embeddings ──────────────────────────────────────────────────
+
+  const handleDownloadEmbeddings = useCallback(() => {
+    if (!featureMatrix) return;
+    const payload = {
+      companies: companies.map((c) => ({ id: c.id, name: c.name })),
+      featureMatrix,
+    };
+    saveAs(
+      new Blob([JSON.stringify(payload)], { type: "application/json" }),
+      "embeddings.json"
+    );
+  }, [featureMatrix, companies]);
+
   // ── Cluster ──────────────────────────────────────────────────────────────
 
   const handleCluster = useCallback(async () => {
     if (!uid || !featureMatrix) return;
     setClustering(true);
+    setClusterProgress(0);
+
+    // Animate fake progress: ramps to ~85% over ~30s then stalls until done
+    clusterTimerRef.current = setInterval(() => {
+      setClusterProgress((p) => {
+        if (p >= 85) { clearInterval(clusterTimerRef.current!); return p; }
+        return p + 1;
+      });
+    }, 400);
 
     try {
       const res = await fetch("/api/cluster", {
@@ -153,12 +179,14 @@ export function EmbedPageClient() {
         });
       });
 
+      setClusterProgress(100);
       toast.success(
         `${result.nClusters} clusters found · ${result.nOutliers} outliers`
       );
     } catch (err) {
       toast.error(String(err));
     } finally {
+      if (clusterTimerRef.current) clearInterval(clusterTimerRef.current);
       setClustering(false);
     }
   }, [uid, featureMatrix, companies, clusterParams, setClusterMetrics, updateCompany]);
@@ -284,6 +312,12 @@ export function EmbedPageClient() {
             )}
             {hasEmbeddings ? "↺ Re-embed" : "Embed"}
           </Button>
+          {featureMatrix && !embedding && (
+            <Button variant="outline" onClick={handleDownloadEmbeddings} className="gap-1.5">
+              <Download className="h-3.5 w-3.5" />
+              Download embeddings
+            </Button>
+          )}
         </div>
       </section>
 
@@ -319,6 +353,16 @@ export function EmbedPageClient() {
           )}
           {clustering ? "Clustering…" : "▶ Cluster"}
         </Button>
+
+        {clustering && (
+          <div className="flex flex-col gap-1">
+            <div className="flex justify-between text-xs text-muted-foreground">
+              <span>Running UMAP + HDBSCAN…</span>
+              <span>{clusterProgress}%</span>
+            </div>
+            <Progress value={clusterProgress} className="h-1.5" />
+          </div>
+        )}
 
         {clusterResult && (
           <>
