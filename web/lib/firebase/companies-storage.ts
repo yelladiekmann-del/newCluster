@@ -11,7 +11,7 @@
  *   - _clusterId, _umapX, _umapY  (prefixed _ to avoid collision)
  */
 
-import { ref, uploadBytes, getBytes } from "firebase/storage";
+import { ref, uploadBytes, getBytes, getDownloadURL } from "firebase/storage";
 import { getFirebaseStorage } from "./client";
 import Papa from "papaparse";
 import type { CompanyDoc } from "@/types";
@@ -36,6 +36,17 @@ export async function saveCompaniesToStorage(
   const blob = new Blob([csv], { type: "text/csv" });
   const storage = getFirebaseStorage();
   await uploadBytes(ref(storage, STORAGE_PATH(uid)), blob);
+}
+
+/** Upload featureMatrix JSON to Storage and return a public download URL. */
+export async function saveEmbeddingsToStorage(
+  uid: string,
+  matrix: number[][]
+): Promise<string> {
+  const blob = new Blob([JSON.stringify(matrix)], { type: "application/json" });
+  const r = ref(getFirebaseStorage(), `sessions/${uid}/embeddings.json`);
+  await uploadBytes(r, blob);
+  return getDownloadURL(r);
 }
 
 /** Download companies.csv from Storage and reconstruct CompanyDoc[]. */

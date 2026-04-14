@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback } from "react";
-import { Sparkles, CheckCircle2, RefreshCw, Download } from "lucide-react";
+import { Sparkles, CheckCircle2, Loader2, Download } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
@@ -174,7 +174,7 @@ export function DimensionExtractionStep() {
             className="gap-1.5"
           >
             {running ? (
-              <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
             ) : (
               <Sparkles className="h-3.5 w-3.5" />
             )}

@@ -115,6 +115,7 @@ export type ClusterAction =
 export interface AnalyticsColMap {
   co_id?: string;
   de_co_id?: string;
+  de_co_name?: string;
   deal_id?: string;
   deal_date?: string;
   deal_size?: string;

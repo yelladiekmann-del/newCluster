@@ -128,7 +128,7 @@ export function AiChatPanel() {
         headers: { "Content-Type": "application/json", "x-gemini-key": apiKey },
         body: JSON.stringify({
           clusters,
-          companies,
+          companies: companies.map(({ id, name, dimensions, clusterId }) => ({ id, name, dimensions, clusterId })),
           history: chatMessages,
           message: text,
           analysisContext: chatAnalysisContext,

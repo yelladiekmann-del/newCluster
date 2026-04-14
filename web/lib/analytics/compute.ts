@@ -154,10 +154,18 @@ export function computeAnalytics(
     let meanMedianRatio: number | null = null;
     let avgSeriesScore: number | null = null;
 
-    if (dealsData && colMap.de_co_id && colMap.deal_date) {
+    if (dealsData && (colMap.de_co_id || colMap.de_co_name) && colMap.deal_date) {
+      const companyNames = new Set(members.map((m) => m.name.toLowerCase().trim()));
       const clusterDeals = dealsData.filter((d) => {
-        const id = String(d[colMap.de_co_id!] ?? "");
-        return companyIds.has(id);
+        if (colMap.de_co_id) {
+          const id = String(d[colMap.de_co_id] ?? "");
+          if (companyIds.has(id)) return true;
+        }
+        if (colMap.de_co_name) {
+          const name = String(d[colMap.de_co_name] ?? "").toLowerCase().trim();
+          if (companyNames.has(name)) return true;
+        }
+        return false;
       });
 
       // Deal count (unique deal IDs if available)

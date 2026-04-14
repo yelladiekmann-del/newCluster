@@ -157,42 +157,20 @@ async def cluster_endpoint(request: Request):
     embedded_2d = result["embedded_2d"]
     outlier_scores = result["outlier_scores"]
 
-    # Write back to Firestore companies in batches
-    companies_col = db.collection("sessions").document(session_id).collection("companies")
-    batch = db.batch()
-    batch_count = 0
+    # Companies are now persisted in Firebase Storage CSV by the Next.js app —
+    # no Firestore company writes needed here.
 
-    for i, company_id in enumerate(company_ids):
-        label = labels[i] if i < len(labels) else -1
-        cluster_id = "outliers" if label == -1 else str(label)
-        x, y = embedded_2d[i] if i < len(embedded_2d) else [0.0, 0.0]
-        score = outlier_scores[i] if i < len(outlier_scores) else 0.0
-
-        ref = companies_col.document(company_id)
-        batch.update(ref, {
-            "clusterId": cluster_id,
-            "umapX": float(x),
-            "umapY": float(y),
-            "outlierScore": round(float(score), 3),
+    # Update session metrics (best-effort)
+    try:
+        db.collection("sessions").document(session_id).update({
+            "clusterMetrics": {
+                "silhouette": result["metrics"].get("silhouette"),
+                "daviesBouldin": result["metrics"].get("davies_bouldin"),
+            },
+            "updatedAt": firestore.SERVER_TIMESTAMP,
         })
-        batch_count += 1
-
-        if batch_count >= 400:
-            batch.commit()
-            batch = db.batch()
-            batch_count = 0
-
-    if batch_count > 0:
-        batch.commit()
-
-    # Update session metrics
-    db.collection("sessions").document(session_id).update({
-        "clusterMetrics": {
-            "silhouette": result["metrics"].get("silhouette"),
-            "daviesBouldin": result["metrics"].get("davies_bouldin"),
-        },
-        "updatedAt": firestore.SERVER_TIMESTAMP,
-    })
+    except Exception:
+        pass  # non-fatal
 
     return {
         "labels": labels,

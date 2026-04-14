@@ -35,6 +35,7 @@ export function EmbedPageClient() {
 
   // Local state — not persisted until confirmed
   const [featureMatrix, setFeatureMatrix] = useState<number[][] | null>(null);
+  const [embeddingsUrl, setEmbeddingsUrl] = useState<string | null>(null);
   const [embedProgress, setEmbedProgress] = useState<{ done: number; total: number; errors: number } | null>(null);
   const [embedding, setEmbedding] = useState(false);
   const [clustering, setClustering] = useState(false);
@@ -49,7 +50,7 @@ export function EmbedPageClient() {
     nOutliers: number;
   } | null>(null);
 
-  const hasEmbeddings = !!featureMatrix || npzPreloaded;
+  const hasEmbeddings = !!featureMatrix || !!embeddingsUrl || npzPreloaded;
   const hasClusters = clusterResult !== null;
 
   // ── Embed ────────────────────────────────────────────────────────────────
@@ -101,6 +102,9 @@ export function EmbedPageClient() {
       }
 
       if (matrix.length > 0) {
+        const { saveEmbeddingsToStorage } = await import("@/lib/firebase/companies-storage");
+        const url = await saveEmbeddingsToStorage(uid!, matrix);
+        setEmbeddingsUrl(url);
         setFeatureMatrix(matrix);
         toast.success(`${matrix.length.toLocaleString()} companies embedded`);
       }
@@ -128,7 +132,7 @@ export function EmbedPageClient() {
   // ── Cluster ──────────────────────────────────────────────────────────────
 
   const handleCluster = useCallback(async () => {
-    if (!uid || !featureMatrix) return;
+    if (!uid || (!embeddingsUrl && !embeddingsStoragePath)) return;
     setClustering(true);
     setClusterProgress(0);
 
@@ -147,7 +151,8 @@ export function EmbedPageClient() {
         body: JSON.stringify({
           sessionId: uid,
           companyIds: companies.map((c) => c.id),
-          featureMatrix,
+          embeddingsUrl: embeddingsUrl ?? undefined,
+          embeddingsStoragePath: !embeddingsUrl && embeddingsStoragePath ? embeddingsStoragePath : undefined,
           minClusterSize: clusterParams.minClusterSize,
           minSamples: clusterParams.minSamples,
           clusterEpsilon: clusterParams.clusterEpsilon,
@@ -188,7 +193,7 @@ export function EmbedPageClient() {
       if (clusterTimerRef.current) clearInterval(clusterTimerRef.current);
       setClustering(false);
     }
-  }, [uid, featureMatrix, companies, clusterParams, setClusterMetrics, updateCompany]);
+  }, [uid, embeddingsUrl, embeddingsStoragePath, companies, clusterParams, setClusterMetrics, updateCompany]);
 
   // ── Confirm & name clusters ──────────────────────────────────────────────
 
