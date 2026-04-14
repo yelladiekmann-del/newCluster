@@ -99,11 +99,12 @@ export interface EmbedProgress {
   done: number;
   total: number;
   errors: number;
+  // Each row is streamed inline to avoid a large final payload
+  row: number[];
 }
 
 export interface EmbedDone {
   type: "done";
-  featureMatrix: number[][];
 }
 
 export type EmbedEvent = EmbedProgress | EmbedDone;
@@ -114,21 +115,27 @@ export async function* embedAll(
   weights?: Record<string, number> | null
 ): AsyncGenerator<EmbedEvent> {
   const w = weights ?? DEFAULT_WEIGHTS;
-  const matrix: number[][] = [];
   let errors = 0;
 
   for (let i = 0; i < companies.length; i++) {
+    let vec: number[];
     try {
-      const vec = await getPerDimensionEmbedding(companies[i].dimensions, w, apiKey);
-      matrix.push(vec);
+      vec = await getPerDimensionEmbedding(companies[i].dimensions, w, apiKey);
     } catch {
-      matrix.push(new Array(DIM_PER_FIELD * DIMENSIONS.length).fill(0));
+      vec = new Array(DIM_PER_FIELD * DIMENSIONS.length).fill(0);
       errors++;
     }
-    yield { type: "progress", done: i + 1, total: companies.length, errors };
+    // Round to 5 decimal places to keep event payloads small
+    yield {
+      type: "progress",
+      done: i + 1,
+      total: companies.length,
+      errors,
+      row: vec.map((v) => Math.round(v * 1e5) / 1e5),
+    };
   }
 
-  yield { type: "done", featureMatrix: matrix };
+  yield { type: "done" };
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

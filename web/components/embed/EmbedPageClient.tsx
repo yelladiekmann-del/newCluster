@@ -78,17 +78,17 @@ export function EmbedPageClient() {
         return;
       }
 
-      let matrix: number[][] = [];
+      const matrix: number[][] = [];
       const parser = createParser({
         onEvent: (event) => {
           const data = JSON.parse(event.data);
           if (data.type === "progress") {
             setEmbedProgress({ done: data.done, total: data.total, errors: data.errors });
-          } else if (data.type === "done") {
-            matrix = data.featureMatrix ?? data.feature_matrix;
+            if (data.row) matrix.push(data.row);
           } else if (data.type === "error") {
             toast.error(`Embedding error: ${data.message}`);
           }
+          // "done" is now just a signal — matrix is already fully accumulated
         },
       });
 
