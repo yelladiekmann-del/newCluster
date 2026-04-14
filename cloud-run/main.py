@@ -5,14 +5,19 @@ Called only from Next.js API routes with a Google ID token.
 """
 
 import json
+import logging
 import os
+import traceback
 from typing import AsyncGenerator
 
 import firebase_admin
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from firebase_admin import credentials, firestore
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 from ml_pipeline import embed_all, run_clustering
 
@@ -28,6 +33,17 @@ db = firestore.client()
 # ── FastAPI app ───────────────────────────────────────────────────────────────
 
 app = FastAPI(title="Cluster Intelligence ML Service")
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    tb = traceback.format_exc()
+    logger.error("Unhandled exception on %s:\n%s", request.url.path, tb)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": str(exc), "traceback": tb},
+    )
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -137,6 +153,14 @@ async def cluster_endpoint(request: Request):
     cluster_epsilon: float = body.get("clusterEpsilon", 0.0)
     umap_cluster_dims: int = body.get("umapClusterDims", 15)
 
+    logger.info(
+        "/cluster: sessionId=%s companies=%d matrix_shape=(%d, %s) "
+        "minClusterSize=%d minSamples=%d clusterEpsilon=%s",
+        session_id, len(company_ids),
+        len(feature_matrix), len(feature_matrix[0]) if feature_matrix else 0,
+        min_cluster_size, min_samples, cluster_epsilon,
+    )
+
     if not session_id:
         raise HTTPException(status_code=400, detail="Missing sessionId")
     if not feature_matrix:
@@ -150,8 +174,11 @@ async def cluster_endpoint(request: Request):
             cluster_epsilon=cluster_epsilon,
             umap_cluster_dims=umap_cluster_dims,
         )
+        logger.info("/cluster: done — %d clusters, %d outliers", result["n_clusters"], result["n_outliers"])
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        tb = traceback.format_exc()
+        logger.error("/cluster run_clustering failed:\n%s", tb)
+        raise HTTPException(status_code=500, detail=f"{e}\n\n{tb}")
 
     labels = result["labels"]
     embedded_2d = result["embedded_2d"]
