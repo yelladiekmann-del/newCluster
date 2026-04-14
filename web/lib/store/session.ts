@@ -28,6 +28,13 @@ export interface SessionState {
   // API key lives only in sessionStorage — never Firestore
   apiKey: string | null;
 
+  // Google OAuth token — per-user, lives in sessionStorage
+  googleAccessToken: string | null;
+
+  // Google Sheets — per-session
+  spreadsheetId: string | null;
+  spreadsheetUrl: string | null;
+
   // Setup
   pipelineStep: 0 | 1 | 2 | 3 | 4;
   companyCol: string;
@@ -62,6 +69,9 @@ export interface SessionState {
   setSessionId: (id: string | null) => void;
   setAuthUser: (user: AuthUser | null) => void;
   setApiKey: (key: string | null) => void;
+  setGoogleAccessToken: (token: string | null) => void;
+  setSpreadsheetId: (id: string | null) => void;
+  setSpreadsheetUrl: (url: string | null) => void;
   setPipelineStep: (step: 0 | 1 | 2 | 3 | 4) => void;
   setCompanyCol: (col: string) => void;
   setDescCol: (col: string | null) => void;
@@ -98,6 +108,9 @@ export const useSession = create<SessionState>((set) => ({
   sessionId: null,
   authUser: null,
   apiKey: null,
+  googleAccessToken: null,
+  spreadsheetId: null,
+  spreadsheetUrl: null,
   pipelineStep: 0,
   companyCol: "name",
   descCol: null,
@@ -120,6 +133,9 @@ export const useSession = create<SessionState>((set) => ({
   setSessionId: (sessionId) => set({ sessionId }),
   setAuthUser: (authUser) => set({ authUser }),
   setApiKey: (apiKey) => set({ apiKey }),
+  setGoogleAccessToken: (googleAccessToken) => set({ googleAccessToken }),
+  setSpreadsheetId: (spreadsheetId) => set({ spreadsheetId }),
+  setSpreadsheetUrl: (spreadsheetUrl) => set({ spreadsheetUrl }),
   setPipelineStep: (pipelineStep) => set({ pipelineStep }),
   setCompanyCol: (companyCol) => set({ companyCol }),
   setDescCol: (descCol) => set({ descCol }),
@@ -152,6 +168,8 @@ export const useSession = create<SessionState>((set) => ({
   setAnalyticsColMap: (analyticsColMap) => set({ analyticsColMap }),
   reset: () =>
     set({
+      spreadsheetId: null,
+      spreadsheetUrl: null,
       pipelineStep: 0,
       companyCol: "name",
       descCol: null,

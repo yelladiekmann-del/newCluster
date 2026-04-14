@@ -11,6 +11,7 @@ import { ArrowRight, Download } from "lucide-react";
 import { UmapScatter } from "@/components/embed/UmapScatter";
 import { saveAs } from "file-saver";
 import Papa from "papaparse";
+import { syncReviewToSheet } from "@/lib/sheets/sync";
 
 function qualityLabel(score: number): string {
   if (score >= 0.5) return "Good";
@@ -21,6 +22,14 @@ function qualityLabel(score: number): string {
 export function ReviewPageClient() {
   const router = useRouter();
   const { companies, clusters, companyCol, clusterMetrics } = useSession();
+
+  async function handleContinue() {
+    const { googleAccessToken, spreadsheetId } = useSession.getState();
+    if (googleAccessToken && spreadsheetId) {
+      syncReviewToSheet(googleAccessToken, spreadsheetId, companies, clusters).catch(() => {});
+    }
+    router.push("/analytics");
+  }
 
   const handleDownload = () => {
     const rows = companies.map((c) => {
@@ -66,7 +75,7 @@ export function ReviewPageClient() {
             <Download className="h-3.5 w-3.5" />
             Download CSV
           </Button>
-          <Button size="sm" onClick={() => router.push("/analytics")} className="gap-1.5">
+          <Button size="sm" onClick={handleContinue} className="gap-1.5">
             Continue to Analytics
             <ArrowRight className="h-3.5 w-3.5" />
           </Button>

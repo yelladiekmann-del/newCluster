@@ -11,12 +11,13 @@ function FirebaseInit() {
 }
 
 export function Providers({ children }: { children: React.ReactNode }) {
-  // Restore API key from sessionStorage on mount
+  // Restore API key + Google token from sessionStorage on mount
   useEffect(() => {
     const stored = sessionStorage.getItem("hy_gemini_key");
-    if (stored) {
-      useSession.getState().setApiKey(stored);
-    }
+    if (stored) useSession.getState().setApiKey(stored);
+
+    const googleToken = sessionStorage.getItem("hy_google_token");
+    if (googleToken) useSession.getState().setGoogleAccessToken(googleToken);
   }, []);
 
   return (

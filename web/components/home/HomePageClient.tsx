@@ -34,7 +34,11 @@ function SignInView() {
     setLoading(true);
     setError(null);
     try {
-      await signInWithGoogle();
+      const { accessToken } = await signInWithGoogle();
+      if (accessToken) {
+        sessionStorage.setItem("hy_google_token", accessToken);
+        useSession.getState().setGoogleAccessToken(accessToken);
+      }
       // onAuthChange in useFirebaseSession will update authUser in the store
     } catch (e) {
       setError(e instanceof Error ? e.message : "Sign-in failed");

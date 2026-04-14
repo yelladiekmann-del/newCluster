@@ -55,16 +55,19 @@ export function getFirebaseStorage(): FirebaseStorage {
   return storage;
 }
 
-/** Sign in with Google. Only @hy.co accounts are allowed. */
-export async function signInWithGoogle(): Promise<User> {
+/** Sign in with Google (Sheets + Drive scopes included). Only @hy.co accounts are allowed. */
+export async function signInWithGoogle(): Promise<{ user: User; accessToken: string | null }> {
   const provider = new GoogleAuthProvider();
   provider.setCustomParameters({ hd: "hy.co" }); // UX hint — real check is below
+  provider.addScope("https://www.googleapis.com/auth/spreadsheets");
+  provider.addScope("https://www.googleapis.com/auth/drive.file");
   const cred = await signInWithPopup(getFirebaseAuth(), provider);
   if (!cred.user.email?.endsWith("@hy.co")) {
     await fbSignOut(getFirebaseAuth());
     throw new Error("Only @hy.co accounts are allowed.");
   }
-  return cred.user;
+  const oauthCred = GoogleAuthProvider.credentialFromResult(cred);
+  return { user: cred.user, accessToken: oauthCred?.accessToken ?? null };
 }
 
 /** Sign out the current user. */

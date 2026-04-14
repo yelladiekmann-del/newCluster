@@ -22,7 +22,7 @@ interface ResortCluster {
 }
 
 interface BatchAssignment {
-  [index: string]: string; // "0" -> cluster name
+  [index: string]: string | Record<string, string> | undefined;
   reasons?: Record<string, string>;
 }
 

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { CheckCircle2, Circle, ChevronLeft, LogOut } from "lucide-react";
+import { CheckCircle2, Circle, ChevronLeft, LogOut, Table2 } from "lucide-react";
 import { useSession } from "@/lib/store/session";
 import { signOutUser } from "@/lib/firebase/client";
 import { cn } from "@/lib/utils";
@@ -17,7 +17,7 @@ const STEPS = [
 export function PipelineNav() {
   const pathname = usePathname();
   const router = useRouter();
-  const { pipelineStep, companies, clusters, authUser } = useSession();
+  const { pipelineStep, companies, clusters, authUser, spreadsheetUrl } = useSession();
 
   async function handleSignOut() {
     await signOutUser();
@@ -100,6 +100,19 @@ export function PipelineNav() {
             />
           )}
         </div>
+      )}
+
+      {/* View Sheet link */}
+      {spreadsheetUrl && (
+        <a
+          href={spreadsheetUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-primary px-2.5 py-1.5 transition-colors"
+        >
+          <Table2 className="h-3.5 w-3.5" />
+          View Sheet ↗
+        </a>
       )}
 
       {/* User footer */}

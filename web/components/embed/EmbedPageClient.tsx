@@ -18,6 +18,7 @@ import { createParser } from "eventsource-parser";
 import { doc, writeBatch, collection, setDoc } from "firebase/firestore";
 import { getFirebaseDb } from "@/lib/firebase/client";
 import { nameAllClusters } from "@/lib/gemini/name-clusters";
+import { syncClustersToSheet } from "@/lib/sheets/sync";
 import { CLUSTER_COLORS } from "@/types";
 import type { ClusterDoc } from "@/types";
 
@@ -255,6 +256,15 @@ export function EmbedPageClient() {
       });
 
       toast.success("Clusters named and confirmed");
+
+      // Background Sheets sync — non-blocking
+      const { googleAccessToken, spreadsheetId: sid } = useSession.getState();
+      if (googleAccessToken && sid) {
+        syncClustersToSheet(googleAccessToken, sid, useSession.getState().companies, newClusters)
+          .then(() => toast.success("Clusters synced to Google Sheets"))
+          .catch(() => {}); // silent fail
+      }
+
       router.push("/review");
     } catch (err) {
       toast.error(String(err));

@@ -55,6 +55,10 @@ export interface SessionDoc {
   // Analytics
   dealsStoragePath: string | null;
   analyticsColMap: Record<string, string>;
+
+  // Google Sheets
+  spreadsheetId: string | null;
+  spreadsheetUrl: string | null;
 }
 
 export interface ClusterParams {

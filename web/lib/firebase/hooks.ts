@@ -118,6 +118,8 @@ export async function createNewSession(authUid: string): Promise<string> {
       chatMarketContextRaw: "",
       dealsStoragePath: null,
       analyticsColMap: {},
+      spreadsheetId: null,
+      spreadsheetUrl: null,
     } satisfies Omit<SessionDoc, "userId"> & { userId: string });
   } catch (err) {
     toast.error("Failed to create session: " + (err instanceof Error ? err.message : String(err)));
@@ -161,6 +163,8 @@ export async function resumeSession(sessionId: string): Promise<number> {
   store.setChatMarketContextRaw(d.chatMarketContextRaw ?? "");
   store.setDealsStoragePath(d.dealsStoragePath ?? null);
   store.setAnalyticsColMap(d.analyticsColMap ?? {});
+  store.setSpreadsheetId(d.spreadsheetId ?? null);
+  store.setSpreadsheetUrl(d.spreadsheetUrl ?? null);
 
   const key = sessionStorage.getItem("hy_gemini_key");
   if (key) store.setApiKey(key);

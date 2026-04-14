@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { ArrowRight } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { persistSession } from "@/lib/firebase/hooks";
+import { syncSetupToSheet } from "@/lib/sheets/sync";
 
 export function SetupPageClient() {
   const router = useRouter();
@@ -40,8 +41,29 @@ export function SetupPageClient() {
     const nextStep = Math.max(pipelineStep, 1) as 1;
     setPipelineStep(nextStep);
     await persistSession(uid, { pipelineStep: nextStep });
+
+    // Background Sheets sync — non-blocking
+    const { googleAccessToken } = useSession.getState();
+    if (googleAccessToken) {
+      syncSetupToSheet(googleAccessToken, companies)
+        .then(({ spreadsheetId, spreadsheetUrl }) => {
+          useSession.getState().setSpreadsheetId(spreadsheetId);
+          useSession.getState().setSpreadsheetUrl(spreadsheetUrl);
+          persistSession(uid, { spreadsheetId, spreadsheetUrl });
+          toast.success(
+            <span>
+              Synced to Google Sheets —{" "}
+              <a href={spreadsheetUrl} target="_blank" rel="noopener noreferrer" className="underline">
+                Open ↗
+              </a>
+            </span>
+          );
+        })
+        .catch(() => {}); // silent fail
+    }
+
     router.push("/embed");
-  }, [uid, pipelineStep, setPipelineStep, router]);
+  }, [uid, pipelineStep, setPipelineStep, router, companies]);
 
   return (
     <div className="max-w-2xl mx-auto px-6 py-8 flex flex-col gap-8">
