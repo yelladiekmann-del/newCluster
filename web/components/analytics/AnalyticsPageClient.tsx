@@ -123,7 +123,7 @@ export function AnalyticsPageClient() {
   };
 
   return (
-    <div className="max-w-5xl mx-auto px-6 py-8 flex flex-col gap-8">
+    <div className="max-w-5xl mx-auto px-6 py-8 flex flex-col gap-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -183,7 +183,7 @@ export function AnalyticsPageClient() {
           <AnalyticsCharts rows={analyticsRows} />
           <Separator />
           <div>
-            <h2 className="text-lg font-semibold mb-1">Cluster Scoring</h2>
+            <h2 className="text-base font-semibold mb-1">Cluster Scoring</h2>
             <p className="text-sm text-muted-foreground mb-4">
               Configure metric directions and weights to rank clusters by your investment thesis.
             </p>

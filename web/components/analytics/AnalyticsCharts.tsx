@@ -19,8 +19,7 @@ interface Props {
 }
 
 const TEAL = "#26B4D2";
-const AMBER = "#F59E0B";
-const PURPLE = "#8B5CF6";
+const TEAL_DIM = "#26B4D280";
 
 function ChartCard({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -92,7 +91,7 @@ export function AnalyticsCharts({ rows }: Props) {
               />
               <Scatter
                 data={rows.filter((r) => r.avgYearFounded != null && r.avgEmployees != null)}
-                fill={PURPLE}
+                fill={TEAL}
                 opacity={0.75}
                 name="Cluster"
               />
@@ -110,7 +109,7 @@ export function AnalyticsCharts({ rows }: Props) {
               <XAxis type="number" tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} axisLine={false} tickLine={false} />
               <YAxis type="category" dataKey="clusterName" tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} width={100} axisLine={false} tickLine={false} />
               <Tooltip contentStyle={tooltipStyle} cursor={{ fill: "hsl(var(--muted))" }} />
-              <Bar dataKey="dealCount" name="Deals" fill={AMBER} radius={[0, 3, 3, 0]} />
+              <Bar dataKey="dealCount" name="Deals" fill={TEAL} radius={[0, 3, 3, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </ChartCard>
@@ -125,7 +124,7 @@ export function AnalyticsCharts({ rows }: Props) {
               <XAxis type="number" tickFormatter={(v) => `$${(v / 1e6).toFixed(0)}M`} tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} axisLine={false} tickLine={false} />
               <YAxis type="category" dataKey="clusterName" tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} width={100} axisLine={false} tickLine={false} />
               <Tooltip contentStyle={tooltipStyle} cursor={{ fill: "hsl(var(--muted))" }} formatter={(v) => [`$${((v as number) / 1e6).toFixed(1)}M`, "Avg raised"]} />
-              <Bar dataKey="avgFunding" name="Avg funding" fill={TEAL} radius={[0, 3, 3, 0]} opacity={0.8} />
+              <Bar dataKey="avgFunding" name="Avg funding" fill={TEAL} radius={[0, 3, 3, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </ChartCard>

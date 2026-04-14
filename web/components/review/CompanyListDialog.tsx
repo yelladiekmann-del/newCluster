@@ -7,6 +7,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -32,6 +42,12 @@ export function CompanyListDialog({ clusterId, onClose }: Props) {
   const { uid, companies, clusters, updateCompany, setClusters, descCol } = useSession();
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(0);
+  const [moveConfirm, setMoveConfirm] = useState<{
+    companyId: string;
+    companyName: string;
+    targetId: string;
+    targetName: string;
+  } | null>(null);
 
   const cluster = clusters.find((c) => c.id === clusterId);
 
@@ -81,7 +97,7 @@ export function CompanyListDialog({ clusterId, onClose }: Props) {
 
   return (
     <Dialog open={!!clusterId} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-5xl max-h-[85vh] flex flex-col gap-4">
+      <DialogContent className="max-w-[min(90vw,72rem)] max-h-[85vh] flex flex-col gap-4">
         <DialogHeader>
           <div className="flex items-center gap-3">
             {cluster?.color && (
@@ -115,7 +131,7 @@ export function CompanyListDialog({ clusterId, onClose }: Props) {
           <table className="w-full text-sm border-collapse">
             <thead className="sticky top-0 bg-muted/80 backdrop-blur-sm z-10">
               <tr>
-                <th className="text-left px-4 py-2.5 text-xs font-medium text-muted-foreground border-b border-border">
+                <th className="text-left px-4 py-2.5 text-xs font-medium text-muted-foreground border-b border-border w-48">
                   Company
                 </th>
                 {showDesc && (
@@ -123,7 +139,9 @@ export function CompanyListDialog({ clusterId, onClose }: Props) {
                     Description
                   </th>
                 )}
-                <th className="px-4 py-2.5 text-xs font-medium text-muted-foreground border-b border-border w-44" />
+                <th className="px-4 py-2.5 text-xs font-medium text-muted-foreground border-b border-border w-52">
+                  Move to
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -138,16 +156,30 @@ export function CompanyListDialog({ clusterId, onClose }: Props) {
                     {company.name}
                   </td>
                   {showDesc && (
-                    <td className="px-4 py-2.5 text-xs text-muted-foreground max-w-xs">
-                      {String(company.originalData[descCol] ?? "").slice(0, 150) || (
-                        <span className="italic opacity-50">—</span>
-                      )}
+                    <td className="px-4 py-2.5 text-xs text-muted-foreground">
+                      {(() => {
+                        const full = String(company.originalData[descCol] ?? "");
+                        return full ? (
+                          <span className="line-clamp-2" title={full}>{full}</span>
+                        ) : (
+                          <span className="italic opacity-50">—</span>
+                        );
+                      })()}
                     </td>
                   )}
-                  <td className="px-4 py-2.5">
+                  <td className="px-4 py-2.5 w-52">
                     <Select
                       value=""
-                      onValueChange={(v) => v && handleMove(company.id, v)}
+                      onValueChange={(v) => {
+                        if (!v) return;
+                        const target = nonTargetClusters.find((c) => c.id === v);
+                        setMoveConfirm({
+                          companyId: company.id,
+                          companyName: company.name,
+                          targetId: v,
+                          targetName: target?.name ?? "Outliers",
+                        });
+                      }}
                     >
                       <SelectTrigger className="h-7 text-xs w-40 border-border/60">
                         <SelectValue placeholder="Move to…" />
@@ -214,6 +246,32 @@ export function CompanyListDialog({ clusterId, onClose }: Props) {
           </div>
         )}
       </DialogContent>
+
+      {/* Move confirmation dialog */}
+      <AlertDialog open={!!moveConfirm} onOpenChange={(o) => !o && setMoveConfirm(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Move company?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Move <strong>{moveConfirm?.companyName}</strong> to{" "}
+              <strong>{moveConfirm?.targetName}</strong>?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (moveConfirm) {
+                  handleMove(moveConfirm.companyId, moveConfirm.targetId);
+                  setMoveConfirm(null);
+                }
+              }}
+            >
+              Move
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Dialog>
   );
 }

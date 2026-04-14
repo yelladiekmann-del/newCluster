@@ -13,6 +13,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { RotateCcw } from "lucide-react";
+import { InfoTooltip } from "@/components/ui/tooltip";
 import type { ClusterMetricsRow } from "@/types";
 import type { ScoringConfig, Direction, MetricConfig, GroupConfig } from "@/lib/analytics/scoring";
 import { computeScores, buildJustification, METRIC_GROUP_MAP } from "@/lib/analytics/scoring";
@@ -192,16 +193,25 @@ export function ScoringPanel({ rows, hasDeals, clusterColors }: Props) {
                 Category
               </th>
               <th className="px-3 py-2.5 text-center text-[11px] font-medium text-muted-foreground w-24 border-l border-border/30">
-                Group weight
+                <span className="inline-flex items-center gap-0.5">
+                  Group wt.
+                  <InfoTooltip content="Multiplies all metric scores in this group relative to other groups. Higher = this group matters more overall." />
+                </span>
               </th>
               <th className="px-4 py-2.5 text-left text-[11px] font-medium text-muted-foreground border-l border-border/30">
                 Metric
               </th>
               <th className="px-3 py-2.5 text-center text-[11px] font-medium text-muted-foreground w-28 border-l border-border/30">
-                Direction
+                <span className="inline-flex items-center gap-0.5">
+                  Direction
+                  <InfoTooltip content="Max: higher values rank better · Min: lower values rank better · Neutral: excluded from scoring" />
+                </span>
               </th>
               <th className="px-3 py-2.5 text-center text-[11px] font-medium text-muted-foreground w-24 border-l border-border/30">
-                Weight
+                <span className="inline-flex items-center gap-0.5">
+                  Weight
+                  <InfoTooltip content="Importance of this metric within its group (0 = excluded, 4 = strongest influence)" />
+                </span>
               </th>
               <th className="px-4 py-2.5 text-left text-[11px] font-medium text-muted-foreground border-l border-border/30">
                 Justification

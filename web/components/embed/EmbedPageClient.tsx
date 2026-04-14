@@ -318,7 +318,7 @@ export function EmbedPageClient() {
     : 0;
 
   return (
-    <div className="max-w-3xl mx-auto px-6 py-8 flex flex-col gap-6">
+    <div className="max-w-3xl mx-auto px-6 py-8 pb-24 flex flex-col gap-6">
       <div>
         <h1 className="text-2xl font-bold">Embed & Cluster</h1>
         <p className="text-sm text-muted-foreground mt-1">
@@ -421,28 +421,26 @@ export function EmbedPageClient() {
         )}
       </section>
 
-      {/* Confirm CTA */}
+      {/* Sticky bottom action bar — visible once clusters exist */}
       {hasClusters && (
-        <>
-          <Separator />
-          <section className="flex flex-col gap-3">
-            <p className="text-xs text-muted-foreground">
-              Gemini will name each cluster and generate descriptions, then take you to the review page.
-            </p>
-            <Button
-              onClick={handleConfirm}
-              disabled={!apiKey || confirming}
-              className="self-start gap-2"
-            >
-              {confirming ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <Sparkles className="h-3.5 w-3.5" />
-              )}
-              {confirming ? "Naming clusters…" : "Confirm & name clusters →"}
-            </Button>
-          </section>
-        </>
+        <div className="fixed bottom-0 left-0 right-0 z-10 bg-background/95 backdrop-blur-sm border-t border-border px-6 py-3 flex items-center justify-between">
+          <p className="text-xs text-muted-foreground">
+            Gemini will name each cluster and generate descriptions.
+          </p>
+          <Button
+            onClick={handleConfirm}
+            disabled={!apiKey || confirming}
+            className="gap-2"
+          >
+            {confirming ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Sparkles className="h-3.5 w-3.5" />
+            )}
+            {confirming ? "Naming clusters…" : "Confirm & name clusters"}
+            {!confirming && <ArrowRight className="h-4 w-4" />}
+          </Button>
+        </div>
       )}
     </div>
   );

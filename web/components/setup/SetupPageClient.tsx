@@ -43,9 +43,9 @@ export function SetupPageClient() {
     await persistSession(uid, { pipelineStep: nextStep });
 
     // Background Sheets sync — non-blocking
-    const { googleAccessToken } = useSession.getState();
+    const { googleAccessToken, sessionName } = useSession.getState();
     if (googleAccessToken) {
-      syncSetupToSheet(googleAccessToken, companies)
+      syncSetupToSheet(googleAccessToken, companies, sessionName)
         .then(({ spreadsheetId, spreadsheetUrl }) => {
           useSession.getState().setSpreadsheetId(spreadsheetId);
           useSession.getState().setSpreadsheetUrl(spreadsheetUrl);
@@ -68,7 +68,7 @@ export function SetupPageClient() {
   }, [uid, pipelineStep, setPipelineStep, router, companies]);
 
   return (
-    <div className="max-w-2xl mx-auto px-6 py-8 flex flex-col gap-6">
+    <div className="max-w-2xl mx-auto px-6 py-8 pb-24 flex flex-col gap-6">
       {/* Header */}
       <div>
         <h1 className="text-2xl font-bold text-foreground">Setup</h1>
@@ -108,8 +108,8 @@ export function SetupPageClient() {
         )}
       </div>
 
-      {/* Continue CTA */}
-      <div className="flex justify-end pt-2">
+      {/* Sticky bottom action bar */}
+      <div className="fixed bottom-0 left-0 right-0 z-10 bg-background/95 backdrop-blur-sm border-t border-border px-6 py-3 flex items-center justify-end">
         <Button
           onClick={handleContinue}
           disabled={!canContinue}

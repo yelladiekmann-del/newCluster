@@ -7,7 +7,17 @@ import { fetchMarketContext, buildSystemContext } from "@/lib/gemini/chat";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Sparkles, Send, Loader2, CheckCircle2, XCircle } from "lucide-react";
+import { Sparkles, Send, Loader2, CheckCircle2, XCircle, AlertTriangle } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { doc, collection, setDoc, writeBatch } from "firebase/firestore";
 import { getFirebaseDb } from "@/lib/firebase/client";
 import { toast } from "sonner";
@@ -63,6 +73,7 @@ export function AiChatPanel() {
   const [loading, setLoading] = useState(false);
   const [contextInput, setContextInput] = useState("");
   const [pendingActions, setPendingActions] = useState<ClusterAction[] | null>(null);
+  const [applyConfirm, setApplyConfirm] = useState<{ actions: ClusterAction[]; label: string } | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -105,7 +116,7 @@ export function AiChatPanel() {
 
   // ── Send message ─────────────────────────────────────────────────────────
 
-  const handleSend = useCallback(async (messageText?: string) => {
+  const handleSend = useCallback(async (messageText?: string, displayOverride?: string) => {
     const text = messageText ?? input.trim();
     if (!text || !apiKey || loading) return;
     setInput("");
@@ -114,7 +125,7 @@ export function AiChatPanel() {
     const userMsg: ChatMessage = {
       id: `msg_${Date.now()}`,
       role: "user",
-      content: text,
+      content: displayOverride ?? text,   // short label shown in bubble; full prompt sent to API
       timestamp: Date.now(),
       actions: null,
     };
@@ -131,7 +142,7 @@ export function AiChatPanel() {
           clusters,
           companies: companies.map(({ id, name, dimensions, clusterId }) => ({ id, name, dimensions, clusterId })),
           history: chatMessages,
-          message: text,
+          message: text,   // always send the full/expanded text to the API
           analysisContext: chatAnalysisContext,
           marketContext: chatMarketContextRaw,
         }),
@@ -282,7 +293,7 @@ export function AiChatPanel() {
           {SUGGESTED_PROMPTS.map((p) => (
             <button
               key={p}
-              onClick={() => handleSend(expandPrompt(p))}
+              onClick={() => handleSend(expandPrompt(p), p)}
               className="text-xs px-2.5 py-1 rounded-full border border-border text-muted-foreground hover:text-primary hover:border-primary transition-colors"
             >
               {p}
@@ -330,28 +341,31 @@ export function AiChatPanel() {
         <div className="px-4 pb-2">
           <div className="rounded-lg border border-border bg-card p-3 flex flex-col gap-2">
             <p className="text-xs font-semibold">Suggested actions</p>
-            {pendingActions.map((action, i) => (
-              <div key={i} className="flex items-center justify-between gap-2">
-                <span className="text-xs text-muted-foreground">
-                  {action.type === "delete" && `Delete "${action.clusterName}"`}
-                  {action.type === "merge" && `Merge → "${action.newName}"`}
-                  {action.type === "add" && `Add cluster "${action.name}"`}
-                </span>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="h-6 text-xs"
-                  onClick={() => {
-                    applyAction(action);
-                    setPendingActions((prev) => prev?.filter((_, j) => j !== i) ?? null);
-                  }}
-                >
-                  Apply
-                </Button>
-              </div>
-            ))}
+            {pendingActions.map((action, i) => {
+              const actionLabel =
+                action.type === "delete" ? `Delete "${action.clusterName}"` :
+                action.type === "merge" ? `Merge → "${action.newName}"` :
+                `Add cluster "${action.name}"`;
+              return (
+                <div key={i} className="flex items-center justify-between gap-2">
+                  <span className="text-xs text-muted-foreground">{actionLabel}</span>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-6 text-xs"
+                    onClick={() => setApplyConfirm({ actions: [action], label: actionLabel })}
+                  >
+                    Apply
+                  </Button>
+                </div>
+              );
+            })}
             <div className="flex gap-2 mt-1">
-              <Button size="sm" className="h-7 text-xs gap-1" onClick={applyAllActions}>
+              <Button
+                size="sm"
+                className="h-7 text-xs gap-1"
+                onClick={() => setApplyConfirm({ actions: pendingActions, label: `Apply all ${pendingActions.length} actions` })}
+              >
                 <CheckCircle2 className="h-3 w-3" />
                 Apply all
               </Button>
@@ -387,6 +401,48 @@ export function AiChatPanel() {
           <Send className="h-3.5 w-3.5" />
         </Button>
       </div>
+
+      {/* Apply-actions confirmation dialog */}
+      <AlertDialog open={!!applyConfirm} onOpenChange={(o) => !o && setApplyConfirm(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4 text-amber-500" />
+              Apply cluster changes?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              <div className="flex flex-col gap-1 text-sm">
+                {applyConfirm?.actions.map((a, i) => (
+                  <span key={i} className="text-foreground">
+                    {a.type === "delete" && `• Delete cluster "${a.clusterName}"`}
+                    {a.type === "merge" && `• Merge ${a.sources.join(", ")} → "${a.newName}"`}
+                    {a.type === "add" && `• Add cluster "${a.name}" (${a.companies.length} companies)`}
+                  </span>
+                ))}
+                <span className="text-muted-foreground text-xs mt-1">This cannot be undone.</span>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={async () => {
+                if (!applyConfirm) return;
+                const actionsToApply = applyConfirm.actions;
+                setApplyConfirm(null);
+                for (const action of actionsToApply) {
+                  await applyAction(action);
+                }
+                setPendingActions((prev) =>
+                  prev?.filter((a) => !actionsToApply.includes(a)) ?? null
+                );
+              }}
+            >
+              Apply
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

@@ -65,10 +65,12 @@ function setColumnWidth(sheetId: number, columnIndex: number, widthPx: number) {
  */
 export async function syncSetupToSheet(
   token: string,
-  companies: CompanyDoc[]
+  companies: CompanyDoc[],
+  sessionName?: string | null
 ): Promise<{ spreadsheetId: string; spreadsheetUrl: string }> {
   const n = companies.length;
-  const title = `Cluster Intelligence – ${n} companies – ${todayLabel()}`;
+  const prefix = sessionName ? `${sessionName} – ` : "";
+  const title = `${prefix}${n} companies – ${todayLabel()}`;
 
   const { spreadsheetId, spreadsheetUrl } = await createSpreadsheet(token, title, "Companies");
 
@@ -218,7 +220,7 @@ export async function syncReviewToSheet(
     return (a.clusterId ?? "").localeCompare(b.clusterId ?? "");
   });
 
-  const header = [`Company — Last updated after review: ${todayLabel()}`, "Cluster", "Outlier Score", "UMAP X", "UMAP Y"];
+  const header = [`Company — Last updated after review: ${todayLabel()}`, "Cluster", "UMAP X", "UMAP Y"];
   const rows = sorted.map((c) => {
     const clusterId = c.clusterId ?? "outliers";
     return [
