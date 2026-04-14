@@ -170,42 +170,40 @@ export function AiChatPanel() {
 
     const { clusters: currentClusters, companies: currentCompanies, setClusters, setCompanies } = useSession.getState();
 
+    const { saveCompaniesToStorage } = await import("@/lib/firebase/companies-storage");
+
     if (action.type === "delete") {
       const target = currentClusters.find(c => c.name === action.clusterName);
       if (!target) { toast.error(`Cluster "${action.clusterName}" not found`); return; }
-      const affected = currentCompanies.filter(c => c.clusterId === target.id);
-      for (const c of affected) {
-        batch.update(doc(db, "sessions", uid, "companies", c.id), { clusterId: "outliers" });
-      }
       batch.delete(doc(db, "sessions", uid, "clusters", target.id));
       await batch.commit();
-      setCompanies(currentCompanies.map(c => c.clusterId === target.id ? { ...c, clusterId: "outliers" } : c));
-      setClusters(currentClusters.filter(c => c.id !== target.id).map(c => c.id === "outliers" ? { ...c, companyCount: c.companyCount + affected.length } : c));
+      const updatedCompanies = currentCompanies.map(c => c.clusterId === target.id ? { ...c, clusterId: "outliers" } : c);
+      const affected = currentCompanies.filter(c => c.clusterId === target.id).length;
+      setCompanies(updatedCompanies);
+      setClusters(currentClusters.filter(c => c.id !== target.id).map(c => c.id === "outliers" ? { ...c, companyCount: c.companyCount + affected } : c));
+      await saveCompaniesToStorage(uid, updatedCompanies);
       toast.success(`Deleted "${action.clusterName}"`);
     }
 
     if (action.type === "merge") {
       const sources = action.sources.map(name => currentClusters.find(c => c.name === name)).filter(Boolean);
       if (sources.length < 2) { toast.error("Could not find source clusters to merge"); return; }
-      // Create new cluster
       const newId = `merged_${Date.now()}`;
       const newCluster = { id: newId, name: action.newName, description: "", color: "#26B4D2", isOutliers: false, companyCount: 0 };
       batch.set(doc(db, "sessions", uid, "clusters", newId), newCluster);
+      const sourceIds = new Set(sources.map(s => s?.id));
       let count = 0;
       for (const src of sources) {
         if (!src) continue;
-        const affected = currentCompanies.filter(c => c.clusterId === src.id);
-        count += affected.length;
-        for (const c of affected) {
-          batch.update(doc(db, "sessions", uid, "companies", c.id), { clusterId: newId });
-        }
+        count += currentCompanies.filter(c => c.clusterId === src.id).length;
         batch.delete(doc(db, "sessions", uid, "clusters", src.id));
       }
       batch.update(doc(db, "sessions", uid, "clusters", newId), { companyCount: count });
       await batch.commit();
-      const sourceIds = new Set(sources.map(s => s?.id));
-      setCompanies(currentCompanies.map(c => sourceIds.has(c.clusterId ?? "") ? { ...c, clusterId: newId } : c));
+      const updatedCompanies = currentCompanies.map(c => sourceIds.has(c.clusterId ?? "") ? { ...c, clusterId: newId } : c);
+      setCompanies(updatedCompanies);
       setClusters([...currentClusters.filter(c => !sourceIds.has(c.id)), { ...newCluster, companyCount: count }]);
+      await saveCompaniesToStorage(uid, updatedCompanies);
       toast.success(`Merged into "${action.newName}"`);
     }
 
@@ -214,14 +212,13 @@ export function AiChatPanel() {
       const newCluster = { id: newId, name: action.name, description: action.description, color: "#8B5CF6", isOutliers: false, companyCount: 0 };
       batch.set(doc(db, "sessions", uid, "clusters", newId), newCluster);
       const matchedCompanies = currentCompanies.filter(c => action.companies.some(name => c.name.toLowerCase() === name.toLowerCase()));
-      for (const c of matchedCompanies) {
-        batch.update(doc(db, "sessions", uid, "companies", c.id), { clusterId: newId });
-      }
       batch.update(doc(db, "sessions", uid, "clusters", newId), { companyCount: matchedCompanies.length });
       await batch.commit();
       const matchedIds = new Set(matchedCompanies.map(c => c.id));
-      setCompanies(currentCompanies.map(c => matchedIds.has(c.id) ? { ...c, clusterId: newId } : c));
+      const updatedCompanies = currentCompanies.map(c => matchedIds.has(c.id) ? { ...c, clusterId: newId } : c);
+      setCompanies(updatedCompanies);
       setClusters([...currentClusters, { ...newCluster, companyCount: matchedCompanies.length }]);
+      await saveCompaniesToStorage(uid, updatedCompanies);
       toast.success(`Added cluster "${action.name}" with ${matchedCompanies.length} companies`);
     }
   }, [uid]);

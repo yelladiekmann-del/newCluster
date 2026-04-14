@@ -175,7 +175,7 @@ export async function resumeSession(sessionId: string): Promise<number> {
   if (key) store.setApiKey(key);
 
   const [companies, clusters, msgs] = await Promise.all([
-    loadCompanies(sessionId),
+    loadCompanies(sessionId, d.companyCol ?? "name"),
     loadClusters(sessionId),
     loadChatHistory(sessionId),
   ]);
@@ -189,12 +189,31 @@ export async function resumeSession(sessionId: string): Promise<number> {
 
 // ── Sub-collection loaders ────────────────────────────────────────────────────
 
-export async function loadCompanies(uid: string): Promise<CompanyDoc[]> {
-  const db = getFirebaseDb();
-  const snap = await getDocs(collection(db, "sessions", uid, "companies"));
-  const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() } as CompanyDoc));
-  docs.sort((a, b) => a.rowIndex - b.rowIndex);
-  return docs;
+export async function loadCompanies(uid: string, companyCol = "name"): Promise<CompanyDoc[]> {
+  // Try Storage first (new path). Fall back to Firestore for old sessions
+  // and immediately migrate them to Storage.
+  try {
+    const { loadCompaniesFromStorage, saveCompaniesToStorage } = await import("./companies-storage");
+    const docs = await loadCompaniesFromStorage(uid, companyCol);
+    if (docs.length > 0) return docs;
+    // Empty file — fall through to Firestore
+    throw new Error("empty");
+  } catch {
+    // Firestore fallback for legacy sessions
+    const db = getFirebaseDb();
+    const snap = await getDocs(collection(db, "sessions", uid, "companies"));
+    if (snap.empty) return [];
+    const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() } as CompanyDoc));
+    docs.sort((a, b) => a.rowIndex - b.rowIndex);
+    // Migrate to Storage so future resumes are fast
+    try {
+      const { saveCompaniesToStorage } = await import("./companies-storage");
+      await saveCompaniesToStorage(uid, docs);
+    } catch {
+      // Migration failure is non-fatal
+    }
+    return docs;
+  }
 }
 
 export async function loadClusters(uid: string): Promise<ClusterDoc[]> {

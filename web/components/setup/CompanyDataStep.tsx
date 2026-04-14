@@ -10,11 +10,10 @@ import { Progress } from "@/components/ui/progress";
 import { FileUploadZone } from "@/components/ui/file-upload-zone";
 import { useSession } from "@/lib/store/session";
 import { persistSession } from "@/lib/firebase/hooks";
+import { saveCompaniesToStorage } from "@/lib/firebase/companies-storage";
 import { toast } from "sonner";
 import type { CompanyDoc } from "@/types";
 import { DIMENSIONS } from "@/types";
-import { doc, writeBatch } from "firebase/firestore";
-import { getFirebaseDb } from "@/lib/firebase/client";
 import { ref, uploadBytesResumable } from "firebase/storage";
 import { getFirebaseStorage } from "@/lib/firebase/client";
 import { saveAs } from "file-saver";
@@ -35,7 +34,6 @@ export function CompanyDataStep() {
     setPipelineStep,
   } = useSession();
 
-  const [columns, setColumns] = useState<string[]>([]);
   const [uploadPct, setUploadPct] = useState<number | null>(null);
 
   // Dimension extraction state
@@ -97,19 +95,11 @@ export function CompanyDataStep() {
       }
 
       if (results.length === companiesSnap.length) {
-        const db = getFirebaseDb();
         const updatedCompanies = companiesSnap.map((c, i) => ({ ...c, dimensions: results[i] ?? {} }));
 
-        const batchSize = 400;
-        for (let i = 0; i < updatedCompanies.length; i += batchSize) {
-          const batch = writeBatch(db);
-          for (const c of updatedCompanies.slice(i, i + batchSize)) {
-            batch.update(doc(db, "sessions", currentUid, "companies", c.id), { dimensions: c.dimensions });
-          }
-          await batch.commit();
-        }
-
         setCompanies(updatedCompanies);
+        await saveCompaniesToStorage(currentUid, updatedCompanies);
+
         const nextStep = Math.max(pipelineStep, 1) as 1;
         setPipelineStep(nextStep);
         await persistSession(currentUid, { pipelineStep: nextStep });
@@ -133,7 +123,6 @@ export function CompanyDataStep() {
           if (!rows.length) { toast.error("File appears to be empty"); return; }
 
           const cols = Object.keys(rows[0]);
-          setColumns(cols);
 
           // Auto-detect standard column names
           const nameCol =
@@ -173,22 +162,14 @@ export function CompanyDataStep() {
             return;
           }
 
+          // Populate store immediately — no Firestore wait
+          setCompanies(companyDocs);
+
           // Show progress bar immediately for visual feedback
           setUploadPct(0);
 
           (async () => {
             try {
-              const db = getFirebaseDb();
-              // Full CompanyDoc includes originalData (all CSV columns + descriptions),
-              // so keep batches small to stay under Firestore's 10MB batch limit.
-              const batchSize = 50;
-              for (let i = 0; i < companyDocs.length; i += batchSize) {
-                const batch = writeBatch(db);
-                for (const c of companyDocs.slice(i, i + batchSize)) {
-                  batch.set(doc(db, "sessions", uid, "companies", c.id), c);
-                }
-                await batch.commit();
-              }
               const storage = getFirebaseStorage();
               const task = uploadBytesResumable(ref(storage, `sessions/${uid}/companies.csv`), file);
               await new Promise<void>((resolve, reject) => {
@@ -201,9 +182,6 @@ export function CompanyDataStep() {
               });
               setUploadPct(null);
               await persistSession(uid, { companyCol: nameCol, descCol: dCol, pipelineStep: 0 });
-
-              // Populate store only after everything is saved — keeps UI ordering correct
-              setCompanies(companyDocs);
               toast.success(`${rows.length.toLocaleString()} companies loaded`);
 
               // Auto-extract only if dims are NOT already in the CSV
@@ -213,6 +191,7 @@ export function CompanyDataStep() {
               }
             } catch (err) {
               toast.error("Save failed — " + (err instanceof Error ? err.message : String(err)));
+              setUploadPct(null);
             }
           })();
         },

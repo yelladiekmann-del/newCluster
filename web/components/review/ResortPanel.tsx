@@ -4,8 +4,7 @@ import { useState, useCallback } from "react";
 import { useSession } from "@/lib/store/session";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
-import { doc, writeBatch } from "firebase/firestore";
-import { getFirebaseDb } from "@/lib/firebase/client";
+import { saveCompaniesToStorage } from "@/lib/firebase/companies-storage";
 import { createParser } from "eventsource-parser";
 import { toast } from "sonner";
 import { Loader2, Shuffle, ChevronDown, ChevronUp } from "lucide-react";
@@ -86,17 +85,12 @@ export function ResortPanel() {
 
       if (Object.keys(finalAssignments).length === 0) return;
 
-      // Apply assignments to Firestore + local state
-      const db = getFirebaseDb();
+      // Apply assignments to local state + persist to Storage
       const { companies: currentCompanies, clusters: currentClusters, setCompanies, setClusters } =
         useSession.getState();
 
       const switches: SortReport["switches"] = [];
       const nOutliersBefore = currentCompanies.filter((c) => c.clusterId === "outliers").length;
-
-      // Batch writes in groups of 400
-      let batch = writeBatch(db);
-      let batchCount = 0;
 
       const updatedCompanies = currentCompanies.map((company) => {
         const newClusterName = finalAssignments[company.id];
@@ -115,23 +109,11 @@ export function ResortPanel() {
           reason: finalReasons[company.id],
         });
 
-        batch.update(doc(db, "sessions", uid, "companies", company.id), {
-          clusterId: newClusterId,
-        });
-        batchCount++;
-
-        if (batchCount >= 400) {
-          batch.commit();
-          batch = writeBatch(db);
-          batchCount = 0;
-        }
-
         return { ...company, clusterId: newClusterId };
       });
 
-      if (batchCount > 0) await batch.commit();
-
       setCompanies(updatedCompanies);
+      await saveCompaniesToStorage(uid, updatedCompanies);
 
       // Recompute cluster counts
       const countMap: Record<string, number> = {};

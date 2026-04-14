@@ -246,6 +246,10 @@ export function EmbedPageClient() {
       setClusters(newClusters);
       setClustersConfirmed(true);
 
+      // Persist clusterId/umapX/umapY to Storage CSV
+      const { saveCompaniesToStorage } = await import("@/lib/firebase/companies-storage");
+      await saveCompaniesToStorage(uid, useSession.getState().companies);
+
       const nextStep = Math.max(pipelineStep, 3) as 3;
       setPipelineStep(nextStep);
       await persistSession(uid, {
