@@ -59,7 +59,9 @@ export function SetupPageClient() {
             </span>
           );
         })
-        .catch(() => {}); // silent fail
+        .catch((err) => toast.error(`Sheets sync failed: ${err instanceof Error ? err.message : String(err)}`));
+    } else {
+      toast.warning("No Google token — sign out and sign back in to enable Sheets sync");
     }
 
     router.push("/embed");
