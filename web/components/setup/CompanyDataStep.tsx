@@ -21,7 +21,7 @@ import type { CompanyDoc } from "@/types";
 import { DIMENSIONS } from "@/types";
 import { doc, writeBatch } from "firebase/firestore";
 import { getFirebaseDb } from "@/lib/firebase/client";
-import { ref, uploadBytes } from "firebase/storage";
+import { ref, uploadBytesResumable } from "firebase/storage";
 import { getFirebaseStorage } from "@/lib/firebase/client";
 import { saveAs } from "file-saver";
 import Papa from "papaparse";
@@ -44,6 +44,7 @@ export function CompanyDataStep() {
   const [columns, setColumns] = useState<string[]>([]);
   const [preview, setPreview] = useState<Record<string, unknown>[]>([]);
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [uploadPct, setUploadPct] = useState<number | null>(null);
 
   // Dimension extraction state
   const [extractProgress, setExtractProgress] = useState<{ done: number; total: number; errors: number } | null>(null);
@@ -189,7 +190,17 @@ export function CompanyDataStep() {
                 await batch.commit();
               }
               const storage = getFirebaseStorage();
-              await uploadBytes(ref(storage, `sessions/${uid}/companies.csv`), file);
+              const task = uploadBytesResumable(ref(storage, `sessions/${uid}/companies.csv`), file);
+              setUploadPct(0);
+              await new Promise<void>((resolve, reject) => {
+                task.on(
+                  "state_changed",
+                  (snap) => setUploadPct(Math.round((snap.bytesTransferred / snap.totalBytes) * 100)),
+                  reject,
+                  resolve
+                );
+              });
+              setUploadPct(null);
               await persistSession(uid, { companyCol: nameCol, descCol: dCol, pipelineStep: 0 });
               toast.success(`${rows.length.toLocaleString()} companies loaded`);
 
@@ -245,7 +256,12 @@ export function CompanyDataStep() {
             replaceLabel="Drop a new file to replace"
             idleLabel="Drop CSV / Excel here or browse"
             hint=".csv, .xlsx, .xls"
+            disabled={uploadPct !== null}
           />
+
+          {uploadPct !== null && (
+            <Progress value={uploadPct} className="h-1.5" />
+          )}
 
           {/* Preview */}
           {preview.length > 0 && (
