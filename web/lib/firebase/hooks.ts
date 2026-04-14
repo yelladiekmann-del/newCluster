@@ -66,6 +66,7 @@ export function attachSessionListener(sessionId: string): () => void {
     setChatMarketContextRaw,
     setDealsStoragePath,
     setAnalyticsColMap,
+    setSessionName,
   } = useSession.getState();
 
   const unsub = onSnapshot(doc(db, "sessions", sessionId), (s) => {
@@ -85,6 +86,7 @@ export function attachSessionListener(sessionId: string): () => void {
     setChatMarketContextRaw(d.chatMarketContextRaw ?? "");
     setDealsStoragePath(d.dealsStoragePath ?? null);
     setAnalyticsColMap(d.analyticsColMap ?? {});
+    setSessionName(d.name ?? null);
   });
 
   activeSessionUnsub = unsub;
@@ -94,7 +96,7 @@ export function attachSessionListener(sessionId: string): () => void {
 // ── Session creation / resume ─────────────────────────────────────────────────
 
 /** Creates a new session doc in Firestore and initialises the Zustand store. */
-export async function createNewSession(authUid: string): Promise<string> {
+export async function createNewSession(authUid: string, name?: string): Promise<string> {
   const sessionId = crypto.randomUUID();
   const db = getFirebaseDb();
   const now = Date.now();
@@ -120,6 +122,7 @@ export async function createNewSession(authUid: string): Promise<string> {
       analyticsColMap: {},
       spreadsheetId: null,
       spreadsheetUrl: null,
+      name: name ?? "Untitled session",
     } satisfies Omit<SessionDoc, "userId"> & { userId: string });
   } catch (err) {
     toast.error("Failed to create session: " + (err instanceof Error ? err.message : String(err)));
@@ -130,6 +133,7 @@ export async function createNewSession(authUid: string): Promise<string> {
   store.reset();
   store.setUid(sessionId);
   store.setSessionId(sessionId);
+  store.setSessionName(name ?? "Untitled session");
 
   const key = sessionStorage.getItem("hy_gemini_key");
   if (key) store.setApiKey(key);
@@ -165,6 +169,7 @@ export async function resumeSession(sessionId: string): Promise<number> {
   store.setAnalyticsColMap(d.analyticsColMap ?? {});
   store.setSpreadsheetId(d.spreadsheetId ?? null);
   store.setSpreadsheetUrl(d.spreadsheetUrl ?? null);
+  store.setSessionName(d.name ?? null);
 
   const key = sessionStorage.getItem("hy_gemini_key");
   if (key) store.setApiKey(key);

@@ -64,6 +64,9 @@ export interface SessionState {
   dealsStoragePath: string | null;
   analyticsColMap: AnalyticsColMap;
 
+  // Display
+  sessionName: string | null;
+
   // Actions
   setUid: (uid: string | null) => void;
   setSessionId: (id: string | null) => void;
@@ -92,6 +95,7 @@ export interface SessionState {
   setChatMarketContextRaw: (s: string) => void;
   setDealsStoragePath: (path: string | null) => void;
   setAnalyticsColMap: (map: AnalyticsColMap) => void;
+  setSessionName: (name: string | null) => void;
   /** Full reset — called when starting a new session */
   reset: () => void;
 }
@@ -127,6 +131,7 @@ export const useSession = create<SessionState>((set) => ({
   chatMarketContextRaw: "",
   dealsStoragePath: null,
   analyticsColMap: {},
+  sessionName: null,
 
   setUid: (uid) => set({ uid }),
   setSessionId: (sessionId) => set({ sessionId }),
@@ -165,6 +170,7 @@ export const useSession = create<SessionState>((set) => ({
     set({ chatMarketContextRaw }),
   setDealsStoragePath: (dealsStoragePath) => set({ dealsStoragePath }),
   setAnalyticsColMap: (analyticsColMap) => set({ analyticsColMap }),
+  setSessionName: (sessionName) => set({ sessionName }),
   reset: () =>
     set({
       spreadsheetId: null,
@@ -186,5 +192,6 @@ export const useSession = create<SessionState>((set) => ({
       chatMarketContextRaw: "",
       dealsStoragePath: null,
       analyticsColMap: {},
+      sessionName: null,
     }),
 }));

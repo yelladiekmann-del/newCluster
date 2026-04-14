@@ -173,10 +173,14 @@ export function CompanyDataStep() {
 
           setCompanyCol(nameCol);
           setDescCol(dCol);
-          setCompanies(companyDocs);
           autoExtractTriggered.current = false;
 
-          if (!uid) { toast.warning("Not signed in — data loaded locally but not saved"); return; }
+          if (!uid) {
+            // Offline fallback — populate store immediately, no upload
+            setCompanies(companyDocs);
+            toast.warning("Not signed in — data loaded locally but not saved");
+            return;
+          }
 
           (async () => {
             try {
@@ -202,6 +206,9 @@ export function CompanyDataStep() {
               });
               setUploadPct(null);
               await persistSession(uid, { companyCol: nameCol, descCol: dCol, pipelineStep: 0 });
+
+              // Populate store only after everything is saved — keeps UI ordering correct
+              setCompanies(companyDocs);
               toast.success(`${rows.length.toLocaleString()} companies loaded`);
 
               // Auto-extract only if dims are NOT already in the CSV

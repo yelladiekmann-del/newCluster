@@ -59,6 +59,9 @@ export interface SessionDoc {
   // Google Sheets
   spreadsheetId: string | null;
   spreadsheetUrl: string | null;
+
+  // Display
+  name?: string;
 }
 
 export interface ClusterParams {

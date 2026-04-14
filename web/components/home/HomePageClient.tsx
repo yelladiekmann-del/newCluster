@@ -9,7 +9,16 @@ import { useSession } from "@/lib/store/session";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card";
-import { Plus, LogOut, ArrowRight, Clock } from "lucide-react";
+import { Plus, LogOut, ArrowRight, Clock, Loader2 } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import type { SessionDoc } from "@/types";
 
 type SessionRow = SessionDoc & { id: string };
@@ -87,6 +96,8 @@ function SessionsView({ authUid }: { authUid: string }) {
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [resuming, setResuming] = useState<string | null>(null);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [newName, setNewName] = useState("");
 
   useEffect(() => {
     const db = getFirebaseDb();
@@ -103,12 +114,14 @@ function SessionsView({ authUid }: { authUid: string }) {
   }, [authUid]);
 
   async function handleNew() {
+    setDialogOpen(false);
     setCreating(true);
     try {
-      await createNewSession(authUid);
+      await createNewSession(authUid, newName.trim() || "Untitled session");
       router.push("/setup");
     } finally {
       setCreating(false);
+      setNewName("");
     }
   }
 
@@ -164,8 +177,8 @@ function SessionsView({ authUid }: { authUid: string }) {
               Each session is an independent clustering run.
             </p>
           </div>
-          <Button onClick={handleNew} disabled={creating} className="gap-1.5">
-            <Plus className="h-4 w-4" />
+          <Button onClick={() => setDialogOpen(true)} disabled={creating} className="gap-1.5">
+            {creating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
             {creating ? "Creating…" : "New Session"}
           </Button>
         </div>
@@ -175,7 +188,7 @@ function SessionsView({ authUid }: { authUid: string }) {
         ) : sessions.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 gap-4 text-center">
             <p className="text-muted-foreground text-sm">No sessions yet.</p>
-            <Button onClick={handleNew} disabled={creating} className="gap-1.5">
+            <Button onClick={() => setDialogOpen(true)} disabled={creating} className="gap-1.5">
               <Plus className="h-4 w-4" />
               Start your first session
             </Button>
@@ -187,16 +200,16 @@ function SessionsView({ authUid }: { authUid: string }) {
                 <CardHeader className="pb-2">
                   <div className="flex items-start justify-between gap-2">
                     <div>
-                      <p className="text-sm font-medium">
+                      <p className="text-sm font-semibold">
+                        {s.name ?? "Untitled session"}
+                      </p>
+                      <div className="flex items-center gap-1.5 mt-1 text-xs text-muted-foreground">
+                        <Clock className="h-3 w-3" />
                         {new Date(s.createdAt).toLocaleDateString(undefined, {
                           month: "short",
                           day: "numeric",
                           year: "numeric",
                         })}
-                      </p>
-                      <div className="flex items-center gap-1.5 mt-1 text-xs text-muted-foreground">
-                        <Clock className="h-3 w-3" />
-                        Updated {new Date(s.updatedAt).toLocaleDateString()}
                       </div>
                     </div>
                     <Badge
@@ -237,6 +250,37 @@ function SessionsView({ authUid }: { authUid: string }) {
           </div>
         )}
       </main>
+
+      {/* New session dialog */}
+      <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) setNewName(""); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>New Session</DialogTitle>
+          </DialogHeader>
+          <div className="flex flex-col gap-3 py-1">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="session-name" className="text-sm">Session name</Label>
+              <Input
+                id="session-name"
+                placeholder="e.g. Q2 2025 Fintech"
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleNew()}
+                autoFocus
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setDialogOpen(false); setNewName(""); }}>
+              Cancel
+            </Button>
+            <Button onClick={handleNew} className="gap-1.5">
+              <ArrowRight className="h-3.5 w-3.5" />
+              Create
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
