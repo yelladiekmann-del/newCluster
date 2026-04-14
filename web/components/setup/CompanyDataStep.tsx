@@ -179,7 +179,9 @@ export function CompanyDataStep() {
           (async () => {
             try {
               const db = getFirebaseDb();
-              const batchSize = 400;
+              // Full CompanyDoc includes originalData (all CSV columns + descriptions),
+              // so keep batches small to stay under Firestore's 10MB batch limit.
+              const batchSize = 50;
               for (let i = 0; i < companyDocs.length; i += batchSize) {
                 const batch = writeBatch(db);
                 for (const c of companyDocs.slice(i, i + batchSize)) {
