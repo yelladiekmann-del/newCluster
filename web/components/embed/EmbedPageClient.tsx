@@ -136,11 +136,11 @@ export function EmbedPageClient() {
     setClustering(true);
     setClusterProgress(0);
 
-    // Animate fake progress: ramps to ~85% over ~30s then stalls until done
+    // Animate fake progress: ramps to ~85% over ~60s then stalls until done
     clusterTimerRef.current = setInterval(() => {
       setClusterProgress((p) => {
         if (p >= 85) { clearInterval(clusterTimerRef.current!); return p; }
-        return p + 1;
+        return p + 0.5;
       });
     }, 400);
 
@@ -159,20 +159,54 @@ export function EmbedPageClient() {
         }),
       });
 
-      if (!res.ok) {
-        const err = await res.json();
-        toast.error(`Clustering failed: ${err.error}`);
+      if (!res.ok || !res.body) {
+        const errText = await res.text().catch(() => res.statusText);
+        toast.error(`Clustering failed: ${errText}`);
         return;
       }
 
-      const result = await res.json();
+      // Cluster route streams SSE — parse events.
+      // Use an object holder so TypeScript CFA doesn't think the variable is
+      // always null (it can't track mutations that happen inside callbacks).
+      type ClusterResult = {
+        labels: number[];
+        embedded2d: number[][];
+        metrics: { silhouette?: number; daviesBouldin?: number };
+        nClusters: number;
+        nOutliers: number;
+      };
+      const holder: { result: ClusterResult | null } = { result: null };
+
+      const parser = createParser({
+        onEvent: (event) => {
+          const data = JSON.parse(event.data);
+          if (data.type === "progress") {
+            if (data.stage === "clustering") setClusterProgress(20);
+          } else if (data.type === "done") {
+            holder.result = data as ClusterResult;
+          } else if (data.type === "error") {
+            toast.error(`Clustering failed: ${data.error}`);
+          }
+        },
+      });
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        parser.feed(decoder.decode(value, { stream: true }));
+      }
+
+      const result = holder.result;
+      if (!result) return;
+
       setClusterResult(result);
       setClusterMetrics({
         silhouette: result.metrics?.silhouette ?? null,
         daviesBouldin: result.metrics?.daviesBouldin ?? null,
       });
 
-      // Update companies in local store with cluster assignments + UMAP coords
       result.labels.forEach((label: number, i: number) => {
         const company = companies[i];
         if (!company) return;
@@ -184,9 +218,7 @@ export function EmbedPageClient() {
       });
 
       setClusterProgress(100);
-      toast.success(
-        `${result.nClusters} clusters found · ${result.nOutliers} outliers`
-      );
+      toast.success(`${result.nClusters} clusters found · ${result.nOutliers} outliers`);
     } catch (err) {
       toast.error(String(err));
     } finally {
