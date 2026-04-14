@@ -11,6 +11,8 @@ import { Button } from "@/components/ui/button";
 import { FileUploadZone } from "@/components/ui/file-upload-zone";
 import { AnalyticsTable } from "./AnalyticsTable";
 import { AnalyticsCharts } from "./AnalyticsCharts";
+import { ScoringPanel } from "./ScoringPanel";
+import { Separator } from "@/components/ui/separator";
 import { getBytes, ref } from "firebase/storage";
 import { getFirebaseStorage } from "@/lib/firebase/client";
 import type { AnalyticsColMap } from "@/types";
@@ -179,6 +181,14 @@ export function AnalyticsPageClient() {
         <>
           <AnalyticsTable rows={analyticsRows} hasDeals={!!dealsData} />
           <AnalyticsCharts rows={analyticsRows} />
+          <Separator />
+          <div>
+            <h2 className="text-lg font-semibold mb-1">Cluster Scoring</h2>
+            <p className="text-sm text-muted-foreground mb-4">
+              Configure metric directions and weights to rank clusters by your investment thesis.
+            </p>
+            <ScoringPanel rows={analyticsRows} hasDeals={!!dealsData} />
+          </div>
         </>
       ) : (
         <div className="text-center py-16 text-muted-foreground text-sm">

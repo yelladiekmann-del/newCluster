@@ -66,6 +66,12 @@ export interface SessionDoc {
   // Metadata (optional — persisted for home page display)
   companyCount?: number;
   clusterCount?: number;
+
+  // Analytics scoring config (persisted so it survives reload)
+  scoringConfig?: {
+    metrics: { key: string; direction: "max" | "min" | "neutral"; weight: number }[];
+    groups: { group: string; weight: number }[];
+  };
 }
 
 export interface ClusterParams {

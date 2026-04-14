@@ -68,6 +68,7 @@ export function attachSessionListener(sessionId: string): () => void {
     setChatMarketContextRaw,
     setDealsStoragePath,
     setAnalyticsColMap,
+    setScoringConfig,
     setSessionName,
   } = useSession.getState();
 
@@ -88,6 +89,7 @@ export function attachSessionListener(sessionId: string): () => void {
     setChatMarketContextRaw(d.chatMarketContextRaw ?? "");
     setDealsStoragePath(d.dealsStoragePath ?? null);
     setAnalyticsColMap(d.analyticsColMap ?? {});
+    setScoringConfig((d.scoringConfig as Parameters<typeof setScoringConfig>[0]) ?? null);
     setSessionName(d.name ?? null);
   });
 
@@ -169,6 +171,7 @@ export async function resumeSession(sessionId: string): Promise<number> {
   store.setChatMarketContextRaw(d.chatMarketContextRaw ?? "");
   store.setDealsStoragePath(d.dealsStoragePath ?? null);
   store.setAnalyticsColMap(d.analyticsColMap ?? {});
+  store.setScoringConfig((d.scoringConfig as Parameters<typeof store.setScoringConfig>[0]) ?? null);
   store.setSpreadsheetId(d.spreadsheetId ?? null);
   store.setSpreadsheetUrl(d.spreadsheetUrl ?? null);
   store.setSessionName(d.name ?? null);

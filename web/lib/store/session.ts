@@ -10,6 +10,7 @@ import type {
   Dimension,
   AnalyticsColMap,
 } from "@/types";
+import type { ScoringConfig } from "@/lib/analytics/scoring";
 import { DEFAULT_WEIGHTS } from "@/types";
 
 export interface AuthUser {
@@ -63,6 +64,7 @@ export interface SessionState {
   // Analytics
   dealsStoragePath: string | null;
   analyticsColMap: AnalyticsColMap;
+  scoringConfig: ScoringConfig | null;
 
   // Display
   sessionName: string | null;
@@ -95,6 +97,7 @@ export interface SessionState {
   setChatMarketContextRaw: (s: string) => void;
   setDealsStoragePath: (path: string | null) => void;
   setAnalyticsColMap: (map: AnalyticsColMap) => void;
+  setScoringConfig: (config: ScoringConfig | null) => void;
   setSessionName: (name: string | null) => void;
   /** Full reset — called when starting a new session */
   reset: () => void;
@@ -131,6 +134,7 @@ export const useSession = create<SessionState>((set) => ({
   chatMarketContextRaw: "",
   dealsStoragePath: null,
   analyticsColMap: {},
+  scoringConfig: null,
   sessionName: null,
 
   setUid: (uid) => set({ uid }),
@@ -170,6 +174,7 @@ export const useSession = create<SessionState>((set) => ({
     set({ chatMarketContextRaw }),
   setDealsStoragePath: (dealsStoragePath) => set({ dealsStoragePath }),
   setAnalyticsColMap: (analyticsColMap) => set({ analyticsColMap }),
+  setScoringConfig: (scoringConfig) => set({ scoringConfig }),
   setSessionName: (sessionName) => set({ sessionName }),
   reset: () =>
     set({
@@ -192,6 +197,7 @@ export const useSession = create<SessionState>((set) => ({
       chatMarketContextRaw: "",
       dealsStoragePath: null,
       analyticsColMap: {},
+      scoringConfig: null,
       sessionName: null,
     }),
 }));
