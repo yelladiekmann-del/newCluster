@@ -4,8 +4,6 @@ import { useState, useCallback } from "react";
 import { useSession } from "@/lib/store/session";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
-import { Switch } from "@/components/ui/switch";
-import { Label } from "@/components/ui/label";
 import { doc, writeBatch } from "firebase/firestore";
 import { getFirebaseDb } from "@/lib/firebase/client";
 import { createParser } from "eventsource-parser";
@@ -176,17 +174,25 @@ export function ResortPanel() {
           </span>
         </div>
         <div className="flex items-center gap-4">
-          <div className="flex items-center gap-1.5">
-            <Switch
-              id="include-outliers"
-              checked={includeOutliers}
-              onCheckedChange={setIncludeOutliers}
-              disabled={sorting}
-            />
-            <Label htmlFor="include-outliers" className="text-xs text-muted-foreground cursor-pointer">
-              Include outliers
-            </Label>
-          </div>
+          <button
+            type="button"
+            onClick={() => !sorting && setIncludeOutliers((v) => !v)}
+            disabled={sorting}
+            className="flex items-center gap-1.5 text-xs text-muted-foreground disabled:opacity-50 cursor-pointer"
+          >
+            <span
+              className={`inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+                includeOutliers ? "bg-primary" : "bg-input"
+              }`}
+            >
+              <span
+                className={`block h-4 w-4 rounded-full bg-background shadow transition-transform ${
+                  includeOutliers ? "translate-x-4" : "translate-x-0.5"
+                }`}
+              />
+            </span>
+            Include outliers
+          </button>
           <Button
             size="sm"
             onClick={handleSort}
