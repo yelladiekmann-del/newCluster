@@ -1,17 +1,11 @@
 "use client";
 
 import { useCallback, useState, useRef } from "react";
-import { Eye, CheckCircle2, Sparkles, Loader2, Download } from "lucide-react";
+import { CheckCircle2, Sparkles, Loader2, Download } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { Progress } from "@/components/ui/progress";
 import { FileUploadZone } from "@/components/ui/file-upload-zone";
 import { useSession } from "@/lib/store/session";
@@ -42,8 +36,6 @@ export function CompanyDataStep() {
   } = useSession();
 
   const [columns, setColumns] = useState<string[]>([]);
-  const [preview, setPreview] = useState<Record<string, unknown>[]>([]);
-  const [previewOpen, setPreviewOpen] = useState(false);
   const [uploadPct, setUploadPct] = useState<number | null>(null);
 
   // Dimension extraction state
@@ -142,7 +134,6 @@ export function CompanyDataStep() {
 
           const cols = Object.keys(rows[0]);
           setColumns(cols);
-          setPreview(rows.slice(0, 10));
 
           // Auto-detect standard column names
           const nameCol =
@@ -182,6 +173,9 @@ export function CompanyDataStep() {
             return;
           }
 
+          // Show progress bar immediately for visual feedback
+          setUploadPct(0);
+
           (async () => {
             try {
               const db = getFirebaseDb();
@@ -195,7 +189,6 @@ export function CompanyDataStep() {
               }
               const storage = getFirebaseStorage();
               const task = uploadBytesResumable(ref(storage, `sessions/${uid}/companies.csv`), file);
-              setUploadPct(0);
               await new Promise<void>((resolve, reject) => {
                 task.on(
                   "state_changed",
@@ -276,19 +269,6 @@ export function CompanyDataStep() {
             </div>
           )}
 
-          {/* Preview */}
-          {preview.length > 0 && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="self-start gap-1 text-xs"
-              onClick={() => setPreviewOpen(true)}
-            >
-              <Eye className="h-3 w-3" />
-              Preview (first 10 rows)
-            </Button>
-          )}
-
           {/* Dimension extraction — inline */}
           {companies.length > 0 && (
             <div className="border-t border-border pt-3 flex flex-col gap-2">
@@ -356,39 +336,6 @@ export function CompanyDataStep() {
           )}
         </CardContent>
       </Card>
-
-      {/* Preview dialog */}
-      <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
-        <DialogContent className="max-w-4xl max-h-[75vh] flex flex-col gap-4">
-          <DialogHeader>
-            <DialogTitle>Data Preview</DialogTitle>
-          </DialogHeader>
-          <div className="overflow-auto flex-1 rounded-lg border border-border">
-            <table className="w-full text-xs border-collapse">
-              <thead className="sticky top-0 bg-muted/80 backdrop-blur-sm">
-                <tr>
-                  {columns.slice(0, 6).map((c) => (
-                    <th key={c} className="text-left px-3 py-2.5 border-b border-border text-muted-foreground font-medium whitespace-nowrap">
-                      {c}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {preview.map((row, i) => (
-                  <tr key={i} className={`border-b border-border/40 ${i % 2 === 0 ? "" : "bg-muted/10"}`}>
-                    {columns.slice(0, 6).map((c) => (
-                      <td key={c} className="px-3 py-2 truncate max-w-[200px]">
-                        {String(row[c] ?? "")}
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </DialogContent>
-      </Dialog>
     </>
   );
 }
