@@ -260,7 +260,13 @@ export function CompanyDataStep() {
           />
 
           {uploadPct !== null && (
-            <Progress value={uploadPct} className="h-1.5" />
+            <div className="flex flex-col gap-1">
+              <div className="flex justify-between text-xs text-muted-foreground">
+                <span>Uploading…</span>
+                <span>{uploadPct}%</span>
+              </div>
+              <Progress value={uploadPct} className="h-1.5" />
+            </div>
           )}
 
           {/* Preview */}
