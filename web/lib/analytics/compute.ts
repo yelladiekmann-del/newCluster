@@ -232,6 +232,30 @@ export function computeAnalytics(
       }
     }
 
+    // ── HHI (Herfindahl–Hirschman Index) — funding concentration ─────────────
+    let hhi: number | null = null;
+    if (colMap.total_raised) {
+      const vals = members
+        .map((m) => safeNum(m.originalData[colMap.total_raised!]))
+        .filter((n): n is number => n !== null);
+      const total = vals.reduce((a, b) => a + b, 0);
+      if (total > 0) {
+        hhi = Math.round(vals.reduce((s, v) => s + (v / total) ** 2, 0) * 10000);
+      }
+    }
+
+    // ── Average patent families ───────────────────────────────────────────────
+    let avgPatentFamilies: number | null = null;
+    if (colMap.patent_families) {
+      const vals = members
+        .map((m) => safeNum(m.originalData[colMap.patent_families!]))
+        .filter((n): n is number => n !== null);
+      avgPatentFamilies =
+        vals.length > 0
+          ? Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 10) / 10
+          : null;
+    }
+
     rows.push({
       clusterId: cluster.id,
       clusterName: cluster.name,
@@ -252,6 +276,8 @@ export function computeAnalytics(
       avgSeriesScore,
       vcGraduationRate,
       mortalityRate,
+      hhi,
+      avgPatentFamilies,
     });
   }
 

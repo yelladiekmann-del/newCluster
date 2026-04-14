@@ -13,6 +13,7 @@ import { getFirebaseDb } from "@/lib/firebase/client";
 import { toast } from "sonner";
 import type { ChatMessage, ClusterAction } from "@/types";
 import { getFirebaseStorage } from "@/lib/firebase/client";
+import ReactMarkdown from "react-markdown";
 
 const SUGGESTED_PROMPTS = [
   "✦ Request cluster review",
@@ -304,7 +305,13 @@ export function AiChatPanel() {
                   : "bg-muted text-foreground"
               }`}
             >
-              {msg.content}
+              {msg.role === "assistant" ? (
+                <div className="chat-markdown">
+                  <ReactMarkdown>{msg.content}</ReactMarkdown>
+                </div>
+              ) : (
+                msg.content
+              )}
             </div>
           </div>
         ))}

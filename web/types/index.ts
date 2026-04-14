@@ -62,6 +62,10 @@ export interface SessionDoc {
 
   // Display
   name?: string;
+
+  // Metadata (optional — persisted for home page display)
+  companyCount?: number;
+  clusterCount?: number;
 }
 
 export interface ClusterParams {
@@ -126,6 +130,7 @@ export interface AnalyticsColMap {
   business_status?: string;
   ownership_status?: string;
   financing_status?: string;
+  patent_families?: string;
 }
 
 export interface ClusterMetricsRow {
@@ -148,6 +153,8 @@ export interface ClusterMetricsRow {
   avgSeriesScore: number | null;
   vcGraduationRate: number | null;
   mortalityRate: number | null;
+  hhi: number | null;
+  avgPatentFamilies: number | null;
 }
 
 // ── Progress events (SSE) ───────────────────────────────────────────────────

@@ -181,7 +181,7 @@ export function CompanyDataStep() {
                 );
               });
               setUploadPct(null);
-              await persistSession(uid, { companyCol: nameCol, descCol: dCol, pipelineStep: 0 });
+              await persistSession(uid, { companyCol: nameCol, descCol: dCol, pipelineStep: 0, companyCount: rows.length });
               toast.success(`${rows.length.toLocaleString()} companies loaded`);
 
               // Auto-extract only if dims are NOT already in the CSV

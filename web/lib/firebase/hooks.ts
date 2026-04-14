@@ -5,9 +5,11 @@ import {
   doc,
   setDoc,
   getDoc,
+  deleteDoc,
   onSnapshot,
   collection,
   getDocs,
+  writeBatch,
 } from "firebase/firestore";
 import { getFirebaseDb, onAuthChange } from "./client";
 import { useSession } from "@/lib/store/session";
@@ -228,6 +230,38 @@ export async function loadChatHistory(uid: string): Promise<ChatMessage[]> {
   const msgs = snap.docs.map((d) => ({ id: d.id, ...d.data() } as ChatMessage));
   msgs.sort((a, b) => a.timestamp - b.timestamp);
   return msgs;
+}
+
+/** Delete a session and all associated Storage files + Firestore subcollections. */
+export async function deleteSession(sessionId: string): Promise<void> {
+  const db = getFirebaseDb();
+
+  // Delete Firestore subcollections
+  for (const coll of ["clusters", "chatHistory"]) {
+    const snap = await getDocs(collection(db, "sessions", sessionId, coll));
+    if (snap.docs.length > 0) {
+      const b = writeBatch(db);
+      snap.docs.forEach((d) => b.delete(d.ref));
+      await b.commit();
+    }
+  }
+
+  // Delete session doc
+  await deleteDoc(doc(db, "sessions", sessionId));
+
+  // Best-effort delete Storage files
+  try {
+    const { ref, deleteObject } = await import("firebase/storage");
+    const { getFirebaseStorage } = await import("./client");
+    const storage = getFirebaseStorage();
+    await Promise.allSettled(
+      ["companies.csv", "embeddings.json", "embeddings.npz"].map((f) =>
+        deleteObject(ref(storage, `sessions/${sessionId}/${f}`))
+      )
+    );
+  } catch {
+    // Non-fatal — files may not exist
+  }
 }
 
 /** Persist session doc fields to Firestore */

@@ -3,7 +3,7 @@
 import { useState, useMemo, useCallback, useEffect } from "react";
 import Papa from "papaparse";
 import { saveAs } from "file-saver";
-import { Download } from "lucide-react";
+import { Download, CheckCircle2 } from "lucide-react";
 import { useSession } from "@/lib/store/session";
 import { loadCompanies, loadClusters } from "@/lib/firebase/hooks";
 import { computeAnalytics } from "@/lib/analytics/compute";
@@ -34,6 +34,7 @@ function detectColMap(
     business_status: find(companyCols, [/business.?status/i, /company.?status/i, /^status$/i]),
     ownership_status: find(companyCols, [/ownership.?status/i, /ownership/i]),
     financing_status: find(companyCols, [/financing.?status/i, /company.?financing/i, /financing$/i]),
+    patent_families: find(companyCols, [/patent.?famil/i, /total.?patent/i, /patentiert/i]),
     de_co_id: find(dealsCols, [/company.?id/i, /co.?id/i, /org.?id/i, /^id$/i]),
     de_co_name: find(dealsCols, [/company.?name/i, /org.?name/i, /^name$/i]),
     deal_date: find(dealsCols, [/deal.?date/i, /date$/i, /closed/i]),
@@ -148,19 +149,29 @@ export function AnalyticsPageClient() {
           <span className="text-sm font-semibold">Deals Data</span>
           <span className="text-xs text-muted-foreground font-normal">(optional)</span>
         </div>
-        <FileUploadZone
-          accept=".csv,.xlsx,.xls"
-          onFile={handleDealsFile}
-          loaded={!!dealsData}
-          loadedLabel={
-            dealsData
-              ? `${dealsData.length.toLocaleString()} deals loaded${dealsAutoLoaded ? " (from setup)" : ""}`
-              : ""
-          }
-          replaceLabel="Drop a new file to replace"
-          idleLabel="Upload deals CSV for funding & deal metrics"
-          hint=".csv, .xlsx, .xls"
-        />
+        {dealsData ? (
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <CheckCircle2 className="h-3.5 w-3.5 text-primary shrink-0" />
+            <span>
+              {dealsData.length.toLocaleString()} deals loaded
+              {dealsAutoLoaded ? " (from setup)" : ""}
+            </span>
+            <button
+              onClick={() => { setDealsData(null); setDealsColumns([]); setDealsAutoLoaded(false); }}
+              className="underline hover:text-foreground ml-1 transition-colors"
+            >
+              Replace
+            </button>
+          </div>
+        ) : (
+          <FileUploadZone
+            accept=".csv,.xlsx,.xls"
+            onFile={handleDealsFile}
+            loaded={false}
+            idleLabel="Upload deals CSV for funding & deal metrics"
+            hint=".csv, .xlsx, .xls"
+          />
+        )}
       </div>
 
       {/* Analytics table */}

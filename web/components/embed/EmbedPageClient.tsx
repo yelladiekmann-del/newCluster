@@ -292,6 +292,7 @@ export function EmbedPageClient() {
       await persistSession(uid, {
         pipelineStep: nextStep,
         clustersConfirmed: true,
+        clusterCount: newClusters.filter((c) => !c.isOutliers).length,
       });
 
       toast.success("Clusters named and confirmed");

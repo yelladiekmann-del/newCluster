@@ -4,12 +4,12 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { collection, query, where, orderBy, getDocs } from "firebase/firestore";
 import { getFirebaseDb, signInWithGoogle, signOutUser } from "@/lib/firebase/client";
-import { createNewSession, resumeSession } from "@/lib/firebase/hooks";
+import { createNewSession, resumeSession, deleteSession } from "@/lib/firebase/hooks";
 import { useSession } from "@/lib/store/session";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card";
-import { Plus, LogOut, ArrowRight, Clock, Loader2 } from "lucide-react";
+import { Plus, LogOut, ArrowRight, Clock, Loader2, GitBranch, Trash2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -19,6 +19,17 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { toast } from "sonner";
 import type { SessionDoc } from "@/types";
 
 type SessionRow = SessionDoc & { id: string };
@@ -29,6 +40,14 @@ const STEP_LABELS: Record<number, string> = {
   2: "Embedded",
   3: "Clustered",
   4: "Analytics",
+};
+
+const STEP_BADGE_CLASSES: Record<number, string> = {
+  0: "bg-muted text-muted-foreground border-transparent",
+  1: "bg-blue-100 text-blue-700 border-transparent",
+  2: "bg-purple-100 text-purple-700 border-transparent",
+  3: "bg-primary/10 text-primary border-primary/20",
+  4: "bg-emerald-100 text-emerald-700 border-transparent",
 };
 
 const STEP_ROUTES = ["/setup", "/setup", "/embed", "/review", "/analytics"];
@@ -48,7 +67,6 @@ function SignInView() {
         sessionStorage.setItem("hy_google_token", accessToken);
         useSession.getState().setGoogleAccessToken(accessToken);
       }
-      // onAuthChange in useFirebaseSession will update authUser in the store
     } catch (e) {
       setError(e instanceof Error ? e.message : "Sign-in failed");
     } finally {
@@ -59,7 +77,6 @@ function SignInView() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-background">
       <div className="w-full max-w-sm flex flex-col gap-6 px-4">
-        {/* Logo */}
         <div className="text-center">
           <p className="text-[11px] font-semibold tracking-widest text-muted-foreground uppercase">
             Cluster
@@ -69,7 +86,6 @@ function SignInView() {
             Sign in with your @hy.co Google account to continue.
           </p>
         </div>
-
         <Card>
           <CardContent className="pt-6 flex flex-col gap-3">
             {error && (
@@ -96,8 +112,10 @@ function SessionsView({ authUid }: { authUid: string }) {
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [resuming, setResuming] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [newName, setNewName] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState<SessionRow | null>(null);
 
   useEffect(() => {
     const db = getFirebaseDb();
@@ -132,6 +150,20 @@ function SessionsView({ authUid }: { authUid: string }) {
       router.push(STEP_ROUTES[step] ?? "/setup");
     } finally {
       setResuming(null);
+    }
+  }
+
+  async function handleDelete(session: SessionRow) {
+    setDeleting(session.id);
+    setDeleteTarget(null);
+    try {
+      await deleteSession(session.id);
+      setSessions((prev) => prev.filter((s) => s.id !== session.id));
+      toast.success(`"${session.name ?? "Untitled session"}" deleted`);
+    } catch (err) {
+      toast.error("Failed to delete session: " + String(err));
+    } finally {
+      setDeleting(null);
     }
   }
 
@@ -184,10 +216,21 @@ function SessionsView({ authUid }: { authUid: string }) {
         </div>
 
         {loading ? (
-          <p className="text-sm text-muted-foreground">Loading sessions…</p>
+          <div className="flex items-center gap-2 text-sm text-muted-foreground py-8">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Loading sessions…
+          </div>
         ) : sessions.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-20 gap-4 text-center">
-            <p className="text-muted-foreground text-sm">No sessions yet.</p>
+          <div className="flex flex-col items-center justify-center py-24 gap-4 text-center">
+            <div className="h-16 w-16 rounded-2xl bg-muted flex items-center justify-center">
+              <GitBranch className="h-8 w-8 text-muted-foreground/50" />
+            </div>
+            <div>
+              <p className="font-semibold text-foreground">No sessions yet</p>
+              <p className="text-sm text-muted-foreground mt-1">
+                Each session is an independent clustering run for a dataset.
+              </p>
+            </div>
             <Button onClick={() => setDialogOpen(true)} disabled={creating} className="gap-1.5">
               <Plus className="h-4 w-4" />
               Start your first session
@@ -196,34 +239,56 @@ function SessionsView({ authUid }: { authUid: string }) {
         ) : (
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {sessions.map((s) => (
-              <Card key={s.id} className="flex flex-col">
+              <Card
+                key={s.id}
+                className="flex flex-col transition-shadow hover:shadow-md"
+              >
                 <CardHeader className="pb-2">
                   <div className="flex items-start justify-between gap-2">
-                    <div>
-                      <p className="text-sm font-semibold">
-                        {s.name ?? "Untitled session"}
-                      </p>
-                      <div className="flex items-center gap-1.5 mt-1 text-xs text-muted-foreground">
-                        <Clock className="h-3 w-3" />
-                        {new Date(s.createdAt).toLocaleDateString(undefined, {
-                          month: "short",
-                          day: "numeric",
-                          year: "numeric",
-                        })}
-                      </div>
-                    </div>
                     <Badge
                       variant="secondary"
-                      className={`shrink-0 text-xs ${s.pipelineStep >= 3 ? "bg-primary/10 text-primary border-primary/20" : ""}`}
+                      className={`shrink-0 text-xs ${STEP_BADGE_CLASSES[s.pipelineStep] ?? STEP_BADGE_CLASSES[0]}`}
                     >
                       {STEP_LABELS[s.pipelineStep] ?? "Unknown"}
                     </Badge>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 text-muted-foreground hover:text-destructive shrink-0 -mr-1 -mt-1"
+                      disabled={deleting === s.id}
+                      onClick={() => setDeleteTarget(s)}
+                    >
+                      {deleting === s.id
+                        ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        : <Trash2 className="h-3.5 w-3.5" />
+                      }
+                    </Button>
+                  </div>
+                  <div className="mt-1">
+                    <p className="text-sm font-semibold leading-snug">
+                      {s.name ?? "Untitled session"}
+                    </p>
+                    <div className="flex items-center gap-1.5 mt-1 text-xs text-muted-foreground">
+                      <Clock className="h-3 w-3" />
+                      {new Date(s.createdAt).toLocaleDateString(undefined, {
+                        month: "short",
+                        day: "numeric",
+                        year: "numeric",
+                      })}
+                    </div>
                   </div>
                 </CardHeader>
-                <CardContent className="pb-3 flex-1">
+                <CardContent className="pb-3 flex-1 flex flex-col gap-1">
                   {s.companyCol && (
                     <p className="text-xs text-muted-foreground">
                       Column: <span className="text-foreground font-mono">{s.companyCol}</span>
+                    </p>
+                  )}
+                  {(s.companyCount != null || s.clusterCount != null) && (
+                    <p className="text-xs text-muted-foreground">
+                      {s.companyCount != null && `${s.companyCount.toLocaleString()} companies`}
+                      {s.companyCount != null && s.clusterCount != null && " · "}
+                      {s.clusterCount != null && `${s.clusterCount} clusters`}
                     </p>
                   )}
                 </CardContent>
@@ -232,11 +297,14 @@ function SessionsView({ authUid }: { authUid: string }) {
                     size="sm"
                     variant="outline"
                     onClick={() => handleResume(s.id)}
-                    disabled={resuming === s.id}
+                    disabled={resuming === s.id || deleting === s.id}
                     className="w-full gap-1.5"
                   >
                     {resuming === s.id ? (
-                      "Loading…"
+                      <>
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        Loading…
+                      </>
                     ) : (
                       <>
                         Resume
@@ -281,6 +349,27 @@ function SessionsView({ authUid }: { authUid: string }) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Delete confirmation dialog */}
+      <AlertDialog open={!!deleteTarget} onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete session?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete &ldquo;{deleteTarget?.name ?? "Untitled session"}&rdquo; and all its data — companies, clusters, and embeddings. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => deleteTarget && handleDelete(deleteTarget)}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

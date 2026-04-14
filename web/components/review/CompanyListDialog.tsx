@@ -18,9 +18,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useSession } from "@/lib/store/session";
-import { persistSession } from "@/lib/firebase/hooks";
-import { doc, writeBatch } from "firebase/firestore";
-import { getFirebaseDb } from "@/lib/firebase/client";
 import { toast } from "sonner";
 import { Search } from "lucide-react";
 
@@ -32,7 +29,7 @@ interface Props {
 const PAGE_SIZE = 30;
 
 export function CompanyListDialog({ clusterId, onClose }: Props) {
-  const { uid, companies, clusters, updateCompany, setClusters } = useSession();
+  const { uid, companies, clusters, updateCompany, setClusters, descCol } = useSession();
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(0);
 
@@ -54,12 +51,6 @@ export function CompanyListDialog({ clusterId, onClose }: Props) {
 
   const handleMove = async (companyId: string, newClusterId: string) => {
     if (!uid) return;
-    const db = getFirebaseDb();
-    const batch = writeBatch(db);
-    batch.update(doc(db, "sessions", uid, "companies", companyId), {
-      clusterId: newClusterId,
-    });
-    await batch.commit();
 
     updateCompany(companyId, { clusterId: newClusterId });
 
@@ -70,14 +61,27 @@ export function CompanyListDialog({ clusterId, onClose }: Props) {
         return c;
       })
     );
+
+    // Persist updated companies to Storage CSV
+    try {
+      const { saveCompaniesToStorage } = await import("@/lib/firebase/companies-storage");
+      await saveCompaniesToStorage(uid, useSession.getState().companies);
+    } catch (err) {
+      toast.error("Failed to save move: " + String(err));
+    }
+
     toast.success("Company moved");
   };
 
+  // nonTargetClusters already includes the Outliers cluster doc (isOutliers: true)
+  // so we do NOT add a hardcoded Outliers item — that would duplicate it.
   const nonTargetClusters = clusters.filter((c) => c.id !== clusterId);
+
+  const showDesc = !!descCol;
 
   return (
     <Dialog open={!!clusterId} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-3xl max-h-[85vh] flex flex-col gap-4">
+      <DialogContent className="max-w-5xl max-h-[85vh] flex flex-col gap-4">
         <DialogHeader>
           <div className="flex items-center gap-3">
             {cluster?.color && (
@@ -114,6 +118,11 @@ export function CompanyListDialog({ clusterId, onClose }: Props) {
                 <th className="text-left px-4 py-2.5 text-xs font-medium text-muted-foreground border-b border-border">
                   Company
                 </th>
+                {showDesc && (
+                  <th className="text-left px-4 py-2.5 text-xs font-medium text-muted-foreground border-b border-border">
+                    Description
+                  </th>
+                )}
                 <th className="px-4 py-2.5 text-xs font-medium text-muted-foreground border-b border-border w-44" />
               </tr>
             </thead>
@@ -128,6 +137,13 @@ export function CompanyListDialog({ clusterId, onClose }: Props) {
                   <td className="px-4 py-2.5 font-medium text-foreground">
                     {company.name}
                   </td>
+                  {showDesc && (
+                    <td className="px-4 py-2.5 text-xs text-muted-foreground max-w-xs">
+                      {String(company.originalData[descCol] ?? "").slice(0, 150) || (
+                        <span className="italic opacity-50">—</span>
+                      )}
+                    </td>
+                  )}
                   <td className="px-4 py-2.5">
                     <Select
                       value=""
@@ -150,7 +166,6 @@ export function CompanyListDialog({ clusterId, onClose }: Props) {
                             </div>
                           </SelectItem>
                         ))}
-                        <SelectItem value="outliers">Outliers</SelectItem>
                       </SelectContent>
                     </Select>
                   </td>
@@ -158,7 +173,7 @@ export function CompanyListDialog({ clusterId, onClose }: Props) {
               ))}
               {page_items.length === 0 && (
                 <tr>
-                  <td colSpan={2} className="px-4 py-10 text-center text-sm text-muted-foreground">
+                  <td colSpan={showDesc ? 3 : 2} className="px-4 py-10 text-center text-sm text-muted-foreground">
                     {search ? "No companies match your search." : "No companies in this cluster."}
                   </td>
                 </tr>

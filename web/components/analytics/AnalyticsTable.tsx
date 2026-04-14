@@ -54,22 +54,25 @@ interface ColDef {
 }
 
 const COLS: ColDef[] = [
-  { key: "companyCount",       group: "Size",     label: "Companies",     fmt: (r) => fmtNum(r.companyCount),       higherIsBetter: true,  rankable: true  },
-  { key: "avgEmployees",       group: "Size",     label: "Avg empl.",     fmt: (r) => fmtNum(r.avgEmployees),       higherIsBetter: true,  rankable: false },
-  { key: "avgYearFounded",     group: "Recency",  label: "Avg founded",   fmt: (r) => fmtNum(r.avgYearFounded),     higherIsBetter: false, rankable: false },
-  { key: "pctRecentlyFounded", group: "Recency",  label: "% recent ↑",    fmt: (r) => fmtPct(r.pctRecentlyFounded), higherIsBetter: true,  rankable: true  },
-  { key: "dealCount",          group: "Deals",    label: "# Deals ↑",     fmt: (r) => fmtNum(r.dealCount),          higherIsBetter: true,  rankable: true,  dealsOnly: true },
-  { key: "dealMomentum",       group: "Deals",    label: "Deal mom.",     fmt: (r) => <MomentumChip value={r.dealMomentum} />, rankable: false, dealsOnly: true },
-  { key: "avgFunding",         group: "Funding",  label: "Avg raised ↑",  fmt: (r) => fmtMoney(r.avgFunding),       higherIsBetter: true,  rankable: true  },
-  { key: "totalFunding",       group: "Funding",  label: "Σ raised ↑",    fmt: (r) => fmtMoney(r.totalFunding),     higherIsBetter: true,  rankable: true  },
-  { key: "totalInvested4yr",   group: "Funding",  label: "Σ 4yr inv. ↑",  fmt: (r) => fmtMoney(r.totalInvested4yr), higherIsBetter: true, rankable: true,  dealsOnly: true },
-  { key: "fundingMomentum",    group: "Funding",  label: "Fund. mom.",    fmt: (r) => <MomentumChip value={r.fundingMomentum} />, rankable: false, dealsOnly: true },
-  { key: "capitalMean",        group: "Capital",  label: "Mean deal ↑",   fmt: (r) => fmtMoney(r.capitalMean),      higherIsBetter: true,  rankable: true,  dealsOnly: true },
-  { key: "capitalMedian",      group: "Capital",  label: "Median deal ↑", fmt: (r) => fmtMoney(r.capitalMedian),    higherIsBetter: true,  rankable: true,  dealsOnly: true },
-  { key: "meanMedianRatio",    group: "Capital",  label: "Mean/med.",     fmt: (r) => fmtNum(r.meanMedianRatio, 2), higherIsBetter: false, rankable: false, dealsOnly: true },
-  { key: "avgSeriesScore",     group: "Market",   label: "Maturity ↑",    fmt: (r) => fmtNum(r.avgSeriesScore, 1),  higherIsBetter: true,  rankable: true,  dealsOnly: true },
-  { key: "vcGraduationRate",   group: "Risk",     label: "Grad. rate ↑",  fmt: (r) => fmtPct(r.vcGraduationRate),  higherIsBetter: true,  rankable: true  },
-  { key: "mortalityRate",      group: "Risk",     label: "Mortality ↓",   fmt: (r) => fmtPct(r.mortalityRate),     higherIsBetter: false, rankable: true  },
+  { key: "companyCount",       group: "Size",       label: "Gesamt",             fmt: (r) => fmtNum(r.companyCount),         higherIsBetter: true,  rankable: true  },
+  { key: "uniqueCompanies",    group: "Size",       label: "# Companies",        fmt: (r) => fmtNum(r.uniqueCompanies),      higherIsBetter: true,  rankable: false },
+  { key: "avgEmployees",       group: "Size",       label: "⌀ Angestellte",      fmt: (r) => fmtNum(r.avgEmployees),         higherIsBetter: true,  rankable: false },
+  { key: "avgYearFounded",     group: "Recency",    label: "⌀ Year Founded",     fmt: (r) => fmtNum(r.avgYearFounded),       higherIsBetter: false, rankable: false },
+  { key: "pctRecentlyFounded", group: "Recency",    label: "% Recently Founded", fmt: (r) => fmtPct(r.pctRecentlyFounded),  higherIsBetter: true,  rankable: true  },
+  { key: "dealCount",          group: "Deals",      label: "# Deals",            fmt: (r) => fmtNum(r.dealCount),            higherIsBetter: true,  rankable: true,  dealsOnly: true },
+  { key: "dealMomentum",       group: "Deals",      label: "Deal Momentum",      fmt: (r) => <MomentumChip value={r.dealMomentum} />,  rankable: false, dealsOnly: true },
+  { key: "avgFunding",         group: "Funding",    label: "⌀ Total Raised",     fmt: (r) => fmtMoney(r.avgFunding),         higherIsBetter: true,  rankable: true  },
+  { key: "totalFunding",       group: "Funding",    label: "Σ Total Raised",     fmt: (r) => fmtMoney(r.totalFunding),       higherIsBetter: true,  rankable: true  },
+  { key: "totalInvested4yr",   group: "Funding",    label: "Σ Capital (4 Jahre)", fmt: (r) => fmtMoney(r.totalInvested4yr),  higherIsBetter: true,  rankable: true,  dealsOnly: true },
+  { key: "fundingMomentum",    group: "Funding",    label: "Funding Momentum",   fmt: (r) => <MomentumChip value={r.fundingMomentum} />, rankable: false, dealsOnly: true },
+  { key: "capitalMean",        group: "Capital",    label: "Capital Invested Mean",   fmt: (r) => fmtMoney(r.capitalMean),   higherIsBetter: true,  rankable: true,  dealsOnly: true },
+  { key: "capitalMedian",      group: "Capital",    label: "Capital Invested Median", fmt: (r) => fmtMoney(r.capitalMedian), higherIsBetter: true,  rankable: true,  dealsOnly: true },
+  { key: "meanMedianRatio",    group: "Capital",    label: "Abweichung Mean/Median",  fmt: (r) => fmtNum(r.meanMedianRatio, 2), higherIsBetter: false, rankable: false, dealsOnly: true },
+  { key: "vcGraduationRate",   group: "Risk",       label: "VC Graduation Rate", fmt: (r) => fmtPct(r.vcGraduationRate),   higherIsBetter: true,  rankable: true  },
+  { key: "mortalityRate",      group: "Risk",       label: "Mortality Rate",     fmt: (r) => fmtPct(r.mortalityRate),      higherIsBetter: false, rankable: true  },
+  { key: "hhi",                group: "Market",     label: "Marktanteil (HHI)",  fmt: (r) => fmtNum(r.hhi),                higherIsBetter: false, rankable: true  },
+  { key: "avgSeriesScore",     group: "Market",     label: "Marktreife",         fmt: (r) => fmtNum(r.avgSeriesScore, 1),  higherIsBetter: true,  rankable: true,  dealsOnly: true },
+  { key: "avgPatentFamilies",  group: "Technology", label: "⌀ Patentierte Erf.", fmt: (r) => fmtNum(r.avgPatentFamilies, 1), higherIsBetter: true, rankable: true  },
 ];
 
 export function AnalyticsTable({ rows, hasDeals }: Props) {
@@ -107,6 +110,7 @@ export function AnalyticsTable({ rows, hasDeals }: Props) {
     Capital: "bg-cyan-500/8",
     Market: "bg-orange-500/8",
     Risk: "bg-red-500/8",
+    Technology: "bg-purple-500/8",
   };
 
   return (

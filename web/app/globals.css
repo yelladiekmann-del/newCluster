@@ -98,3 +98,23 @@
     box-shadow: 0 1px 3px oklch(0 0 0 / 6%), 0 1px 2px oklch(0 0 0 / 4%);
   }
 }
+
+/* ── Chat markdown rendering ────────────────────────────────────────────────── */
+.chat-markdown p { margin-top: 0.25rem; margin-bottom: 0.25rem; }
+.chat-markdown p:first-child { margin-top: 0; }
+.chat-markdown p:last-child  { margin-bottom: 0; }
+.chat-markdown ul, .chat-markdown ol { margin: 0.25rem 0; padding-left: 1.25rem; }
+.chat-markdown li { margin: 0.125rem 0; }
+.chat-markdown h1, .chat-markdown h2, .chat-markdown h3 {
+  font-size: 0.75rem;
+  font-weight: 600;
+  margin: 0.5rem 0 0.125rem;
+}
+.chat-markdown strong { font-weight: 600; }
+.chat-markdown code {
+  font-family: ui-monospace, monospace;
+  background: oklch(0 0 0 / 8%);
+  border-radius: 0.2em;
+  padding: 0.05em 0.3em;
+  font-size: 0.9em;
+}
