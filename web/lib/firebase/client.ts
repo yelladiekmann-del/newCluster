@@ -1,7 +1,15 @@
 "use client";
 
 import { initializeApp, getApps, type FirebaseApp } from "firebase/app";
-import { getAuth, signInAnonymously, onAuthStateChanged, type Auth } from "firebase/auth";
+import {
+  getAuth,
+  GoogleAuthProvider,
+  signInWithPopup,
+  signOut as fbSignOut,
+  onAuthStateChanged,
+  type Auth,
+  type User,
+} from "firebase/auth";
 import { getFirestore, type Firestore } from "firebase/firestore";
 import { getStorage, type FirebaseStorage } from "firebase/storage";
 
@@ -47,19 +55,24 @@ export function getFirebaseStorage(): FirebaseStorage {
   return storage;
 }
 
-/** Signs in anonymously and returns the UID. Idempotent — safe to call multiple times. */
-export async function ensureSignedIn(): Promise<string> {
-  const authInstance = getFirebaseAuth();
-  if (authInstance.currentUser) {
-    return authInstance.currentUser.uid;
+/** Sign in with Google. Only @hy.co accounts are allowed. */
+export async function signInWithGoogle(): Promise<User> {
+  const provider = new GoogleAuthProvider();
+  provider.setCustomParameters({ hd: "hy.co" }); // UX hint — real check is below
+  const cred = await signInWithPopup(getFirebaseAuth(), provider);
+  if (!cred.user.email?.endsWith("@hy.co")) {
+    await fbSignOut(getFirebaseAuth());
+    throw new Error("Only @hy.co accounts are allowed.");
   }
-  const cred = await signInAnonymously(authInstance);
-  return cred.user.uid;
+  return cred.user;
 }
 
-/** Subscribe to auth state changes */
-export function onAuthChange(callback: (uid: string | null) => void) {
-  return onAuthStateChanged(getFirebaseAuth(), (user) =>
-    callback(user?.uid ?? null)
-  );
+/** Sign out the current user. */
+export async function signOutUser(): Promise<void> {
+  await fbSignOut(getFirebaseAuth());
+}
+
+/** Subscribe to auth state changes. Returns unsubscribe function. */
+export function onAuthChange(callback: (user: User | null) => void): () => void {
+  return onAuthStateChanged(getFirebaseAuth(), callback);
 }

@@ -12,10 +12,18 @@ import type {
 } from "@/types";
 import { DEFAULT_WEIGHTS } from "@/types";
 
+export interface AuthUser {
+  uid: string;
+  email: string;
+  displayName: string | null;
+  photoURL: string | null;
+}
+
 export interface SessionState {
   // Auth
   uid: string | null;
   sessionId: string | null;
+  authUser: AuthUser | null;
 
   // API key lives only in sessionStorage — never Firestore
   apiKey: string | null;
@@ -52,6 +60,7 @@ export interface SessionState {
   // Actions
   setUid: (uid: string | null) => void;
   setSessionId: (id: string | null) => void;
+  setAuthUser: (user: AuthUser | null) => void;
   setApiKey: (key: string | null) => void;
   setPipelineStep: (step: 0 | 1 | 2 | 3 | 4) => void;
   setCompanyCol: (col: string) => void;
@@ -87,6 +96,7 @@ const defaultClusterParams: ClusterParams = {
 export const useSession = create<SessionState>((set) => ({
   uid: null,
   sessionId: null,
+  authUser: null,
   apiKey: null,
   pipelineStep: 0,
   companyCol: "name",
@@ -108,6 +118,7 @@ export const useSession = create<SessionState>((set) => ({
 
   setUid: (uid) => set({ uid }),
   setSessionId: (sessionId) => set({ sessionId }),
+  setAuthUser: (authUser) => set({ authUser }),
   setApiKey: (apiKey) => set({ apiKey }),
   setPipelineStep: (pipelineStep) => set({ pipelineStep }),
   setCompanyCol: (companyCol) => set({ companyCol }),

@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { CheckCircle2, Circle, Loader2 } from "lucide-react";
+import { usePathname, useRouter } from "next/navigation";
+import { CheckCircle2, Circle, ChevronLeft, LogOut } from "lucide-react";
 import { useSession } from "@/lib/store/session";
+import { signOutUser } from "@/lib/firebase/client";
 import { cn } from "@/lib/utils";
 
 const STEPS = [
@@ -15,18 +16,26 @@ const STEPS = [
 
 export function PipelineNav() {
   const pathname = usePathname();
-  const { pipelineStep, companies, clusters } = useSession();
+  const router = useRouter();
+  const { pipelineStep, companies, clusters, authUser } = useSession();
+
+  async function handleSignOut() {
+    await signOutUser();
+    router.push("/");
+  }
 
   return (
     <aside className="w-56 shrink-0 flex flex-col h-full border-r border-border bg-sidebar px-4 py-6 gap-6">
-      {/* Logo */}
+      {/* Logo + back link */}
       <div className="flex flex-col gap-1">
-        <span className="text-[11px] font-semibold tracking-widest text-muted-foreground uppercase">
-          Cluster
-        </span>
-        <span className="text-base font-bold text-primary leading-none">
-          Intelligence
-        </span>
+        <Link
+          href="/"
+          className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-primary transition-colors mb-0.5 w-fit"
+        >
+          <ChevronLeft className="h-3 w-3" />
+          Sessions
+        </Link>
+        <span className="text-base font-bold text-primary leading-none">Intelligence</span>
       </div>
 
       {/* Progress bar */}
@@ -79,7 +88,7 @@ export function PipelineNav() {
 
       {/* Session stats */}
       {companies.length > 0 && (
-        <div className="mt-auto flex flex-col gap-1">
+        <div className="flex flex-col gap-1">
           <div className="text-[11px] text-muted-foreground uppercase tracking-wide font-semibold mb-1">
             Session
           </div>
@@ -90,6 +99,30 @@ export function PipelineNav() {
               value={clusters.filter((c) => !c.isOutliers).length}
             />
           )}
+        </div>
+      )}
+
+      {/* User footer */}
+      {authUser && (
+        <div className="mt-auto flex items-center gap-2 px-2.5 py-2 border-t border-border">
+          {authUser.photoURL && (
+            <img
+              src={authUser.photoURL}
+              alt=""
+              className="h-6 w-6 rounded-full shrink-0"
+              referrerPolicy="no-referrer"
+            />
+          )}
+          <span className="text-xs text-muted-foreground truncate flex-1">
+            {authUser.displayName ?? authUser.email}
+          </span>
+          <button
+            onClick={handleSignOut}
+            title="Sign out"
+            className="text-muted-foreground hover:text-primary transition-colors shrink-0"
+          >
+            <LogOut className="h-3.5 w-3.5" />
+          </button>
         </div>
       )}
     </aside>
