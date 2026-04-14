@@ -29,7 +29,7 @@ export function ApiKeyStep() {
     <Card>
       <CardContent className="pt-4 flex flex-col gap-3">
         <div className="flex items-center justify-between">
-          <Label className="text-sm font-semibold">1. Gemini API Key</Label>
+          <Label className="text-sm font-semibold">Gemini API Key</Label>
           {apiKey && !editing && (
             <Badge variant="secondary" className="text-xs text-primary gap-1">
               <CheckCircle2 className="h-3 w-3" />

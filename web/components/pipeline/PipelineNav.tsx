@@ -38,6 +38,8 @@ export function PipelineNav() {
         <span className="text-base font-bold text-primary leading-none">Intelligence</span>
       </div>
 
+      <div className="border-t border-sidebar-border -mx-4" />
+
       {/* Progress bar */}
       <div className="flex flex-col gap-1">
         <div className="flex justify-between text-[11px] text-muted-foreground mb-1">
@@ -146,7 +148,7 @@ function Stat({ label, value }: { label: string; value: number }) {
   return (
     <div className="flex justify-between text-xs px-2.5">
       <span className="text-muted-foreground">{label}</span>
-      <span className="text-foreground font-mono font-medium">{value}</span>
+      <span className="text-primary font-mono font-medium">{value}</span>
     </div>
   );
 }

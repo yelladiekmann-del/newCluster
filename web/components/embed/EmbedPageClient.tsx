@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
 import { saveAs } from "file-saver";
-import { ArrowRight, Cpu, Download, GitBranch, RefreshCw, Sparkles } from "lucide-react";
+import { ArrowRight, Cpu, Download, GitBranch, Loader2, Sparkles } from "lucide-react";
 import { createParser } from "eventsource-parser";
 import { doc, writeBatch, collection, setDoc } from "firebase/firestore";
 import { getFirebaseDb } from "@/lib/firebase/client";
@@ -316,7 +316,7 @@ export function EmbedPageClient() {
             className="gap-1.5"
           >
             {embedding ? (
-              <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
             ) : (
               <Cpu className="h-3.5 w-3.5" />
             )}
@@ -357,7 +357,7 @@ export function EmbedPageClient() {
           className="self-start gap-1.5"
         >
           {clustering ? (
-            <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
           ) : (
             <GitBranch className="h-3.5 w-3.5" />
           )}
@@ -396,7 +396,7 @@ export function EmbedPageClient() {
               className="self-start gap-2"
             >
               {confirming ? (
-                <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
               ) : (
                 <Sparkles className="h-3.5 w-3.5" />
               )}

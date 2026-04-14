@@ -199,7 +199,10 @@ function SessionsView({ authUid }: { authUid: string }) {
                         Updated {new Date(s.updatedAt).toLocaleDateString()}
                       </div>
                     </div>
-                    <Badge variant="secondary" className="shrink-0 text-xs">
+                    <Badge
+                      variant="secondary"
+                      className={`shrink-0 text-xs ${s.pipelineStep >= 3 ? "bg-primary/10 text-primary border-primary/20" : ""}`}
+                    >
                       {STEP_LABELS[s.pipelineStep] ?? "Unknown"}
                     </Badge>
                   </div>

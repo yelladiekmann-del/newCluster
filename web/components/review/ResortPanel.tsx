@@ -8,7 +8,7 @@ import { doc, writeBatch } from "firebase/firestore";
 import { getFirebaseDb } from "@/lib/firebase/client";
 import { createParser } from "eventsource-parser";
 import { toast } from "sonner";
-import { RefreshCw, Shuffle, ChevronDown, ChevronUp } from "lucide-react";
+import { Loader2, Shuffle, ChevronDown, ChevronUp } from "lucide-react";
 
 interface SortReport {
   nSwitched: number;
@@ -200,7 +200,7 @@ export function ResortPanel() {
             className="gap-1.5"
           >
             {sorting ? (
-              <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
             ) : (
               <Shuffle className="h-3.5 w-3.5" />
             )}

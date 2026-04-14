@@ -5,11 +5,10 @@ import { toast } from "sonner";
 import { useSession } from "@/lib/store/session";
 import { ApiKeyStep } from "./ApiKeyStep";
 import { CompanyDataStep } from "./CompanyDataStep";
-import { DimensionExtractionStep } from "./DimensionExtractionStep";
 import { DealsDataStep } from "./DealsDataStep";
 import { EmbeddingsUploadStep } from "./EmbeddingsUploadStep";
 import { Button } from "@/components/ui/button";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, ChevronDown, ChevronUp } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { persistSession } from "@/lib/firebase/hooks";
 import { syncSetupToSheet } from "@/lib/sheets/sync";
@@ -26,12 +25,13 @@ export function SetupPageClient() {
     setPipelineStep,
   } = useSession();
 
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+
   const hasDimensions =
     companies.length > 0 &&
     !!companies[0]?.dimensions &&
     Object.keys(companies[0].dimensions).length > 0;
 
-  // Allow continue if: companies loaded + (dimensions extracted OR npz preloaded OR already past setup)
   const canContinue =
     companies.length > 0 &&
     (hasDimensions || npzPreloaded || pipelineStep >= 1);
@@ -68,7 +68,7 @@ export function SetupPageClient() {
   }, [uid, pipelineStep, setPipelineStep, router, companies]);
 
   return (
-    <div className="max-w-2xl mx-auto px-6 py-8 flex flex-col gap-8">
+    <div className="max-w-2xl mx-auto px-6 py-8 flex flex-col gap-6">
       {/* Header */}
       <div>
         <h1 className="text-2xl font-bold text-foreground">Setup</h1>
@@ -77,13 +77,35 @@ export function SetupPageClient() {
         </p>
       </div>
 
-      {/* Steps */}
-      <div className="flex flex-col gap-6">
-        <ApiKeyStep />
-        <CompanyDataStep />
-        {companies.length > 0 && descCol && <DimensionExtractionStep />}
-        <DealsDataStep />
-        <EmbeddingsUploadStep />
+      {/* API Key */}
+      <ApiKeyStep />
+
+      {/* Company Data + inline dimension extraction */}
+      <CompanyDataStep />
+
+      {/* Advanced Options — collapsible */}
+      <div className="flex flex-col gap-0">
+        <button
+          type="button"
+          onClick={() => setAdvancedOpen((v) => !v)}
+          className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors w-fit py-1"
+        >
+          {advancedOpen ? (
+            <ChevronUp className="h-4 w-4" />
+          ) : (
+            <ChevronDown className="h-4 w-4" />
+          )}
+          Advanced Options
+        </button>
+
+        {advancedOpen && (
+          <div className="mt-3 flex flex-col gap-4 border border-border rounded-xl p-4 bg-card">
+            <DealsDataStep />
+            <div className="border-t border-border pt-4">
+              <EmbeddingsUploadStep />
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Continue CTA */}
