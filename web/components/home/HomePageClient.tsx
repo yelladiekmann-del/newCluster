@@ -248,7 +248,7 @@ function SessionsView({ authUid }: { authUid: string }) {
     <div className="flex min-h-screen flex-col bg-background">
       {/* Header */}
       <header className="flex items-center justify-between border-b border-border px-6 py-4">
-        <img src={HY_LOGO} alt="hy" className="h-6 w-auto object-contain" />
+        <img src={HY_LOGO} alt="hy" className="h-7 w-auto object-contain" />
         <div className="flex items-center gap-3">
           {authUser.photoURL && (
             <img
@@ -270,7 +270,7 @@ function SessionsView({ authUid }: { authUid: string }) {
 
       {/* Main */}
       <main className="flex-1 px-6 py-8 max-w-5xl mx-auto w-full">
-        <div className="flex items-start justify-between mb-2">
+        <div className="flex items-start justify-between mb-5">
           <div>
             <h2 className="text-xl font-bold">Sessions</h2>
             <p className="text-sm text-muted-foreground mt-0.5 max-w-xl">
@@ -283,18 +283,13 @@ function SessionsView({ authUid }: { authUid: string }) {
           </Button>
         </div>
 
-        {/* Pipeline steps strip */}
-        <div className="mt-5">
-          <PipelineStrip />
-        </div>
-
         {loading ? (
           <div className="flex items-center gap-2 text-sm text-muted-foreground py-8">
             <Loader2 className="h-4 w-4 animate-spin" />
             Loading sessions…
           </div>
         ) : sessions.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-16 gap-4 text-center">
+          <div className="flex flex-col items-center justify-center py-12 gap-6 text-center">
             <div className="h-16 w-16 rounded-2xl bg-muted flex items-center justify-center">
               <GitBranch className="h-8 w-8 text-muted-foreground/50" />
             </div>
@@ -303,6 +298,10 @@ function SessionsView({ authUid }: { authUid: string }) {
               <p className="text-sm text-muted-foreground mt-1">
                 Create your first session to start mapping a company landscape with AI.
               </p>
+            </div>
+            {/* Pipeline overview — only shown to new users */}
+            <div className="w-full max-w-2xl">
+              <PipelineStrip />
             </div>
             <Button onClick={() => setDialogOpen(true)} disabled={creating} className="gap-1.5">
               <Plus className="h-4 w-4" />
