@@ -97,7 +97,7 @@ export function CompanyListDialog({ clusterId, onClose }: Props) {
 
   return (
     <Dialog open={!!clusterId} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-[min(90vw,72rem)] max-h-[85vh] flex flex-col gap-4">
+      <DialogContent className="max-w-[min(90vw,72rem)] sm:max-w-[min(90vw,72rem)] max-h-[85vh] flex flex-col gap-4">
         <DialogHeader>
           <div className="flex items-center gap-3">
             {cluster?.color && (

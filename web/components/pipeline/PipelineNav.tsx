@@ -27,15 +27,19 @@ export function PipelineNav() {
   return (
     <aside className="w-56 shrink-0 flex flex-col h-full border-r border-border bg-sidebar px-4 py-6 gap-6">
       {/* Logo + back link */}
-      <div className="flex flex-col gap-1">
+      <div className="flex flex-col gap-2">
+        <img
+          src="https://innovators.hamburg/wordpress/wp-content/uploads/2022/01/Logo_hy.png"
+          alt="hy"
+          className="h-5 w-auto object-contain"
+        />
         <Link
           href="/"
-          className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-primary transition-colors mb-0.5 w-fit"
+          className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-primary transition-colors w-fit"
         >
           <ChevronLeft className="h-3 w-3" />
           Sessions
         </Link>
-        <span className="text-base font-bold text-primary leading-none">Intelligence</span>
       </div>
 
       <div className="border-t border-sidebar-border -mx-4" />

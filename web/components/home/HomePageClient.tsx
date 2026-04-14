@@ -9,7 +9,7 @@ import { useSession } from "@/lib/store/session";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card";
-import { Plus, LogOut, ArrowRight, Clock, Loader2, GitBranch, Trash2 } from "lucide-react";
+import { Plus, LogOut, ArrowRight, Clock, Loader2, GitBranch, Trash2, Upload, Cpu, Network, BarChart3 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -32,6 +32,8 @@ import {
 import { toast } from "sonner";
 import type { SessionDoc } from "@/types";
 
+const HY_LOGO = "https://innovators.hamburg/wordpress/wp-content/uploads/2022/01/Logo_hy.png";
+
 type SessionRow = SessionDoc & { id: string };
 
 const STEP_LABELS: Record<number, string> = {
@@ -51,6 +53,29 @@ const STEP_BADGE_CLASSES: Record<number, string> = {
 };
 
 const STEP_ROUTES = ["/setup", "/setup", "/embed", "/review", "/analytics"];
+
+const PIPELINE_STEPS = [
+  {
+    icon: Upload,
+    label: "Setup",
+    desc: "Upload a company list and configure AI dimension extraction.",
+  },
+  {
+    icon: Cpu,
+    label: "Embed & Cluster",
+    desc: "Generate embeddings with Gemini and run HDBSCAN clustering.",
+  },
+  {
+    icon: Network,
+    label: "Review & Edit",
+    desc: "Inspect clusters on a UMAP map and refine them with AI assistance.",
+  },
+  {
+    icon: BarChart3,
+    label: "Analytics",
+    desc: "Compare clusters on funding, growth, and market metrics.",
+  },
+];
 
 // ── Sign-in view ──────────────────────────────────────────────────────────────
 
@@ -75,30 +100,78 @@ function SignInView() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background">
-      <div className="w-full max-w-sm flex flex-col gap-6 px-4">
-        <div className="text-center">
-          <p className="text-[11px] font-semibold tracking-widest text-muted-foreground uppercase">
-            Cluster
-          </p>
-          <h1 className="text-2xl font-bold text-primary">Intelligence</h1>
-          <p className="text-sm text-muted-foreground mt-2">
-            Sign in with your @hy.co Google account to continue.
-          </p>
+    <div className="flex min-h-screen items-center justify-center bg-background px-4">
+      <div className="w-full max-w-md flex flex-col gap-8">
+        {/* Hero */}
+        <div className="flex flex-col items-center text-center gap-4">
+          <img src={HY_LOGO} alt="hy" className="h-8 w-auto object-contain" />
+          <div>
+            <h1 className="text-2xl font-bold text-foreground">Clustering Tool</h1>
+            <p className="text-sm text-muted-foreground mt-1">
+              AI-powered market landscape mapping for venture investors
+            </p>
+          </div>
+          {/* 3-step description */}
+          <div className="flex flex-col gap-2 text-sm text-left w-full max-w-xs mt-1">
+            {[
+              "① Upload a company list",
+              "② Extract AI dimensions & embed",
+              "③ Discover natural market clusters",
+            ].map((step) => (
+              <div key={step} className="flex items-center gap-2 text-muted-foreground">
+                <span>{step}</span>
+              </div>
+            ))}
+          </div>
         </div>
+
+        {/* Sign-in card */}
         <Card>
-          <CardContent className="pt-6 flex flex-col gap-3">
+          <CardContent className="pt-6 flex flex-col gap-4">
+            <div className="text-center">
+              <p className="text-sm font-medium text-foreground">Sign in to continue</p>
+              <p className="text-xs text-muted-foreground mt-0.5">Access restricted to @hy.co accounts</p>
+            </div>
             {error && (
               <p className="text-sm text-destructive bg-destructive/10 rounded-md px-3 py-2">
                 {error}
               </p>
             )}
             <Button onClick={handleSignIn} disabled={loading} className="w-full gap-2">
-              {loading ? "Signing in…" : "Sign in with Google"}
+              {loading ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Signing in…
+                </>
+              ) : (
+                "Sign in with Google"
+              )}
             </Button>
           </CardContent>
         </Card>
       </div>
+    </div>
+  );
+}
+
+// ── Pipeline steps strip ──────────────────────────────────────────────────────
+
+function PipelineStrip() {
+  return (
+    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+      {PIPELINE_STEPS.map(({ icon: Icon, label, desc }, i) => (
+        <div
+          key={label}
+          className="flex flex-col gap-1.5 rounded-lg border border-border bg-muted/30 px-4 py-3"
+        >
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] font-bold text-primary/60 font-mono">0{i + 1}</span>
+            <Icon className="h-3.5 w-3.5 text-primary" />
+            <span className="text-xs font-semibold text-foreground">{label}</span>
+          </div>
+          <p className="text-[11px] text-muted-foreground leading-snug">{desc}</p>
+        </div>
+      ))}
     </div>
   );
 }
@@ -175,12 +248,7 @@ function SessionsView({ authUid }: { authUid: string }) {
     <div className="flex min-h-screen flex-col bg-background">
       {/* Header */}
       <header className="flex items-center justify-between border-b border-border px-6 py-4">
-        <div>
-          <p className="text-[11px] font-semibold tracking-widest text-muted-foreground uppercase">
-            Cluster
-          </p>
-          <span className="text-base font-bold text-primary leading-none">Intelligence</span>
-        </div>
+        <img src={HY_LOGO} alt="hy" className="h-6 w-auto object-contain" />
         <div className="flex items-center gap-3">
           {authUser.photoURL && (
             <img
@@ -202,17 +270,22 @@ function SessionsView({ authUid }: { authUid: string }) {
 
       {/* Main */}
       <main className="flex-1 px-6 py-8 max-w-5xl mx-auto w-full">
-        <div className="flex items-center justify-between mb-6">
+        <div className="flex items-start justify-between mb-2">
           <div>
             <h2 className="text-xl font-bold">Sessions</h2>
-            <p className="text-sm text-muted-foreground mt-0.5">
-              Each session is an independent clustering run.
+            <p className="text-sm text-muted-foreground mt-0.5 max-w-xl">
+              Each session maps a company list through the full AI pipeline: dimension extraction → embedding → clustering → analytics.
             </p>
           </div>
-          <Button onClick={() => setDialogOpen(true)} disabled={creating} className="gap-1.5">
+          <Button onClick={() => setDialogOpen(true)} disabled={creating} className="gap-1.5 shrink-0 ml-4">
             {creating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
             {creating ? "Creating…" : "New Session"}
           </Button>
+        </div>
+
+        {/* Pipeline steps strip */}
+        <div className="mt-5">
+          <PipelineStrip />
         </div>
 
         {loading ? (
@@ -221,14 +294,14 @@ function SessionsView({ authUid }: { authUid: string }) {
             Loading sessions…
           </div>
         ) : sessions.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-24 gap-4 text-center">
+          <div className="flex flex-col items-center justify-center py-16 gap-4 text-center">
             <div className="h-16 w-16 rounded-2xl bg-muted flex items-center justify-center">
               <GitBranch className="h-8 w-8 text-muted-foreground/50" />
             </div>
             <div>
               <p className="font-semibold text-foreground">No sessions yet</p>
               <p className="text-sm text-muted-foreground mt-1">
-                Each session is an independent clustering run for a dataset.
+                Create your first session to start mapping a company landscape with AI.
               </p>
             </div>
             <Button onClick={() => setDialogOpen(true)} disabled={creating} className="gap-1.5">

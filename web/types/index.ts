@@ -142,6 +142,7 @@ export interface AnalyticsColMap {
 export interface ClusterMetricsRow {
   clusterId: string;
   clusterName: string;
+  color?: string;
   companyCount: number;
   uniqueCompanies: number;
   avgEmployees: number | null;

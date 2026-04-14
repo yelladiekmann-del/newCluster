@@ -14,8 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Cluster Intelligence",
-  description: "AI-powered company clustering and market analysis",
+  title: "Clustering Tool",
+  description: "AI-powered market landscape mapping for venture investors",
 };
 
 export default function RootLayout({

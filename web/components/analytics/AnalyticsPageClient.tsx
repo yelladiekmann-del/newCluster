@@ -105,17 +105,17 @@ export function AnalyticsPageClient() {
   );
 
   const currentYear = useMemo(() => new Date().getFullYear(), []);
-  const analyticsRows = useMemo(
-    () =>
-      computeAnalytics(
-        clusters.filter((c) => !c.isOutliers),
-        companies,
-        dealsData,
-        colMap,
-        currentYear
-      ),
-    [clusters, companies, dealsData, colMap, currentYear]
-  );
+  const analyticsRows = useMemo(() => {
+    const rows = computeAnalytics(
+      clusters.filter((c) => !c.isOutliers),
+      companies,
+      dealsData,
+      colMap,
+      currentYear
+    );
+    const colorMap = Object.fromEntries(clusters.map((c) => [c.id, c.color]));
+    return rows.map((r) => ({ ...r, color: colorMap[r.clusterId] ?? undefined }));
+  }, [clusters, companies, dealsData, colMap, currentYear]);
 
   const handleDownload = () => {
     const csv = Papa.unparse(analyticsRows);
