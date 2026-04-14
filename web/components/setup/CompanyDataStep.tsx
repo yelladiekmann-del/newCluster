@@ -1,18 +1,11 @@
 "use client";
 
-import { useCallback, useState, useEffect, useRef } from "react";
+import { useCallback, useState, useRef } from "react";
 import { Eye, CheckCircle2, Sparkles, Loader2, Download } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   Dialog,
   DialogContent,
@@ -51,7 +44,6 @@ export function CompanyDataStep() {
   const [columns, setColumns] = useState<string[]>([]);
   const [preview, setPreview] = useState<Record<string, unknown>[]>([]);
   const [previewOpen, setPreviewOpen] = useState(false);
-  const [saveProgress, setSaveProgress] = useState<{ done: number; total: number } | null>(null);
 
   // Dimension extraction state
   const [extractProgress, setExtractProgress] = useState<{ done: number; total: number; errors: number } | null>(null);
@@ -151,6 +143,7 @@ export function CompanyDataStep() {
           setColumns(cols);
           setPreview(rows.slice(0, 10));
 
+          // Auto-detect standard column names
           const nameCol =
             cols.find((c) => /^name$/i.test(c)) ||
             cols.find((c) => /company/i.test(c)) ||
@@ -160,18 +153,19 @@ export function CompanyDataStep() {
             cols.find((c) => /desc/i.test(c)) ||
             null;
 
+          // Check if dimensions are already present in the CSV
           const dimCols = DIMENSIONS.filter((d) => cols.includes(d));
+          const dimsAlreadyPresent = dimCols.length >= 4; // at least half the dimensions
 
           const companyDocs: CompanyDoc[] = rows.map((row, i) => ({
             id: `r${i}`,
             rowIndex: i,
             name: String(row[nameCol] ?? ""),
             originalData: row,
-            dimensions: dimCols.length > 0
+            dimensions: dimsAlreadyPresent
               ? Object.fromEntries(dimCols.map((d) => [d, String(row[d] ?? "")]))
               : {},
             clusterId: null,
-            outlierScore: null,
             umapX: null,
             umapY: null,
           }));
@@ -183,7 +177,6 @@ export function CompanyDataStep() {
 
           if (!uid) { toast.warning("Not signed in — data loaded locally but not saved"); return; }
 
-          setSaveProgress({ done: 0, total: companyDocs.length });
           (async () => {
             try {
               const db = getFirebaseDb();
@@ -194,22 +187,19 @@ export function CompanyDataStep() {
                   batch.set(doc(db, "sessions", uid, "companies", c.id), c);
                 }
                 await batch.commit();
-                setSaveProgress({ done: Math.min(i + batchSize, companyDocs.length), total: companyDocs.length });
               }
               const storage = getFirebaseStorage();
               await uploadBytes(ref(storage, `sessions/${uid}/companies.csv`), file);
               await persistSession(uid, { companyCol: nameCol, descCol: dCol, pipelineStep: 0 });
-              toast.success(`${rows.length.toLocaleString()} companies saved`);
+              toast.success(`${rows.length.toLocaleString()} companies loaded`);
 
-              // Auto-extract if we have a desc col and API key
-              if (dCol && useSession.getState().apiKey && !autoExtractTriggered.current) {
+              // Auto-extract only if dims are NOT already in the CSV
+              if (!dimsAlreadyPresent && dCol && useSession.getState().apiKey && !autoExtractTriggered.current) {
                 autoExtractTriggered.current = true;
                 runExtraction(companyDocs);
               }
             } catch (err) {
               toast.error("Save failed — " + (err instanceof Error ? err.message : String(err)));
-            } finally {
-              setSaveProgress(null);
             }
           })();
         },
@@ -242,7 +232,7 @@ export function CompanyDataStep() {
             {companies.length > 0 && (
               <Badge variant="secondary" className="text-xs text-primary gap-1">
                 <CheckCircle2 className="h-3 w-3" />
-                {companies.length.toLocaleString()} rows · {companyCol}
+                {companies.length.toLocaleString()} companies
               </Badge>
             )}
           </div>
@@ -256,61 +246,6 @@ export function CompanyDataStep() {
             idleLabel="Drop CSV / Excel here or browse"
             hint=".csv, .xlsx, .xls"
           />
-
-          {saveProgress && (
-            <div className="flex flex-col gap-1">
-              <div className="flex justify-between text-xs text-muted-foreground">
-                <span>Saving to cloud…</span>
-                <span>{saveProgress.done}/{saveProgress.total}</span>
-              </div>
-              <Progress value={Math.round((saveProgress.done / saveProgress.total) * 100)} className="h-1.5" />
-            </div>
-          )}
-
-          {/* Column selectors */}
-          {columns.length > 0 && (
-            <div className="flex gap-3">
-              <div className="flex-1 flex flex-col gap-1">
-                <Label className="text-xs text-muted-foreground">Company column</Label>
-                <Select
-                  value={companyCol}
-                  onValueChange={async (v) => {
-                    if (!v) return;
-                    setCompanyCol(v);
-                    if (uid) await persistSession(uid, { companyCol: v });
-                  }}
-                >
-                  <SelectTrigger className="h-8 text-xs">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {columns.map((c) => (
-                      <SelectItem key={c} value={c}>{c}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="flex-1 flex flex-col gap-1">
-                <Label className="text-xs text-muted-foreground">Description column</Label>
-                <Select
-                  value={descCol ?? ""}
-                  onValueChange={async (v) => {
-                    setDescCol(v || null);
-                    if (uid) await persistSession(uid, { descCol: v || null });
-                  }}
-                >
-                  <SelectTrigger className="h-8 text-xs">
-                    <SelectValue placeholder="Select…" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {columns.map((c) => (
-                      <SelectItem key={c} value={c}>{c}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-          )}
 
           {/* Preview */}
           {preview.length > 0 && (
@@ -384,7 +319,7 @@ export function CompanyDataStep() {
                   {!apiKey
                     ? "Enter your API key above to enable AI dimension extraction."
                     : !descCol
-                    ? "Select a description column above to enable extraction."
+                    ? "No description column detected — extraction requires a description."
                     : "Extraction will start automatically after upload."}
                 </p>
               )}
@@ -395,32 +330,34 @@ export function CompanyDataStep() {
 
       {/* Preview dialog */}
       <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
-        <DialogContent className="max-w-4xl max-h-[70vh] overflow-auto">
+        <DialogContent className="max-w-4xl max-h-[75vh] flex flex-col gap-4">
           <DialogHeader>
             <DialogTitle>Data Preview</DialogTitle>
           </DialogHeader>
-          <table className="w-full text-xs border-collapse">
-            <thead>
-              <tr>
-                {columns.slice(0, 6).map((c) => (
-                  <th key={c} className="text-left p-2 border-b border-border text-muted-foreground font-medium">
-                    {c}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {preview.map((row, i) => (
-                <tr key={i} className="hover:bg-muted/30">
+          <div className="overflow-auto flex-1 rounded-lg border border-border">
+            <table className="w-full text-xs border-collapse">
+              <thead className="sticky top-0 bg-muted/80 backdrop-blur-sm">
+                <tr>
                   {columns.slice(0, 6).map((c) => (
-                    <td key={c} className="p-2 border-b border-border/50 truncate max-w-[180px]">
-                      {String(row[c] ?? "")}
-                    </td>
+                    <th key={c} className="text-left px-3 py-2.5 border-b border-border text-muted-foreground font-medium whitespace-nowrap">
+                      {c}
+                    </th>
                   ))}
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {preview.map((row, i) => (
+                  <tr key={i} className={`border-b border-border/40 ${i % 2 === 0 ? "" : "bg-muted/10"}`}>
+                    {columns.slice(0, 6).map((c) => (
+                      <td key={c} className="px-3 py-2 truncate max-w-[200px]">
+                        {String(row[c] ?? "")}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </DialogContent>
       </Dialog>
     </>

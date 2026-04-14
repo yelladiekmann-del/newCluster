@@ -22,145 +22,156 @@ function fmtMoney(n: number | null): string {
   return `$${n}`;
 }
 
+function fmtPct(n: number | null): string {
+  if (n == null) return "—";
+  return `${n}%`;
+}
+
 function MomentumChip({ value }: { value: number | null }) {
   if (value == null) return <span className="text-muted-foreground">—</span>;
-  if (value > 0)
-    return (
-      <span className="text-xs px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400">
-        +{value}%
-      </span>
-    );
-  if (value < 0)
-    return (
-      <span className="text-xs px-1.5 py-0.5 rounded-full bg-red-500/20 text-red-400">
-        {value}%
-      </span>
-    );
+  const cls =
+    value > 0
+      ? "bg-emerald-500/15 text-emerald-600"
+      : value < 0
+      ? "bg-red-500/15 text-red-500"
+      : "bg-muted text-muted-foreground";
   return (
-    <span className="text-xs px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground">
-      0%
+    <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${cls}`}>
+      {value > 0 ? "+" : ""}
+      {value}%
     </span>
   );
 }
 
+interface ColDef {
+  key: keyof ClusterMetricsRow;
+  label: string;
+  group: string;
+  fmt: (r: ClusterMetricsRow) => React.ReactNode;
+  higherIsBetter?: boolean;
+  rankable?: boolean;
+  dealsOnly?: boolean;
+}
+
+const COLS: ColDef[] = [
+  { key: "companyCount",       group: "Size",     label: "Companies",     fmt: (r) => fmtNum(r.companyCount),       higherIsBetter: true,  rankable: true  },
+  { key: "avgEmployees",       group: "Size",     label: "Avg empl.",     fmt: (r) => fmtNum(r.avgEmployees),       higherIsBetter: true,  rankable: false },
+  { key: "avgYearFounded",     group: "Recency",  label: "Avg founded",   fmt: (r) => fmtNum(r.avgYearFounded),     higherIsBetter: false, rankable: false },
+  { key: "pctRecentlyFounded", group: "Recency",  label: "% recent ↑",    fmt: (r) => fmtPct(r.pctRecentlyFounded), higherIsBetter: true,  rankable: true  },
+  { key: "dealCount",          group: "Deals",    label: "# Deals ↑",     fmt: (r) => fmtNum(r.dealCount),          higherIsBetter: true,  rankable: true,  dealsOnly: true },
+  { key: "dealMomentum",       group: "Deals",    label: "Deal mom.",     fmt: (r) => <MomentumChip value={r.dealMomentum} />, rankable: false, dealsOnly: true },
+  { key: "avgFunding",         group: "Funding",  label: "Avg raised ↑",  fmt: (r) => fmtMoney(r.avgFunding),       higherIsBetter: true,  rankable: true  },
+  { key: "totalFunding",       group: "Funding",  label: "Σ raised ↑",    fmt: (r) => fmtMoney(r.totalFunding),     higherIsBetter: true,  rankable: true  },
+  { key: "totalInvested4yr",   group: "Funding",  label: "Σ 4yr inv. ↑",  fmt: (r) => fmtMoney(r.totalInvested4yr), higherIsBetter: true, rankable: true,  dealsOnly: true },
+  { key: "fundingMomentum",    group: "Funding",  label: "Fund. mom.",    fmt: (r) => <MomentumChip value={r.fundingMomentum} />, rankable: false, dealsOnly: true },
+  { key: "capitalMean",        group: "Capital",  label: "Mean deal ↑",   fmt: (r) => fmtMoney(r.capitalMean),      higherIsBetter: true,  rankable: true,  dealsOnly: true },
+  { key: "capitalMedian",      group: "Capital",  label: "Median deal ↑", fmt: (r) => fmtMoney(r.capitalMedian),    higherIsBetter: true,  rankable: true,  dealsOnly: true },
+  { key: "meanMedianRatio",    group: "Capital",  label: "Mean/med.",     fmt: (r) => fmtNum(r.meanMedianRatio, 2), higherIsBetter: false, rankable: false, dealsOnly: true },
+  { key: "avgSeriesScore",     group: "Market",   label: "Maturity ↑",    fmt: (r) => fmtNum(r.avgSeriesScore, 1),  higherIsBetter: true,  rankable: true,  dealsOnly: true },
+  { key: "vcGraduationRate",   group: "Risk",     label: "Grad. rate ↑",  fmt: (r) => fmtPct(r.vcGraduationRate),  higherIsBetter: true,  rankable: true  },
+  { key: "mortalityRate",      group: "Risk",     label: "Mortality ↓",   fmt: (r) => fmtPct(r.mortalityRate),     higherIsBetter: false, rankable: true  },
+];
+
 export function AnalyticsTable({ rows, hasDeals }: Props) {
-  // Pre-compute ranks
-  const ranks = {
-    companyCount: rankRows(rows, "companyCount"),
-    avgFunding: rankRows(rows, "avgFunding"),
-    dealCount: rankRows(rows, "dealCount"),
-    graduationCount: rankRows(rows, "graduationCount"),
-  };
+  const visibleCols = COLS.filter((c) => !c.dealsOnly || hasDeals);
+
+  // Pre-compute ranks for rankable columns
+  const ranks: Record<string, Record<string, number>> = {};
+  for (const col of visibleCols) {
+    if (col.rankable && col.higherIsBetter != null) {
+      ranks[col.key] = rankRows(rows, col.key, col.higherIsBetter);
+    }
+  }
+
+  // Build group spans for header
+  const groups: { name: string; span: number }[] = [];
+  for (const col of visibleCols) {
+    const last = groups[groups.length - 1];
+    if (last?.name === col.group) last.span++;
+    else groups.push({ name: col.group, span: 1 });
+  }
 
   const rankClass = (rank: number | undefined) => {
-    if (!rank) return "";
+    if (!rank) return "text-muted-foreground";
     if (rank === 1) return "font-bold text-foreground";
     if (rank === 2) return "font-semibold text-foreground/80";
+    if (rank === 3) return "text-foreground/70";
     return "text-muted-foreground";
   };
 
+  const GROUP_COLORS: Record<string, string> = {
+    Size: "bg-blue-500/8",
+    Recency: "bg-violet-500/8",
+    Deals: "bg-amber-500/8",
+    Funding: "bg-emerald-500/8",
+    Capital: "bg-cyan-500/8",
+    Market: "bg-orange-500/8",
+    Risk: "bg-red-500/8",
+  };
+
   return (
-    <div className="rounded-lg border border-border overflow-x-auto">
+    <div className="rounded-xl border border-border overflow-x-auto">
       <table className="w-full text-xs border-collapse">
         <thead>
-          <tr className="border-b border-border bg-muted/40">
-            <th className="text-left px-3 py-2.5 text-muted-foreground font-medium sticky left-0 bg-muted/40">
+          {/* Group header row */}
+          <tr className="border-b border-border">
+            <th className="sticky left-0 bg-muted/60 px-4 py-2 text-left text-muted-foreground font-medium" rowSpan={2}>
               Cluster
             </th>
-            <th className="text-right px-3 py-2.5 text-muted-foreground font-medium">
-              Companies ↓
-            </th>
-            <th className="text-right px-3 py-2.5 text-muted-foreground font-medium">
-              Avg employees ↓
-            </th>
-            <th className="text-right px-3 py-2.5 text-muted-foreground font-medium">
-              Avg founded
-            </th>
-            <th className="text-right px-3 py-2.5 text-muted-foreground font-medium">
-              % recent ↓
-            </th>
-            {hasDeals && (
-              <>
-                <th className="text-right px-3 py-2.5 text-muted-foreground font-medium">
-                  Deals ↓
-                </th>
-                <th className="text-right px-3 py-2.5 text-muted-foreground font-medium">
-                  Momentum
-                </th>
-              </>
-            )}
-            <th className="text-right px-3 py-2.5 text-muted-foreground font-medium">
-              Avg funding ↓
-            </th>
-            <th className="text-right px-3 py-2.5 text-muted-foreground font-medium">
-              Exits ↓
-            </th>
+            {groups.map(({ name, span }) => (
+              <th
+                key={name}
+                colSpan={span}
+                className={`px-3 py-1.5 text-center text-[10px] font-semibold text-muted-foreground uppercase tracking-wide border-l border-border/60 ${GROUP_COLORS[name] ?? ""}`}
+              >
+                {name}
+              </th>
+            ))}
+          </tr>
+          {/* Column header row */}
+          <tr className="border-b border-border bg-muted/40">
+            {visibleCols.map((col) => (
+              <th
+                key={col.key}
+                className="px-3 py-2 text-right text-[11px] text-muted-foreground font-medium whitespace-nowrap border-l border-border/30"
+              >
+                {col.label}
+              </th>
+            ))}
           </tr>
         </thead>
         <tbody>
-          {rows.map((row) => (
+          {rows.map((row, i) => (
             <tr
               key={row.clusterId}
-              className="border-b border-border/50 hover:bg-muted/20 transition-colors"
+              className={`border-b border-border/40 hover:bg-muted/20 transition-colors ${i % 2 === 1 ? "bg-muted/10" : ""}`}
             >
-              <td className="px-3 py-2.5 font-medium text-foreground max-w-[160px] truncate sticky left-0 bg-background">
+              <td className="sticky left-0 bg-background px-4 py-2.5 font-medium text-foreground max-w-[160px] truncate border-r border-border/30">
                 {row.clusterName}
               </td>
-              <td
-                className={cn(
-                  "px-3 py-2.5 text-right font-mono",
-                  rankClass(ranks.companyCount[row.clusterId])
-                )}
-              >
-                {fmtNum(row.companyCount)}
-              </td>
-              <td className="px-3 py-2.5 text-right font-mono text-muted-foreground">
-                {fmtNum(row.avgEmployees)}
-              </td>
-              <td className="px-3 py-2.5 text-right font-mono text-muted-foreground">
-                {fmtNum(row.avgYearFounded)}
-              </td>
-              <td className="px-3 py-2.5 text-right font-mono text-muted-foreground">
-                {row.pctRecentlyFounded != null ? `${row.pctRecentlyFounded}%` : "—"}
-              </td>
-              {hasDeals && (
-                <>
+              {visibleCols.map((col) => {
+                const rank = ranks[col.key]?.[row.clusterId];
+                return (
                   <td
+                    key={col.key}
                     className={cn(
-                      "px-3 py-2.5 text-right font-mono",
-                      rankClass(ranks.dealCount[row.clusterId])
+                      "px-3 py-2.5 text-right font-mono border-l border-border/20",
+                      rankClass(rank)
                     )}
                   >
-                    {fmtNum(row.dealCount)}
+                    {col.fmt(row)}
                   </td>
-                  <td className="px-3 py-2.5 text-right">
-                    <MomentumChip value={row.dealMomentum} />
-                  </td>
-                </>
-              )}
-              <td
-                className={cn(
-                  "px-3 py-2.5 text-right font-mono",
-                  rankClass(ranks.avgFunding[row.clusterId])
-                )}
-              >
-                {fmtMoney(row.avgFunding)}
-              </td>
-              <td
-                className={cn(
-                  "px-3 py-2.5 text-right font-mono",
-                  rankClass(ranks.graduationCount[row.clusterId])
-                )}
-              >
-                {fmtNum(row.graduationCount)}
-              </td>
+                );
+              })}
             </tr>
           ))}
         </tbody>
       </table>
-      <p className="text-[10px] text-muted-foreground px-3 py-2">
-        ↓ higher is better · Bold = #1 rank
-      </p>
+      <div className="px-4 py-2 text-[10px] text-muted-foreground border-t border-border/40 flex gap-4">
+        <span>↑ higher is better</span>
+        <span>↓ lower is better</span>
+        <span>Bold = #1 · progressively lighter = #2 #3</span>
+      </div>
     </div>
   );
 }

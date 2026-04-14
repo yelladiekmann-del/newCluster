@@ -110,7 +110,7 @@ export async function syncClustersToSheet(
   // ── Cluster Assignments tab ──────────────────────────────────────────────
   const assignmentsSheetId = await addSheet(token, spreadsheetId, "Cluster Assignments");
 
-  const assignHeader = ["Company", "Cluster", "Outlier Score", "UMAP X", "UMAP Y"];
+  const assignHeader = ["Company", "Cluster", "UMAP X", "UMAP Y"];
 
   // Sort: non-outliers first (grouped by cluster), then outliers
   const sorted = [...companies].sort((a, b) => {
@@ -131,7 +131,6 @@ export async function syncClustersToSheet(
     return [
       c.name,
       clusterById[clusterId]?.name ?? "Outliers",
-      c.outlierScore ?? "",
       c.umapX ?? "",
       c.umapY ?? "",
     ];
@@ -225,7 +224,6 @@ export async function syncReviewToSheet(
     return [
       c.name,
       clusterById[clusterId]?.name ?? "Outliers",
-      c.outlierScore ?? "",
       c.umapX ?? "",
       c.umapY ?? "",
     ];

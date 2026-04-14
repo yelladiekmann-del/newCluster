@@ -172,8 +172,11 @@ export interface ExtractionProgress {
   errors: number;
 }
 
+const MAX_CONCURRENT_BATCHES = 8;
+
 /**
  * Extract dimensions for all rows, calling `onProgress` after each batch.
+ * Processes up to MAX_CONCURRENT_BATCHES in parallel (mirrors Python's ThreadPoolExecutor).
  * Returns an array of DimensionResult in the same order as `rows`.
  */
 export async function extractAllDimensions(
@@ -185,18 +188,26 @@ export async function extractAllDimensions(
   let done = 0;
   let errors = 0;
 
-  // Process BATCH_SIZE companies at a time, sequentially to respect rate limits
+  // Split into batch jobs
+  const batches: { startIndex: number; rows: CompanyRow[] }[] = [];
   for (let i = 0; i < rows.length; i += BATCH_SIZE) {
-    const batch = rows.slice(i, i + BATCH_SIZE);
-    const batchResults = await extractBatch(apiKey, batch);
+    batches.push({ startIndex: i, rows: rows.slice(i, i + BATCH_SIZE) });
+  }
 
-    for (let j = 0; j < batch.length; j++) {
-      results[i + j] = batchResults[j];
-      if (Object.keys(batchResults[j]).length === 0) errors++;
-      done++;
-    }
-
-    onProgress?.({ done, total: rows.length, errors });
+  // Process MAX_CONCURRENT_BATCHES batches in parallel at a time
+  for (let b = 0; b < batches.length; b += MAX_CONCURRENT_BATCHES) {
+    const chunk = batches.slice(b, b + MAX_CONCURRENT_BATCHES);
+    await Promise.all(
+      chunk.map(async ({ startIndex, rows: batchRows }) => {
+        const batchResults = await extractBatch(apiKey, batchRows);
+        for (let j = 0; j < batchRows.length; j++) {
+          results[startIndex + j] = batchResults[j];
+          if (Object.keys(batchResults[j]).length === 0) errors++;
+          done++;
+        }
+        onProgress?.({ done, total: rows.length, errors });
+      })
+    );
   }
 
   return results;

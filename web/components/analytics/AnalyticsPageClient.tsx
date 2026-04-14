@@ -3,26 +3,44 @@
 import { useState, useMemo, useCallback } from "react";
 import Papa from "papaparse";
 import { saveAs } from "file-saver";
-import { Download, UploadCloud } from "lucide-react";
+import { Download } from "lucide-react";
 import { useSession } from "@/lib/store/session";
-import { persistSession } from "@/lib/firebase/hooks";
-import { computeAnalytics, rankRows } from "@/lib/analytics/compute";
+import { computeAnalytics } from "@/lib/analytics/compute";
 import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { FileUploadZone } from "@/components/ui/file-upload-zone";
 import { AnalyticsTable } from "./AnalyticsTable";
 import { AnalyticsCharts } from "./AnalyticsCharts";
 import type { AnalyticsColMap } from "@/types";
 
+/**
+ * Auto-detect standard column names from the CSV headers.
+ * Supports common CBI/Pitchbook-style naming variants.
+ */
+function detectColMap(
+  companyCols: string[],
+  dealsCols: string[]
+): AnalyticsColMap {
+  const find = (cols: string[], patterns: RegExp[]) =>
+    cols.find((c) => patterns.some((p) => p.test(c))) ?? undefined;
+
+  return {
+    co_id: find(companyCols, [/^company.?id$/i, /^co.?id$/i, /^id$/i]),
+    employees: find(companyCols, [/employee/i, /staff/i, /headcount/i]),
+    year_founded: find(companyCols, [/year.?founded/i, /founded.?year/i, /founding/i, /^founded$/i]),
+    total_raised: find(companyCols, [/total.?raised/i, /total.?funding/i, /funds.?raised/i, /total.?capital/i]),
+    business_status: find(companyCols, [/business.?status/i, /company.?status/i, /^status$/i]),
+    ownership_status: find(companyCols, [/ownership.?status/i, /ownership/i]),
+    financing_status: find(companyCols, [/financing.?status/i, /company.?financing/i, /financing$/i]),
+    de_co_id: find(dealsCols, [/company.?id$/i, /co.?id$/i, /^id$/i]),
+    deal_date: find(dealsCols, [/deal.?date/i, /date$/i, /closed/i]),
+    deal_size: find(dealsCols, [/deal.?size/i, /amount/i, /size/i]),
+    series: find(dealsCols, [/series/i, /stage/i, /round/i]),
+    deal_id: find(dealsCols, [/deal.?id/i, /^id$/i]),
+  };
+}
+
 export function AnalyticsPageClient() {
-  const { uid, companies, clusters, analyticsColMap, setAnalyticsColMap } =
-    useSession();
+  const { uid, companies, clusters } = useSession();
 
   const [dealsData, setDealsData] = useState<Record<string, unknown>[] | null>(null);
   const [dealsColumns, setDealsColumns] = useState<string[]>([]);
@@ -31,11 +49,6 @@ export function AnalyticsPageClient() {
     if (companies.length === 0) return [];
     return Object.keys(companies[0].originalData ?? {});
   }, [companies]);
-
-  const allColumns = useMemo(
-    () => Array.from(new Set([...companyColumns, ...dealsColumns])),
-    [companyColumns, dealsColumns]
-  );
 
   const handleDealsFile = useCallback((file: File) => {
     Papa.parse<Record<string, unknown>>(file, {
@@ -48,13 +61,9 @@ export function AnalyticsPageClient() {
     });
   }, []);
 
-  const updateColMap = useCallback(
-    async (key: keyof AnalyticsColMap, value: string) => {
-      const updated = { ...analyticsColMap, [key]: value };
-      setAnalyticsColMap(updated);
-      if (uid) await persistSession(uid, { analyticsColMap: updated });
-    },
-    [uid, analyticsColMap, setAnalyticsColMap]
+  const colMap = useMemo(
+    () => detectColMap(companyColumns, dealsColumns),
+    [companyColumns, dealsColumns]
   );
 
   const currentYear = useMemo(() => new Date().getFullYear(), []);
@@ -64,42 +73,16 @@ export function AnalyticsPageClient() {
         clusters.filter((c) => !c.isOutliers),
         companies,
         dealsData,
-        analyticsColMap,
+        colMap,
         currentYear
       ),
-    [clusters, companies, dealsData, analyticsColMap, currentYear]
+    [clusters, companies, dealsData, colMap, currentYear]
   );
 
   const handleDownload = () => {
     const csv = Papa.unparse(analyticsRows);
     saveAs(new Blob([csv], { type: "text/csv" }), "cluster_analytics.csv");
   };
-
-  const colPicker = (
-    key: keyof AnalyticsColMap,
-    label: string,
-    columns = allColumns
-  ) => (
-    <div className="flex flex-col gap-1">
-      <Label className="text-xs text-muted-foreground">{label}</Label>
-      <Select
-        value={analyticsColMap[key] ?? ""}
-        onValueChange={(v) => updateColMap(key, v || "")}
-      >
-        <SelectTrigger className="h-8 text-xs">
-          <SelectValue placeholder="Select…" />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="">— none —</SelectItem>
-          {columns.map((c) => (
-            <SelectItem key={c} value={c}>
-              {c}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-    </div>
-  );
 
   return (
     <div className="max-w-5xl mx-auto px-6 py-8 flex flex-col gap-8">
@@ -126,58 +109,28 @@ export function AnalyticsPageClient() {
 
       {/* Deals upload */}
       <div className="flex flex-col gap-2">
-        <Label className="text-sm font-semibold">
-          Deals Data{" "}
-          <span className="font-normal text-muted-foreground">(optional)</span>
-        </Label>
-        <label className="flex items-center gap-3 border border-dashed border-border rounded-lg p-4 cursor-pointer hover:border-primary/60 hover:bg-muted/30 transition-colors w-fit">
-          <UploadCloud className="h-4 w-4 text-muted-foreground" />
-          <span className="text-sm text-muted-foreground">
-            {dealsData
-              ? `${dealsData.length.toLocaleString()} deals loaded`
-              : "Upload deals CSV for funding & deal metrics"}
-          </span>
-          <input
-            type="file"
-            accept=".csv,.xlsx,.xls"
-            className="hidden"
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              if (file) handleDealsFile(file);
-            }}
-          />
-        </label>
-      </div>
-
-      {/* Column mapping */}
-      <div className="flex flex-col gap-3">
-        <Label className="text-sm font-semibold">Column Mapping</Label>
-        <div className="grid grid-cols-3 gap-3">
-          {colPicker("employees", "Employee count", companyColumns)}
-          {colPicker("year_founded", "Year founded", companyColumns)}
-          {colPicker("total_raised", "Total raised", companyColumns)}
-          {colPicker("business_status", "Business status", companyColumns)}
-          {colPicker("ownership_status", "Ownership status", companyColumns)}
-          {colPicker("financing_status", "Financing status", companyColumns)}
-          {dealsData && (
-            <>
-              {colPicker("de_co_id", "Deal company ID", dealsColumns)}
-              {colPicker("deal_date", "Deal date", dealsColumns)}
-              {colPicker("deal_size", "Deal size", dealsColumns)}
-            </>
-          )}
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-semibold">Deals Data</span>
+          <span className="text-xs text-muted-foreground font-normal">(optional)</span>
         </div>
+        <FileUploadZone
+          accept=".csv,.xlsx,.xls"
+          onFile={handleDealsFile}
+          loaded={!!dealsData}
+          loadedLabel={dealsData ? `${dealsData.length.toLocaleString()} deals loaded` : ""}
+          replaceLabel="Drop a new file to replace"
+          idleLabel="Upload deals CSV for funding & deal metrics"
+          hint=".csv, .xlsx, .xls"
+        />
       </div>
 
       {/* Analytics table */}
-      {analyticsRows.length > 0 && (
+      {analyticsRows.length > 0 ? (
         <>
           <AnalyticsTable rows={analyticsRows} hasDeals={!!dealsData} />
           <AnalyticsCharts rows={analyticsRows} />
         </>
-      )}
-
-      {analyticsRows.length === 0 && (
+      ) : (
         <div className="text-center py-16 text-muted-foreground text-sm">
           No cluster data available. Complete the clustering pipeline first.
         </div>

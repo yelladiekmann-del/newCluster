@@ -100,7 +100,6 @@ const defaultClusterParams: ClusterParams = {
   minClusterSize: 5,
   minSamples: 3,
   clusterEpsilon: 0.0,
-  umapClusterDims: 15,
 };
 
 export const useSession = create<SessionState>((set) => ({

@@ -151,7 +151,6 @@ export function EmbedPageClient() {
           minClusterSize: clusterParams.minClusterSize,
           minSamples: clusterParams.minSamples,
           clusterEpsilon: clusterParams.clusterEpsilon,
-          umapClusterDims: clusterParams.umapClusterDims,
         }),
       });
 
@@ -174,7 +173,6 @@ export function EmbedPageClient() {
         if (!company) return;
         updateCompany(company.id, {
           clusterId: label === -1 ? "outliers" : String(label),
-          outlierScore: result.outlierScores?.[i] ?? null,
           umapX: result.embedded2d?.[i]?.[0] ?? null,
           umapY: result.embedded2d?.[i]?.[1] ?? null,
         });
@@ -366,8 +364,7 @@ export function EmbedPageClient() {
 
         {clustering && (
           <div className="flex flex-col gap-1">
-            <div className="flex justify-between text-xs text-muted-foreground">
-              <span>Running UMAP + HDBSCAN…</span>
+            <div className="flex justify-end text-xs text-muted-foreground">
               <span>{clusterProgress}%</span>
             </div>
             <Progress value={clusterProgress} className="h-1.5" />

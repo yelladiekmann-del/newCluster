@@ -37,7 +37,6 @@ export function ReviewPageClient() {
       return {
         [companyCol]: c.name,
         Cluster: cluster?.name ?? "Outliers",
-        "Outlier score": c.outlierScore ?? "",
         ...c.dimensions,
       };
     });
@@ -92,9 +91,6 @@ export function ReviewPageClient() {
         <UmapScatter />
       </div>
 
-      {/* Re-sort panel */}
-      <ResortPanel />
-
       {/* Two-column editor + chat */}
       <div className="flex gap-0 mt-5 border-t border-border min-h-[600px]">
         <div className="flex-1 border-r border-border p-5">
@@ -104,6 +100,9 @@ export function ReviewPageClient() {
           <AiChatPanel />
         </div>
       </div>
+
+      {/* Re-sort panel — below editor + chat */}
+      <ResortPanel />
     </div>
   );
 }

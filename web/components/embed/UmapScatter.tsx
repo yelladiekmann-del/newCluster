@@ -4,31 +4,45 @@ import dynamic from "next/dynamic";
 import { useSession } from "@/lib/store/session";
 import { CLUSTER_COLORS } from "@/types";
 
-// react-plotly.js uses browser APIs — must be loaded client-side only
 const Plot = dynamic(() => import("react-plotly.js"), { ssr: false });
 
 export function UmapScatter() {
   const { companies, clusters } = useSession();
 
-  // Group companies by cluster for coloring
-  const clusterMap: Record<string, { x: number[]; y: number[]; names: string[]; color: string }> = {};
+  // Build a color map for all unique cluster IDs.
+  // Prefer the stored cluster color; fall back to CLUSTER_COLORS by index.
+  const uniqueClusterIds = [...new Set(
+    companies.map((c) => c.clusterId ?? "outliers")
+  )].filter((id) => id !== "outliers");
+
+  const colorById: Record<string, string> = { outliers: "#6b7280" };
+  uniqueClusterIds.forEach((id, i) => {
+    const clusterDoc = clusters.find((c) => c.id === id);
+    colorById[id] = clusterDoc?.color ?? CLUSTER_COLORS[i % CLUSTER_COLORS.length];
+  });
+
+  const nameById: Record<string, string> = { outliers: "Outliers" };
+  uniqueClusterIds.forEach((id, i) => {
+    const clusterDoc = clusters.find((c) => c.id === id);
+    nameById[id] = clusterDoc?.name ?? `Cluster ${parseInt(id) + 1}`;
+  });
+
+  // Group companies by cluster for Plotly traces
+  const traceMap: Record<string, { x: number[]; y: number[]; names: string[]; color: string; isOutlier: boolean }> = {};
 
   for (const company of companies) {
     if (company.umapX == null || company.umapY == null) continue;
     const cid = company.clusterId ?? "outliers";
-    const cluster = clusters.find((c) => c.id === cid);
-    const color = cluster?.color ?? "#6b7280";
-    const label = cluster?.name ?? "Outliers";
-
-    if (!clusterMap[label]) {
-      clusterMap[label] = { x: [], y: [], names: [], color };
+    const label = nameById[cid];
+    if (!traceMap[label]) {
+      traceMap[label] = { x: [], y: [], names: [], color: colorById[cid], isOutlier: cid === "outliers" };
     }
-    clusterMap[label].x.push(company.umapX);
-    clusterMap[label].y.push(company.umapY);
-    clusterMap[label].names.push(company.name);
+    traceMap[label].x.push(company.umapX);
+    traceMap[label].y.push(company.umapY);
+    traceMap[label].names.push(company.name);
   }
 
-  const traces = Object.entries(clusterMap).map(([name, { x, y, names, color }]) => ({
+  const traces = Object.entries(traceMap).map(([name, { x, y, names, color, isOutlier }]) => ({
     type: "scatter" as const,
     mode: "markers" as const,
     name,
@@ -38,29 +52,30 @@ export function UmapScatter() {
     hovertemplate: "%{text}<extra></extra>",
     marker: {
       color,
-      size: 6,
-      opacity: name === "Outliers" ? 0.3 : 0.75,
+      size: isOutlier ? 5 : 7,
+      opacity: isOutlier ? 0.35 : 0.82,
     },
   }));
 
   if (traces.length === 0) return null;
 
   return (
-    <div className="rounded-lg border border-border overflow-hidden">
+    <div className="rounded-xl border border-border overflow-hidden bg-card">
       <Plot
         data={traces}
         layout={{
-          height: 420,
+          height: 440,
           paper_bgcolor: "transparent",
           plot_bgcolor: "transparent",
-          font: { color: "#94a3b8", size: 11 },
-          margin: { t: 20, b: 40, l: 40, r: 20 },
+          font: { color: "#64748b", size: 11 },
+          margin: { t: 16, b: 32, l: 32, r: 16 },
           xaxis: { showgrid: false, zeroline: false, showticklabels: false },
           yaxis: { showgrid: false, zeroline: false, showticklabels: false },
           legend: {
-            bgcolor: "transparent",
-            bordercolor: "transparent",
-            font: { size: 11 },
+            bgcolor: "rgba(255,255,255,0.8)",
+            bordercolor: "rgba(0,0,0,0.06)",
+            borderwidth: 1,
+            font: { size: 11, color: "#334155" },
             x: 1,
             xanchor: "right",
           },

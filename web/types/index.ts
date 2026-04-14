@@ -65,7 +65,6 @@ export interface ClusterParams {
   minClusterSize: number;
   minSamples: number;
   clusterEpsilon: number;
-  umapClusterDims: number;
 }
 
 export interface ClusterMetrics {
@@ -80,7 +79,6 @@ export interface CompanyDoc {
   originalData: Record<string, unknown>;
   dimensions: Partial<Record<Dimension, string>>;
   clusterId: string | null; // "outliers" or cluster doc id
-  outlierScore: number | null;
   umapX: number | null;
   umapY: number | null;
 }
@@ -114,8 +112,10 @@ export type ClusterAction =
 export interface AnalyticsColMap {
   co_id?: string;
   de_co_id?: string;
+  deal_id?: string;
   deal_date?: string;
   deal_size?: string;
+  series?: string;
   total_raised?: string;
   employees?: string;
   year_founded?: string;
@@ -133,12 +133,17 @@ export interface ClusterMetricsRow {
   avgYearFounded: number | null;
   pctRecentlyFounded: number | null;
   dealCount: number | null;
-  dealMomentum: number | null; // YoY % change
+  dealMomentum: number | null;
   avgFunding: number | null;
   totalFunding: number | null;
-  graduationCount: number | null;
-  mortalityCount: number | null;
-  fundingVelocity: number | null;
+  totalInvested4yr: number | null;
+  fundingMomentum: number | null;
+  capitalMean: number | null;
+  capitalMedian: number | null;
+  meanMedianRatio: number | null;
+  avgSeriesScore: number | null;
+  vcGraduationRate: number | null;
+  mortalityRate: number | null;
 }
 
 // ── Progress events (SSE) ───────────────────────────────────────────────────
