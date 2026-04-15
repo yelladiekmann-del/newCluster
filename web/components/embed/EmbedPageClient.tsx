@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { useSession } from "@/lib/store/session";
@@ -15,9 +15,8 @@ import { Separator } from "@/components/ui/separator";
 import { saveAs } from "file-saver";
 import { ArrowRight, Cpu, Download, GitBranch, Loader2, Sparkles } from "lucide-react";
 import { createParser } from "eventsource-parser";
-import { doc, writeBatch, collection, setDoc } from "firebase/firestore";
+import { doc, writeBatch } from "firebase/firestore";
 import { getFirebaseDb } from "@/lib/firebase/client";
-import { nameAllClusters } from "@/lib/gemini/name-clusters";
 import { syncClustersToSheet } from "@/lib/sheets/sync";
 import { CLUSTER_COLORS } from "@/types";
 import type { ClusterDoc } from "@/types";
@@ -26,7 +25,7 @@ export function EmbedPageClient() {
   const router = useRouter();
   const {
     uid, apiKey,
-    companies, clusters, setClusters, updateCompany,
+    companies, setClusters, updateCompany,
     customWeights, clusterParams,
     setClusterMetrics, setClustersConfirmed,
     embeddingsStoragePath, npzPreloaded,
@@ -234,6 +233,9 @@ export function EmbedPageClient() {
     setConfirming(true);
 
     try {
+      const { saveCompaniesToStorage } = await import("@/lib/firebase/companies-storage");
+      await saveCompaniesToStorage(uid, companies);
+
       // Group companies by cluster index
       const groups: Record<string, typeof companies> = {};
       companies.forEach((c) => {
@@ -242,12 +244,18 @@ export function EmbedPageClient() {
         groups[key].push(c);
       });
 
-      const nonOutlierGroups = Object.entries(groups)
-        .filter(([k]) => k !== "outliers")
-        .map(([k, v]) => ({ clusterIndex: k, companies: v }));
-
       // Name + describe via Gemini
-      const namings = await nameAllClusters(apiKey, nonOutlierGroups);
+      const namingRes = await fetch("/api/name-clusters", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-gemini-key": apiKey },
+        body: JSON.stringify({ uid }),
+      });
+      if (!namingRes.ok) {
+        throw new Error(`Name clusters failed: ${await namingRes.text()}`);
+      }
+      const { results: namings } = (await namingRes.json()) as {
+        results: Array<{ clusterIndex: string; name: string; description: string }>;
+      };
 
       // Write clusters to Firestore
       const db = getFirebaseDb();
@@ -284,7 +292,6 @@ export function EmbedPageClient() {
       setClustersConfirmed(true);
 
       // Persist clusterId/umapX/umapY to Storage CSV
-      const { saveCompaniesToStorage } = await import("@/lib/firebase/companies-storage");
       await saveCompaniesToStorage(uid, useSession.getState().companies);
 
       const nextStep = Math.max(pipelineStep, 3) as 3;

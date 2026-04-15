@@ -14,15 +14,21 @@ interface SortReport {
   nOutliersBefore: number;
   nOutliersAfter: number;
   pulledIn: number;
-  switches: { company: string; from: string; to: string; reason?: string }[];
+  switches: { company: string; description?: string; from: string; to: string; reason?: string }[];
 }
 
 export function ResortPanel() {
   const { uid, apiKey, companies, clusters } = useSession();
+  const descCol = useSession((state) => state.descCol);
 
   const [includeOutliers, setIncludeOutliers] = useState(false);
   const [sorting, setSorting] = useState(false);
-  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
+  const [progress, setProgress] = useState<{
+    done: number;
+    total: number;
+    batchesDone: number;
+    batchesTotal: number;
+  } | null>(null);
   const [report, setReport] = useState<SortReport | null>(null);
   const [reportExpanded, setReportExpanded] = useState(false);
 
@@ -46,8 +52,14 @@ export function ResortPanel() {
             name: c.name,
             dimensions: c.dimensions,
             clusterId: c.clusterId ?? "outliers",
+            originalDesc: descCol ? String(c.originalData?.[descCol] ?? "") : undefined,
           })),
-          clusters: clusters.map((c) => ({ id: c.id, name: c.name })),
+          clusters: clusters.map((c) => ({
+            id: c.id,
+            name: c.name,
+            description: c.description,
+            isOutliers: c.isOutliers,
+          })),
           includeOutliers,
         }),
       });
@@ -65,7 +77,12 @@ export function ResortPanel() {
         onEvent: (event) => {
           const data = JSON.parse(event.data);
           if (data.type === "progress") {
-            setProgress({ done: data.done, total: data.total });
+            setProgress({
+              done: data.doneCompanies ?? 0,
+              total: data.totalCompanies ?? companies.length,
+              batchesDone: data.doneBatches ?? 0,
+              batchesTotal: data.totalBatches ?? 0,
+            });
           } else if (data.type === "done") {
             finalAssignments = data.assignments;
             finalReasons = data.reasons;
@@ -104,6 +121,7 @@ export function ResortPanel() {
 
         switches.push({
           company: company.name,
+          description: descCol ? String(company.originalData?.[descCol] ?? "") : "",
           from: oldClusterName,
           to: newClusterName,
           reason: finalReasons[company.id],
@@ -140,7 +158,7 @@ export function ResortPanel() {
     } finally {
       setSorting(false);
     }
-  }, [apiKey, uid, companies, clusters, includeOutliers, clusterNameById, clusterIdByName]);
+  }, [apiKey, uid, companies, clusters, includeOutliers, clusterNameById, clusterIdByName, descCol]);
 
   const progressPct = progress ? Math.round((progress.done / progress.total) * 100) : 0;
   const nonOutlierClusters = clusters.filter((c) => !c.isOutliers);
@@ -195,7 +213,10 @@ export function ResortPanel() {
       {sorting && progress && (
         <div className="flex flex-col gap-1 mb-3">
           <div className="flex justify-between text-xs text-muted-foreground">
-            <span>Processing batch {progress.done}/{progress.total}…</span>
+            <span>
+              Processed {progress.done}/{progress.total} companies · batch{" "}
+              {progress.batchesDone}/{progress.batchesTotal}
+            </span>
             <span>{progressPct}%</span>
           </div>
           <Progress value={progressPct} className="h-1.5" />
@@ -237,6 +258,7 @@ export function ResortPanel() {
                     <thead>
                       <tr className="text-muted-foreground border-b border-border">
                         <th className="text-left pb-1 pr-3">Company</th>
+                        <th className="text-left pb-1 pr-3">Description</th>
                         <th className="text-left pb-1 pr-3">From</th>
                         <th className="text-left pb-1 pr-3">To</th>
                         <th className="text-left pb-1">Reason</th>
@@ -246,6 +268,9 @@ export function ResortPanel() {
                       {report.switches.map((s, i) => (
                         <tr key={i} className="border-b border-border/40 last:border-0">
                           <td className="py-1 pr-3 font-medium">{s.company}</td>
+                          <td className="py-1 pr-3 text-muted-foreground max-w-[360px]">
+                            <span className="line-clamp-2">{s.description || "—"}</span>
+                          </td>
                           <td className="py-1 pr-3 text-muted-foreground">{s.from}</td>
                           <td className="py-1 pr-3 text-primary">{s.to}</td>
                           <td className="py-1 text-muted-foreground italic">{s.reason ?? ""}</td>

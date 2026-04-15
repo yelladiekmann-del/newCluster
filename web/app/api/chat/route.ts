@@ -1,6 +1,11 @@
 import type { NextRequest } from "next/server";
-import { buildSystemContext, sendChatMessage } from "@/lib/gemini/chat";
-import type { ClusterDoc, CompanyDoc, ChatMessage } from "@/types";
+import type { ChatMessage } from "@/types";
+
+import { normalizeAndValidateActions } from "@/lib/server/action-validation";
+import { buildChatSystemPrompt, buildStructuredReviewUserMessage } from "@/lib/server/chat-prompts";
+import { callGeminiText } from "@/lib/server/gemini";
+import { buildReviewContext } from "@/lib/server/review-context";
+import { loadSessionSnapshot } from "@/lib/server/session-data";
 
 export const maxDuration = 120;
 
@@ -11,23 +16,62 @@ export async function POST(req: NextRequest) {
   }
 
   const {
-    clusters,
-    companies,
+    uid,
     history,
     message,
-    analysisContext,
-    marketContext,
+    mode,
   } = (await req.json()) as {
-    clusters: ClusterDoc[];
-    companies: CompanyDoc[];
+    uid: string;
     history: ChatMessage[];
     message: string;
-    analysisContext: string;
-    marketContext: string;
+    mode?: "chat" | "review";
   };
 
-  const systemContext = buildSystemContext(clusters, companies, analysisContext, marketContext);
+  if (!uid || !message) {
+    return Response.json({ error: "uid and message are required" }, { status: 400 });
+  }
 
-  const result = await sendChatMessage(apiKey, systemContext, history, message);
-  return Response.json(result);
+  try {
+    const { session, companies, clusters } = await loadSessionSnapshot(uid);
+    const reviewContext = buildReviewContext({
+      session,
+      companies,
+      clusters,
+      marketContext: session.chatMarketContextRaw ?? "",
+    });
+
+    const rawText = await callGeminiText({
+      apiKey,
+      systemInstruction: buildChatSystemPrompt(reviewContext),
+      history: (history ?? []).slice(-40).map((entry) => ({
+        role: entry.role === "user" ? "user" : "model",
+        text: entry.content,
+      })),
+      userMessage:
+        mode === "review" ? buildStructuredReviewUserMessage(message) : message,
+      temperature: mode === "review" ? 0.35 : 0.5,
+    });
+
+    const actionsMatch = rawText.match(/<actions>([\s\S]*?)<\/actions>/);
+    const text = rawText.replace(/<actions>[\s\S]*?<\/actions>/, "").trim();
+    let actions = null;
+    if (actionsMatch) {
+      try {
+        actions = normalizeAndValidateActions(
+          JSON.parse(actionsMatch[1].trim()),
+          clusters.filter((cluster) => !cluster.isOutliers).map((cluster) => cluster.name),
+          companies.map((company) => company.name)
+        );
+      } catch {
+        actions = null;
+      }
+    }
+
+    return Response.json({ text, actions });
+  } catch (error) {
+    return Response.json(
+      { error: error instanceof Error ? error.message : String(error) },
+      { status: 500 }
+    );
+  }
 }

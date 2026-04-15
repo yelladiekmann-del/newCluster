@@ -6,6 +6,7 @@ import { CompanyListDialog } from "./CompanyListDialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Users } from "lucide-react";
+import { getFallbackClusterColor } from "@/lib/cluster-colors";
 
 export function ClusterOverviewGrid() {
   const { clusters } = useSession();
@@ -17,11 +18,11 @@ export function ClusterOverviewGrid() {
   return (
     <>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        {nonOutliers.map((cluster) => (
+        {nonOutliers.map((cluster, index) => (
           <div
             key={cluster.id}
             className="rounded-lg border border-border bg-card p-3.5 flex flex-col gap-2"
-            style={{ borderLeftColor: cluster.color, borderLeftWidth: 3 }}
+            style={{ borderLeftColor: cluster.color || getFallbackClusterColor(index), borderLeftWidth: 3 }}
           >
             <div className="flex items-start justify-between gap-2">
               <span className="text-sm font-semibold text-foreground leading-tight">

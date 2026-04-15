@@ -1,6 +1,9 @@
 import type { NextRequest } from "next/server";
-import { nameAllClusters } from "@/lib/gemini/name-clusters";
-import type { CompanyDoc } from "@/types";
+import type { ClusterDoc } from "@/types";
+
+import { buildClusterSummaries } from "@/lib/server/cluster-summaries";
+import { nameClustersFromSummaries } from "@/lib/server/name-clusters";
+import { loadSessionSnapshot } from "@/lib/server/session-data";
 
 export const maxDuration = 120;
 
@@ -10,14 +13,45 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: "Missing x-gemini-key header" }, { status: 401 });
   }
 
-  const { clusterGroups } = (await req.json()) as {
-    clusterGroups: Array<{ clusterIndex: string; companies: CompanyDoc[] }>;
-  };
+  const { uid } = (await req.json()) as { uid?: string };
 
-  if (!Array.isArray(clusterGroups) || clusterGroups.length === 0) {
-    return Response.json({ error: "clusterGroups must be non-empty" }, { status: 400 });
+  if (!uid) {
+    return Response.json({ error: "uid is required" }, { status: 400 });
   }
 
-  const results = await nameAllClusters(apiKey, clusterGroups);
-  return Response.json({ results });
+  try {
+    const { session, companies, clusters } = await loadSessionSnapshot(uid);
+    const clusterIds = Array.from(
+      new Set(
+        companies
+          .map((company) => company.clusterId)
+          .filter((clusterId): clusterId is string => !!clusterId && clusterId !== "outliers")
+      )
+    ).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+
+    if (clusterIds.length === 0) {
+      return Response.json({ error: "No non-outlier clusters found" }, { status: 400 });
+    }
+
+    const effectiveClusters: ClusterDoc[] =
+      clusters.filter((cluster) => !cluster.isOutliers).length > 0
+        ? clusters
+        : clusterIds.map((clusterId) => ({
+            id: clusterId,
+            name: `Cluster ${clusterId}`,
+            description: "",
+            color: "",
+            isOutliers: false,
+            companyCount: companies.filter((company) => company.clusterId === clusterId).length,
+          }));
+
+    const { summaries } = buildClusterSummaries(effectiveClusters, companies, session.descCol ?? null);
+    const results = await nameClustersFromSummaries(apiKey, summaries, { uid });
+    return Response.json({ results });
+  } catch (error) {
+    return Response.json(
+      { error: error instanceof Error ? error.message : String(error) },
+      { status: 500 }
+    );
+  }
 }

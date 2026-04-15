@@ -23,7 +23,17 @@ const MORTALITY_STATUSES = new Set(["out of business", "bankruptcy"]);
 
 function safeNum(v: unknown): number | null {
   if (v == null || v === "" || v === "N/A") return null;
-  const n = Number(v);
+  if (typeof v === "number") return Number.isFinite(v) ? v : null;
+  const raw = String(v).trim();
+  if (!raw) return null;
+  const negative = raw.startsWith("(") && raw.endsWith(")");
+  const cleaned = raw
+    .replace(/[,$€£%\s]/g, "")
+    .replace(/[()]/g, "")
+    .replace(/[^0-9.+-]/g, "");
+  if (!cleaned) return null;
+  const n = Number(cleaned);
+  if (negative && !Number.isNaN(n)) return -n;
   return isNaN(n) ? null : n;
 }
 
@@ -35,13 +45,25 @@ function safeYear(v: unknown): number | null {
 
 function safeDate(v: unknown): Date | null {
   if (!v) return null;
+  if (v instanceof Date) return isNaN(v.getTime()) ? null : v;
   // Try numeric year
   const asNum = Number(v);
   if (!isNaN(asNum) && asNum > 1800 && asNum < 2100) {
     return new Date(asNum, 0, 1);
   }
+  if (!isNaN(asNum) && asNum > 20000 && asNum < 80000) {
+    const excelEpoch = new Date(Date.UTC(1899, 11, 30));
+    const d = new Date(excelEpoch.getTime() + asNum * 24 * 60 * 60 * 1000);
+    return isNaN(d.getTime()) ? null : d;
+  }
   const d = new Date(String(v));
   return isNaN(d.getTime()) ? null : d;
+}
+
+function normalizeJoinKey(value: unknown): string {
+  const text = String(value ?? "").trim().toLowerCase();
+  if (!text) return "";
+  return text.replace(/\.0+$/, "");
 }
 
 function median(nums: number[]): number | null {
@@ -91,9 +113,10 @@ export function computeAnalytics(
     // Company IDs for joining with deals
     const companyIds = new Set<string>(
       colMap.co_id
-        ? members.map((m) => String(m.originalData[colMap.co_id!] ?? "")).filter(Boolean)
+        ? members.map((m) => normalizeJoinKey(m.originalData[colMap.co_id!])).filter(Boolean)
         : []
     );
+    const companyNames = new Set(members.map((m) => normalizeJoinKey(m.name)));
 
     // ── Size ──────────────────────────────────────────────────────────────
     const companyCount = members.length;
@@ -119,7 +142,7 @@ export function computeAnalytics(
       : null;
 
     // ── Funding from companies CSV ────────────────────────────────────────
-    const fundingNums = members
+    let fundingNums = members
       .map((m) => colMap.total_raised ? safeNum(m.originalData[colMap.total_raised]) : null)
       .filter((n): n is number => n !== null);
     const avgFunding = fundingNums.length > 0
@@ -154,15 +177,14 @@ export function computeAnalytics(
     let meanMedianRatio: number | null = null;
     let avgSeriesScore: number | null = null;
 
-    if (dealsData && (colMap.de_co_id || colMap.de_co_name) && colMap.deal_date) {
-      const companyNames = new Set(members.map((m) => m.name.toLowerCase().trim()));
+    if (dealsData && (colMap.de_co_id || colMap.de_co_name)) {
       const clusterDeals = dealsData.filter((d) => {
         if (colMap.de_co_id) {
-          const id = String(d[colMap.de_co_id] ?? "");
+          const id = normalizeJoinKey(d[colMap.de_co_id]);
           if (companyIds.has(id)) return true;
         }
         if (colMap.de_co_name) {
-          const name = String(d[colMap.de_co_name] ?? "").toLowerCase().trim();
+          const name = normalizeJoinKey(d[colMap.de_co_name]);
           if (companyNames.has(name)) return true;
         }
         return false;
@@ -170,25 +192,27 @@ export function computeAnalytics(
 
       // Deal count (unique deal IDs if available)
       if (colMap.deal_id) {
-        const uniqueIds = new Set(clusterDeals.map((d) => String(d[colMap.deal_id!] ?? "")));
+        const uniqueIds = new Set(
+          clusterDeals
+            .map((d) => normalizeJoinKey(d[colMap.deal_id!]))
+            .filter(Boolean)
+        );
         dealCount = uniqueIds.size;
+        if (dealCount === 0) dealCount = clusterDeals.length;
       } else {
         dealCount = clusterDeals.length;
       }
-
-      // Year-over-year deal momentum
-      const dealYears = clusterDeals.map((d) => safeDate(d[colMap.deal_date!])?.getFullYear() ?? null);
-      const prevYearN = dealYears.filter((y) => y === refYear - 1).length;
-      const thisYearN = dealYears.filter((y) => y === refYear).length;
-      dealMomentum = prevYearN > 0
-        ? Math.round(((thisYearN / prevYearN) - 1) * 100)
-        : null;
 
       // Deal sizes
       if (colMap.deal_size) {
         const dealSizes = clusterDeals.map((d) => ({
           size: safeNum(d[colMap.deal_size!]),
-          year: safeDate(d[colMap.deal_date!])?.getFullYear() ?? null,
+          year: colMap.deal_date ? safeDate(d[colMap.deal_date])?.getFullYear() ?? null : null,
+          companyKey: colMap.de_co_id
+            ? normalizeJoinKey(d[colMap.de_co_id])
+            : colMap.de_co_name
+            ? normalizeJoinKey(d[colMap.de_co_name])
+            : "",
         }));
 
         const allSizes = dealSizes.map((d) => d.size).filter((n): n is number => n !== null);
@@ -216,6 +240,15 @@ export function computeAnalytics(
         fundingMomentum = prevSum > 0
           ? Math.round(((recSum / prevSum) - 1) * 100)
           : null;
+
+        if (fundingNums.length === 0 && allSizes.length > 0) {
+          const totalsByCompany = new Map<string, number>();
+          for (const deal of dealSizes) {
+            if (deal.size == null || !deal.companyKey) continue;
+            totalsByCompany.set(deal.companyKey, (totalsByCompany.get(deal.companyKey) ?? 0) + deal.size);
+          }
+          fundingNums = [...totalsByCompany.values()];
+        }
       }
 
       // Deal series / market maturity
@@ -230,7 +263,23 @@ export function computeAnalytics(
           ? Math.round((scores.reduce((a, b) => a + b, 0) / scores.length) * 10) / 10
           : null;
       }
+
+      if (colMap.deal_date) {
+        const dealYears = clusterDeals.map((d) => safeDate(d[colMap.deal_date!])?.getFullYear() ?? null);
+        const prevYearN = dealYears.filter((y) => y === refYear - 1).length;
+        const thisYearN = dealYears.filter((y) => y === refYear).length;
+        dealMomentum = prevYearN > 0
+          ? Math.round(((thisYearN / prevYearN) - 1) * 100)
+          : null;
+      }
     }
+
+    const avgFundingFinal = fundingNums.length > 0
+      ? fundingNums.reduce((a, b) => a + b, 0) / fundingNums.length
+      : avgFunding;
+    const totalFundingFinal = fundingNums.length > 0
+      ? fundingNums.reduce((a, b) => a + b, 0)
+      : totalFunding;
 
     // ── HHI (Herfindahl–Hirschman Index) — funding concentration ─────────────
     let hhi: number | null = null;
@@ -266,8 +315,8 @@ export function computeAnalytics(
       pctRecentlyFounded,
       dealCount,
       dealMomentum,
-      avgFunding,
-      totalFunding,
+      avgFunding: avgFundingFinal,
+      totalFunding: totalFundingFinal,
       totalInvested4yr,
       fundingMomentum,
       capitalMean,

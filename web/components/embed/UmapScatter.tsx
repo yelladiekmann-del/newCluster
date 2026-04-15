@@ -1,13 +1,29 @@
 "use client";
 
+import { useCallback, useRef } from "react";
 import dynamic from "next/dynamic";
 import { useSession } from "@/lib/store/session";
 import { CLUSTER_COLORS } from "@/types";
+import { Button } from "@/components/ui/button";
+import { Download } from "lucide-react";
 
 const Plot = dynamic(() => import("react-plotly.js"), { ssr: false });
 
 export function UmapScatter() {
   const { companies, clusters } = useSession();
+  const plotRef = useRef<unknown>(null);
+
+  const handleExport = useCallback(async (format: "png" | "svg") => {
+    if (!plotRef.current) return;
+    const Plotly = (await import("plotly.js-dist-min")).default;
+    await Plotly.downloadImage(plotRef.current, {
+      format,
+      filename: `cluster-umap-${new Date().toISOString().slice(0, 10)}`,
+      width: 1600,
+      height: 1000,
+      scale: format === "png" ? 2 : 1,
+    });
+  }, []);
 
   // Build a color map for all unique cluster IDs.
   // Prefer the stored cluster color; fall back to CLUSTER_COLORS by index.
@@ -22,7 +38,7 @@ export function UmapScatter() {
   });
 
   const nameById: Record<string, string> = { outliers: "Outliers" };
-  uniqueClusterIds.forEach((id, i) => {
+  uniqueClusterIds.forEach((id) => {
     const clusterDoc = clusters.find((c) => c.id === id);
     nameById[id] = clusterDoc?.name ?? `Cluster ${parseInt(id) + 1}`;
   });
@@ -61,8 +77,32 @@ export function UmapScatter() {
 
   return (
     <div className="rounded-xl border border-border overflow-hidden bg-card">
+      <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
+        <div>
+          <p className="text-sm font-semibold text-foreground">Cluster Map</p>
+          <p className="text-xs text-muted-foreground">
+            UMAP projection with transparent export background
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" className="gap-1.5" onClick={() => handleExport("png")}>
+            <Download className="h-3.5 w-3.5" />
+            PNG
+          </Button>
+          <Button variant="outline" size="sm" className="gap-1.5" onClick={() => handleExport("svg")}>
+            <Download className="h-3.5 w-3.5" />
+            SVG
+          </Button>
+        </div>
+      </div>
       <Plot
         data={traces}
+        onInitialized={(_, graphDiv) => {
+          plotRef.current = graphDiv;
+        }}
+        onUpdate={(_, graphDiv) => {
+          plotRef.current = graphDiv;
+        }}
         layout={{
           height: 440,
           paper_bgcolor: "transparent",

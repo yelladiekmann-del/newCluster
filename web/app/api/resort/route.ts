@@ -1,12 +1,14 @@
 import type { NextRequest } from "next/server";
 
+import { buildClusterSummaries } from "@/lib/server/cluster-summaries";
+
 export const maxDuration = 300;
 
 const GEN_URL =
   "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
 
 const BATCH_SIZE = 20;
-const CONCURRENCY = 8;
+const CONCURRENCY = 4;
 
 interface ResortCompany {
   id: string;
@@ -19,6 +21,8 @@ interface ResortCompany {
 interface ResortCluster {
   id: string;
   name: string;
+  description?: string;
+  isOutliers?: boolean;
 }
 
 interface BatchAssignment {
@@ -31,13 +35,15 @@ async function assignBatch(
   batch: ResortCompany[],
   batchOffset: number,
   clusterBlock: string,
+  clusterNameById: Record<string, string>,
   validNames: string[],
   includeOutliers: boolean
 ): Promise<{ assignments: Record<string, string>; reasons: Record<string, string> }> {
   const companiesBlock = batch
     .map((c, i) => {
       const idx = String(batchOffset + i);
-      const currentCluster = c.clusterId === "outliers" ? "Outliers" : validNames.find(() => true) ?? c.clusterId;
+      const currentCluster =
+        c.clusterId === "outliers" ? "Outliers" : clusterNameById[c.clusterId] ?? c.clusterId;
       const dimStr = Object.entries(c.dimensions)
         .filter(([, v]) => v)
         .map(([k, v]) => `${k}: ${v}`)
@@ -116,11 +122,47 @@ export async function POST(req: NextRequest) {
 
     const nonOutlierClusters = clusters.filter((c) => c.id !== "outliers");
     const validNames = nonOutlierClusters.map((c) => c.name);
+    const clusterNameById = Object.fromEntries(clusters.map((cluster) => [cluster.id, cluster.name]));
 
-    // Build cluster block
-    const clusterBlock = nonOutlierClusters
-      .map((c) => `"${c.name}"`)
-      .join(", ");
+    const pseudoClusters = clusters.map((cluster) => ({
+      id: cluster.id,
+      name: cluster.name,
+      description: cluster.description ?? "",
+      color: "",
+      isOutliers: cluster.id === "outliers" || !!cluster.isOutliers,
+      companyCount: companies.filter((company) => company.clusterId === cluster.id).length,
+    }));
+
+    const pseudoCompanies = companies.map((company, index) => ({
+      id: company.id,
+      rowIndex: index,
+      name: company.name,
+      originalData: { __desc: company.originalDesc ?? "" },
+      dimensions: company.dimensions,
+      clusterId: company.clusterId ?? null,
+      umapX: null,
+      umapY: null,
+    }));
+
+    const { summaries } = buildClusterSummaries(pseudoClusters, pseudoCompanies, "__desc");
+    const clusterBlock = summaries
+      .map((summary) => {
+        const topDimensions = Object.entries(summary.topDimensions)
+          .filter(([, values]) => values.length > 0)
+          .map(([dimension, values]) => `  ${dimension}: ${values.join(" / ")}`)
+          .join("\n");
+        const snippets = summary.representativeSnippets
+          .map((snippet) => `  - ${snippet}`)
+          .join("\n");
+        return `"${summary.clusterName}" (${summary.companyCount} companies)
+Description: ${summary.description || "—"}
+Representative companies: ${summary.representativeCompanies.join(", ") || "—"}
+Representative snippets:
+${snippets || "  - —"}
+Top dimensions:
+${topDimensions || "  —"}`;
+      })
+      .join("\n\n");
 
     // Filter companies
     const targetCompanies = includeOutliers
@@ -142,6 +184,7 @@ export async function POST(req: NextRequest) {
         const allAssignments: Record<string, string> = {};
         const allReasons: Record<string, string> = {};
         let doneBatches = 0;
+        let doneCompanies = 0;
 
         try {
           for (let wave = 0; wave < totalBatches; wave += CONCURRENCY) {
@@ -159,6 +202,7 @@ export async function POST(req: NextRequest) {
                   batch,
                   offset,
                   clusterBlock,
+                  clusterNameById,
                   validNames,
                   includeOutliers
                 );
@@ -186,7 +230,14 @@ export async function POST(req: NextRequest) {
               }
 
               doneBatches++;
-              send({ type: "progress", done: doneBatches, total: totalBatches });
+              doneCompanies += batch.length;
+              send({
+                type: "progress",
+                doneBatches,
+                totalBatches,
+                doneCompanies,
+                totalCompanies: targetCompanies.length,
+              });
             }
           }
 

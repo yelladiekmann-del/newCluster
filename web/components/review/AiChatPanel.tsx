@@ -2,11 +2,8 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useSession } from "@/lib/store/session";
-import { persistSession } from "@/lib/firebase/hooks";
-import { fetchMarketContext, buildSystemContext } from "@/lib/gemini/chat";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 import { Sparkles, Send, Loader2, CheckCircle2, XCircle, AlertTriangle } from "lucide-react";
 import {
   AlertDialog,
@@ -18,12 +15,12 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { doc, collection, setDoc, writeBatch } from "firebase/firestore";
+import { doc, setDoc, writeBatch } from "firebase/firestore";
 import { getFirebaseDb } from "@/lib/firebase/client";
 import { toast } from "sonner";
 import type { ChatMessage, ClusterAction } from "@/types";
-import { getFirebaseStorage } from "@/lib/firebase/client";
 import ReactMarkdown from "react-markdown";
+import { getNextClusterColor } from "@/lib/cluster-colors";
 
 const SUGGESTED_PROMPTS = [
   "✦ Request cluster review",
@@ -63,10 +60,10 @@ function expandPrompt(p: string): string {
 export function AiChatPanel() {
   const {
     uid, apiKey, clusters, companies,
-    chatMessages, addChatMessage, setChatMessages,
+    chatMessages, addChatMessage,
     chatOnboarded, setChatOnboarded,
-    chatAnalysisContext, setChatAnalysisContext,
-    chatMarketContextRaw, setChatMarketContextRaw,
+    setChatAnalysisContext,
+    setChatMarketContextRaw,
   } = useSession();
 
   const [input, setInput] = useState("");
@@ -86,16 +83,19 @@ export function AiChatPanel() {
     if (!apiKey || !uid) return;
     setLoading(true);
     try {
-      const market = await fetchMarketContext(apiKey, contextInput, companies);
+      const res = await fetch("/api/chat/context", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-gemini-key": apiKey },
+        body: JSON.stringify({
+          uid,
+          analysisContext: contextInput,
+        }),
+      });
+      if (!res.ok) throw new Error(`Context API error ${res.status}`);
+      const { marketContext: market } = (await res.json()) as { marketContext: string };
       setChatMarketContextRaw(market);
       setChatAnalysisContext(contextInput);
       setChatOnboarded(true);
-
-      await persistSession(uid, {
-        chatOnboarded: true,
-        chatAnalysisContext: contextInput,
-        chatMarketContextRaw: market,
-      });
 
       // Greet the user
       const greeting: ChatMessage = {
@@ -116,7 +116,7 @@ export function AiChatPanel() {
 
   // ── Send message ─────────────────────────────────────────────────────────
 
-  const handleSend = useCallback(async (messageText?: string, displayOverride?: string) => {
+  const handleSend = useCallback(async (messageText?: string, displayOverride?: string, mode: "chat" | "review" = "chat") => {
     const text = messageText ?? input.trim();
     if (!text || !apiKey || loading) return;
     setInput("");
@@ -139,12 +139,10 @@ export function AiChatPanel() {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-gemini-key": apiKey },
         body: JSON.stringify({
-          clusters,
-          companies: companies.map(({ id, name, dimensions, clusterId }) => ({ id, name, dimensions, clusterId })),
+          uid,
           history: chatMessages,
-          message: text,   // always send the full/expanded text to the API
-          analysisContext: chatAnalysisContext,
-          marketContext: chatMarketContextRaw,
+          message: text,
+          mode,
         }),
       });
 
@@ -171,7 +169,7 @@ export function AiChatPanel() {
     } finally {
       setLoading(false);
     }
-  }, [apiKey, uid, input, loading, clusters, companies, chatMessages, chatAnalysisContext, chatMarketContextRaw, addChatMessage]);
+  }, [apiKey, uid, input, loading, chatMessages, addChatMessage]);
 
   // ── Apply actions ────────────────────────────────────────────────────────
 
@@ -201,7 +199,14 @@ export function AiChatPanel() {
       const sources = action.sources.map(name => currentClusters.find(c => c.name === name)).filter(Boolean);
       if (sources.length < 2) { toast.error("Could not find source clusters to merge"); return; }
       const newId = `merged_${Date.now()}`;
-      const newCluster = { id: newId, name: action.newName, description: "", color: "#26B4D2", isOutliers: false, companyCount: 0 };
+      const newCluster = {
+        id: newId,
+        name: action.newName,
+        description: "",
+        color: getNextClusterColor(currentClusters),
+        isOutliers: false,
+        companyCount: 0,
+      };
       batch.set(doc(db, "sessions", uid, "clusters", newId), newCluster);
       const sourceIds = new Set(sources.map(s => s?.id));
       let count = 0;
@@ -221,7 +226,14 @@ export function AiChatPanel() {
 
     if (action.type === "add") {
       const newId = `added_${Date.now()}`;
-      const newCluster = { id: newId, name: action.name, description: action.description, color: "#8B5CF6", isOutliers: false, companyCount: 0 };
+      const newCluster = {
+        id: newId,
+        name: action.name,
+        description: action.description,
+        color: getNextClusterColor(currentClusters),
+        isOutliers: false,
+        companyCount: 0,
+      };
       batch.set(doc(db, "sessions", uid, "clusters", newId), newCluster);
       const matchedCompanies = currentCompanies.filter(c => action.companies.some(name => c.name.toLowerCase() === name.toLowerCase()));
       batch.update(doc(db, "sessions", uid, "clusters", newId), { companyCount: matchedCompanies.length });
@@ -234,14 +246,6 @@ export function AiChatPanel() {
       toast.success(`Added cluster "${action.name}" with ${matchedCompanies.length} companies`);
     }
   }, [uid]);
-
-  const applyAllActions = async () => {
-    if (!pendingActions) return;
-    for (const action of pendingActions) {
-      await applyAction(action);
-    }
-    setPendingActions(null);
-  };
 
   // ── Render ───────────────────────────────────────────────────────────────
 
@@ -293,7 +297,13 @@ export function AiChatPanel() {
           {SUGGESTED_PROMPTS.map((p) => (
             <button
               key={p}
-              onClick={() => handleSend(expandPrompt(p), p)}
+              onClick={() =>
+                handleSend(
+                  expandPrompt(p),
+                  p,
+                  p === "✦ Request cluster review" ? "review" : "chat"
+                )
+              }
               className="text-xs px-2.5 py-1 rounded-full border border-border text-muted-foreground hover:text-primary hover:border-primary transition-colors"
             >
               {p}
@@ -411,7 +421,7 @@ export function AiChatPanel() {
               Apply cluster changes?
             </AlertDialogTitle>
             <AlertDialogDescription>
-              <div className="flex flex-col gap-1 text-sm">
+              <span className="flex flex-col gap-1 text-sm">
                 {applyConfirm?.actions.map((a, i) => (
                   <span key={i} className="text-foreground">
                     {a.type === "delete" && `• Delete cluster "${a.clusterName}"`}
@@ -420,7 +430,7 @@ export function AiChatPanel() {
                   </span>
                 ))}
                 <span className="text-muted-foreground text-xs mt-1">This cannot be undone.</span>
-              </div>
+              </span>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

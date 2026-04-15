@@ -16,7 +16,7 @@ import { RotateCcw } from "lucide-react";
 import { InfoTooltip } from "@/components/ui/tooltip";
 import type { ClusterMetricsRow } from "@/types";
 import type { ScoringConfig, Direction, MetricConfig, GroupConfig } from "@/lib/analytics/scoring";
-import { computeScores, buildJustification, METRIC_GROUP_MAP } from "@/lib/analytics/scoring";
+import { computeScores, buildJustification } from "@/lib/analytics/scoring";
 
 // ── Default config derived from COLS metadata ──────────────────────────────────
 
@@ -72,31 +72,6 @@ function buildDefaultConfig(hasDeals: boolean): ScoringConfig {
 
 // ── Styling helpers ────────────────────────────────────────────────────────────
 
-const DIRECTION_STYLES: Record<Direction, string> = {
-  max:     "bg-emerald-500/15 text-emerald-700 border-emerald-200",
-  min:     "bg-red-500/15 text-red-600 border-red-200",
-  neutral: "bg-muted text-muted-foreground border-border",
-};
-
-const WEIGHT_STYLES: Record<number, string> = {
-  0: "bg-muted text-muted-foreground",
-  1: "bg-emerald-100 text-emerald-700",
-  2: "bg-amber-100 text-amber-700",
-  3: "bg-orange-100 text-orange-700",
-  4: "bg-red-100 text-red-700",
-};
-
-const GROUP_COLORS: Record<string, string> = {
-  Size: "bg-blue-500/8",
-  Recency: "bg-violet-500/8",
-  Deals: "bg-amber-500/8",
-  Funding: "bg-emerald-500/8",
-  Capital: "bg-cyan-500/8",
-  Market: "bg-orange-500/8",
-  Risk: "bg-red-500/8",
-  Technology: "bg-purple-500/8",
-};
-
 // ── Component ──────────────────────────────────────────────────────────────────
 
 interface Props {
@@ -117,7 +92,11 @@ export function ScoringPanel({ rows, hasDeals, clusterColors }: Props) {
 
   // Sync if Firestore pushes a config after mount (e.g. session resume)
   useEffect(() => {
-    if (scoringConfig) setConfig(scoringConfig as ScoringConfig);
+    if (!scoringConfig) return;
+    const timer = window.setTimeout(() => {
+      setConfig(scoringConfig as ScoringConfig);
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [scoringConfig]);
 
   // Debounced Firestore save
@@ -229,12 +208,11 @@ export function ScoringPanel({ rows, hasDeals, clusterColors }: Props) {
                 const mc = metricMap[col.key as string] ?? { key: col.key, direction: "neutral" as Direction, weight: 0 };
                 const isDimmed = (col.dealsOnly && !hasDeals) || groupDimmed;
                 const justification = buildJustification(col.key as string, mc.direction, mc.weight);
-                const rowBg = GROUP_COLORS[group] ?? "";
 
                 return (
                   <tr
                     key={col.key}
-                    className={`border-b border-border/40 last:border-0 ${rowBg} ${isDimmed ? "opacity-40" : ""}`}
+                    className={`border-b border-border/40 last:border-0 ${isDimmed ? "opacity-40" : ""}`}
                   >
                     {/* Group cell — only on first metric row */}
                     {colIdx === 0 && (
@@ -284,9 +262,7 @@ export function ScoringPanel({ rows, hasDeals, clusterColors }: Props) {
                         onValueChange={(v) => !isDimmed && updateMetric(col.key as string, { direction: v as Direction })}
                         disabled={isDimmed}
                       >
-                        <SelectTrigger
-                          className={`h-7 w-24 text-xs mx-auto border ${DIRECTION_STYLES[mc.direction]}`}
-                        >
+                        <SelectTrigger className="h-7 w-24 text-xs mx-auto border-border/60 bg-background text-foreground">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
@@ -304,9 +280,7 @@ export function ScoringPanel({ rows, hasDeals, clusterColors }: Props) {
                         onValueChange={(v) => !isDimmed && updateMetric(col.key as string, { weight: Number(v) })}
                         disabled={isDimmed}
                       >
-                        <SelectTrigger
-                          className={`h-7 w-16 text-xs mx-auto border-0 rounded-full font-semibold ${WEIGHT_STYLES[mc.weight] ?? WEIGHT_STYLES[0]}`}
-                        >
+                        <SelectTrigger className="h-7 w-16 text-xs mx-auto border-border/60 bg-background text-foreground">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
