@@ -1,5 +1,4 @@
-const GEN_URL =
-  "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
+const GEN_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
 
 interface GeminiInputMessage {
   role: "user" | "model";
@@ -13,7 +12,15 @@ interface CallGeminiTextOptions {
   history?: GeminiInputMessage[];
   userMessage?: string;
   temperature?: number;
-  /** Set to 0 to disable gemini-2.5-flash thinking (faster for structured JSON tasks). */
+  /**
+   * Model to use. Defaults to gemini-2.5-flash.
+   * Use "gemini-2.0-flash" for faster structured-output tasks that don't need deep reasoning.
+   */
+  model?: string;
+  /**
+   * Set to 0 to disable gemini-2.5-flash thinking mode (faster for structured JSON tasks).
+   * Only supported on gemini-2.5-* models — omit when using gemini-2.0-flash.
+   */
   thinkingBudget?: number;
   tools?: Array<Record<string, unknown>>;
 }
@@ -25,6 +32,7 @@ export async function callGeminiText({
   history = [],
   userMessage,
   temperature = 0.3,
+  model = "gemini-2.5-flash",
   thinkingBudget,
   tools,
 }: CallGeminiTextOptions): Promise<string> {
@@ -41,7 +49,7 @@ export async function callGeminiText({
             : []),
         ];
 
-  const res = await fetch(`${GEN_URL}?key=${apiKey}`, {
+  const res = await fetch(`${GEN_BASE}/${model}:generateContent?key=${apiKey}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({

@@ -50,6 +50,7 @@ export async function POST(req: NextRequest) {
       userMessage:
         mode === "review" ? buildStructuredReviewUserMessage(message) : message,
       temperature: mode === "review" ? 0.35 : 0.5,
+      thinkingBudget: 0,
     });
 
     const actionsMatch = rawText.match(/<actions>([\s\S]*?)<\/actions>/);
