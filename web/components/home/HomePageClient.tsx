@@ -69,7 +69,7 @@ const PIPELINE_STEPS = [
   {
     icon: Network,
     label: "Review & Edit",
-    desc: "",
+    desc: "Inspect clusters on a UMAP map and refine them with AI assistance.",
   },
   {
     icon: BarChart3,
@@ -304,7 +304,6 @@ function SessionCard({
             <p className="mt-3 line-clamp-2 text-lg font-semibold leading-snug text-foreground">
               {session.name ?? "Untitled session"}
             </p>
-            <p className="mt-1 text-sm leading-5 text-muted-foreground">{stageCopy}</p>
           </div>
           <Button
             variant="ghost"
