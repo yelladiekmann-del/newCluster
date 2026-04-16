@@ -41,8 +41,9 @@ export function normalizeAndValidateActions(
     if (type === "merge") {
       const sources = toStringArray(raw.sources).filter((name) => clusterSet.has(name));
       const newName = String(raw.newName ?? raw.new_name ?? "").trim();
+      const description = String(raw.description ?? "").trim() || undefined;
       if (sources.length >= 2 && newName) {
-        normalized.push({ type: "merge", sources, newName });
+        normalized.push({ type: "merge", sources, newName, description });
       }
       continue;
     }

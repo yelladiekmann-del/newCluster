@@ -117,7 +117,7 @@ export interface ChatMessage {
 
 export type ClusterAction =
   | { type: "delete"; clusterName: string }
-  | { type: "merge"; sources: string[]; newName: string }
+  | { type: "merge"; sources: string[]; newName: string; description?: string }
   | { type: "add"; name: string; description: string; companies: string[] };
 
 // ── Analytics ───────────────────────────────────────────────────────────────

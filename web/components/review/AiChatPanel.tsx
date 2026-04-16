@@ -173,13 +173,15 @@ export function AiChatPanel() {
 
   // ── Apply actions ────────────────────────────────────────────────────────
 
+  /**
+   * Apply a single action with its own Firestore commit + state update.
+   * Used for individual "Apply" buttons on each suggested action.
+   */
   const applyAction = useCallback(async (action: ClusterAction) => {
     if (!uid) return;
     const db = getFirebaseDb();
     const batch = writeBatch(db);
-
     const { clusters: currentClusters, companies: currentCompanies, setClusters, setCompanies } = useSession.getState();
-
     const { saveCompaniesToStorage } = await import("@/lib/firebase/companies-storage");
 
     if (action.type === "delete") {
@@ -187,8 +189,8 @@ export function AiChatPanel() {
       if (!target) { toast.error(`Cluster "${action.clusterName}" not found`); return; }
       batch.delete(doc(db, "sessions", uid, "clusters", target.id));
       await batch.commit();
-      const updatedCompanies = currentCompanies.map(c => c.clusterId === target.id ? { ...c, clusterId: "outliers" } : c);
       const affected = currentCompanies.filter(c => c.clusterId === target.id).length;
+      const updatedCompanies = currentCompanies.map(c => c.clusterId === target.id ? { ...c, clusterId: "outliers" } : c);
       setCompanies(updatedCompanies);
       setClusters(currentClusters.filter(c => c.id !== target.id).map(c => c.id === "outliers" ? { ...c, companyCount: c.companyCount + affected } : c));
       await saveCompaniesToStorage(uid, updatedCompanies);
@@ -199,54 +201,121 @@ export function AiChatPanel() {
       const sources = action.sources.map(name => currentClusters.find(c => c.name === name)).filter(Boolean);
       if (sources.length < 2) { toast.error("Could not find source clusters to merge"); return; }
       const newId = `merged_${Date.now()}`;
-      const mergedNames = sources.map(s => s?.name ?? "").filter(Boolean).join(" & ");
-      const fallbackDescription = `Merged cluster combining ${mergedNames}.`;
+      const sourceIds = new Set(sources.map(s => s?.id));
+      const count = currentCompanies.filter(c => sourceIds.has(c.clusterId ?? "")).length;
       const newCluster = {
         id: newId,
         name: action.newName,
-        description: fallbackDescription,
+        description: action.description ?? `Merged cluster combining ${sources.map(s => s?.name).join(" & ")}.`,
         color: getNextClusterColor(currentClusters),
         isOutliers: false,
-        companyCount: 0,
+        companyCount: count,
       };
       batch.set(doc(db, "sessions", uid, "clusters", newId), newCluster);
-      const sourceIds = new Set(sources.map(s => s?.id));
-      let count = 0;
       for (const src of sources) {
-        if (!src) continue;
-        count += currentCompanies.filter(c => c.clusterId === src.id).length;
-        batch.delete(doc(db, "sessions", uid, "clusters", src.id));
+        if (src) batch.delete(doc(db, "sessions", uid, "clusters", src.id));
       }
-      batch.update(doc(db, "sessions", uid, "clusters", newId), { companyCount: count });
       await batch.commit();
       const updatedCompanies = currentCompanies.map(c => sourceIds.has(c.clusterId ?? "") ? { ...c, clusterId: newId } : c);
       setCompanies(updatedCompanies);
-      setClusters([...currentClusters.filter(c => !sourceIds.has(c.id)), { ...newCluster, companyCount: count }]);
+      setClusters([...currentClusters.filter(c => !sourceIds.has(c.id)), newCluster]);
       await saveCompaniesToStorage(uid, updatedCompanies);
       toast.success(`Merged into "${action.newName}"`);
     }
 
     if (action.type === "add") {
       const newId = `added_${Date.now()}`;
+      const matchedCompanies = currentCompanies.filter(c => action.companies.some(name => c.name.toLowerCase() === name.toLowerCase()));
       const newCluster = {
         id: newId,
         name: action.name,
         description: action.description,
         color: getNextClusterColor(currentClusters),
         isOutliers: false,
-        companyCount: 0,
+        companyCount: matchedCompanies.length,
       };
       batch.set(doc(db, "sessions", uid, "clusters", newId), newCluster);
-      const matchedCompanies = currentCompanies.filter(c => action.companies.some(name => c.name.toLowerCase() === name.toLowerCase()));
-      batch.update(doc(db, "sessions", uid, "clusters", newId), { companyCount: matchedCompanies.length });
       await batch.commit();
       const matchedIds = new Set(matchedCompanies.map(c => c.id));
       const updatedCompanies = currentCompanies.map(c => matchedIds.has(c.id) ? { ...c, clusterId: newId } : c);
       setCompanies(updatedCompanies);
-      setClusters([...currentClusters, { ...newCluster, companyCount: matchedCompanies.length }]);
+      setClusters([...currentClusters, newCluster]);
       await saveCompaniesToStorage(uid, updatedCompanies);
       toast.success(`Added cluster "${action.name}" with ${matchedCompanies.length} companies`);
     }
+  }, [uid]);
+
+  /**
+   * Apply multiple actions in a single Firestore batch commit + one state update.
+   * Used by "Apply All" to avoid N sequential round-trips.
+   */
+  const applyAllActions = useCallback(async (actions: ClusterAction[]) => {
+    if (!uid || actions.length === 0) return;
+    const db = getFirebaseDb();
+    const batch = writeBatch(db);
+    const { saveCompaniesToStorage } = await import("@/lib/firebase/companies-storage");
+
+    // Thread running state through all actions so each one sees the result of the previous
+    let clusters = useSession.getState().clusters;
+    let companies = useSession.getState().companies;
+
+    for (const action of actions) {
+      if (action.type === "delete") {
+        const target = clusters.find(c => c.name === action.clusterName);
+        if (!target) continue;
+        batch.delete(doc(db, "sessions", uid, "clusters", target.id));
+        const affected = companies.filter(c => c.clusterId === target.id).length;
+        companies = companies.map(c => c.clusterId === target.id ? { ...c, clusterId: "outliers" } : c);
+        clusters = clusters.filter(c => c.id !== target.id).map(c => c.id === "outliers" ? { ...c, companyCount: c.companyCount + affected } : c);
+      }
+
+      if (action.type === "merge") {
+        const sources = action.sources.map(name => clusters.find(c => c.name === name)).filter(Boolean);
+        if (sources.length < 2) continue;
+        const newId = `merged_${Date.now()}`;
+        const sourceIds = new Set(sources.map(s => s?.id));
+        const count = companies.filter(c => sourceIds.has(c.clusterId ?? "")).length;
+        const newCluster = {
+          id: newId,
+          name: action.newName,
+          description: action.description ?? `Merged cluster combining ${sources.map(s => s?.name).join(" & ")}.`,
+          color: getNextClusterColor(clusters),
+          isOutliers: false,
+          companyCount: count,
+        };
+        batch.set(doc(db, "sessions", uid, "clusters", newId), newCluster);
+        for (const src of sources) {
+          if (src) batch.delete(doc(db, "sessions", uid, "clusters", src.id));
+        }
+        companies = companies.map(c => sourceIds.has(c.clusterId ?? "") ? { ...c, clusterId: newId } : c);
+        clusters = [...clusters.filter(c => !sourceIds.has(c.id)), newCluster];
+      }
+
+      if (action.type === "add") {
+        const newId = `added_${Date.now()}`;
+        const matchedCompanies = companies.filter(c => action.companies.some(name => c.name.toLowerCase() === name.toLowerCase()));
+        const matchedIds = new Set(matchedCompanies.map(c => c.id));
+        const newCluster = {
+          id: newId,
+          name: action.name,
+          description: action.description,
+          color: getNextClusterColor(clusters),
+          isOutliers: false,
+          companyCount: matchedCompanies.length,
+        };
+        batch.set(doc(db, "sessions", uid, "clusters", newId), newCluster);
+        companies = companies.map(c => matchedIds.has(c.id) ? { ...c, clusterId: newId } : c);
+        clusters = [...clusters, newCluster];
+      }
+    }
+
+    // Single round-trip: one Firestore commit, one state update, one storage save
+    await batch.commit();
+    const { setClusters, setCompanies } = useSession.getState();
+    setCompanies(companies);
+    setClusters(clusters);
+    await saveCompaniesToStorage(uid, companies);
+    toast.success(`Applied ${actions.length} action${actions.length !== 1 ? "s" : ""}`);
   }, [uid]);
 
   // ── Render ───────────────────────────────────────────────────────────────
@@ -442,8 +511,10 @@ export function AiChatPanel() {
                 if (!applyConfirm) return;
                 const actionsToApply = applyConfirm.actions;
                 setApplyConfirm(null);
-                for (const action of actionsToApply) {
-                  await applyAction(action);
+                if (actionsToApply.length === 1) {
+                  await applyAction(actionsToApply[0]);
+                } else {
+                  await applyAllActions(actionsToApply);
                 }
                 setPendingActions((prev) =>
                   prev?.filter((a) => !actionsToApply.includes(a)) ?? null
