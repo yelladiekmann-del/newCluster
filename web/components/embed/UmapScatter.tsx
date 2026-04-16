@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef } from "react";
+import { forwardRef, useCallback, useImperativeHandle, useRef } from "react";
 import dynamic from "next/dynamic";
 import { useSession } from "@/lib/store/session";
 import { CLUSTER_COLORS } from "@/types";
@@ -10,9 +10,29 @@ import { sortClustersOutliersLast } from "@/lib/cluster-order";
 
 const Plot = dynamic(() => import("react-plotly.js"), { ssr: false });
 
-export function UmapScatter() {
+export interface UmapScatterHandle {
+  /** Capture the current chart as a base64 PNG data URL. */
+  captureImage(): Promise<string>;
+  /** Raw Plotly graphDiv element (needed by exportClusterSlide). */
+  getPlotDiv(): unknown;
+}
+
+export const UmapScatter = forwardRef<UmapScatterHandle>(function UmapScatter(_props, ref) {
   const { companies, clusters } = useSession();
   const plotRef = useRef<unknown>(null);
+
+  useImperativeHandle(ref, () => ({
+    async captureImage() {
+      if (!plotRef.current) throw new Error("Chart not ready");
+      const Plotly = (await import("plotly.js-dist-min")).default;
+      return (Plotly as unknown as {
+        toImage: (el: unknown, opts: object) => Promise<string>;
+      }).toImage(plotRef.current, { format: "png", scale: 2, width: 1600, height: 1000 });
+    },
+    getPlotDiv() {
+      return plotRef.current;
+    },
+  }));
 
   const handleExport = useCallback(async (format: "png" | "svg") => {
     if (!plotRef.current) return;

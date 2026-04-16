@@ -55,12 +55,13 @@ export function getFirebaseStorage(): FirebaseStorage {
   return storage;
 }
 
-/** Sign in with Google (Sheets + Drive scopes included). Only @hy.co accounts are allowed. */
+/** Sign in with Google (Sheets + Drive + Slides scopes). Only @hy.co accounts are allowed. */
 export async function signInWithGoogle(): Promise<{ user: User; accessToken: string | null }> {
   const provider = new GoogleAuthProvider();
   provider.setCustomParameters({ hd: "hy.co" }); // UX hint — real check is below
   provider.addScope("https://www.googleapis.com/auth/spreadsheets");
   provider.addScope("https://www.googleapis.com/auth/drive.file");
+  provider.addScope("https://www.googleapis.com/auth/presentations");
   const cred = await signInWithPopup(getFirebaseAuth(), provider);
   if (!cred.user.email?.endsWith("@hy.co")) {
     await fbSignOut(getFirebaseAuth());
@@ -68,6 +69,20 @@ export async function signInWithGoogle(): Promise<{ user: User; accessToken: str
   }
   const oauthCred = GoogleAuthProvider.credentialFromResult(cred);
   return { user: cred.user, accessToken: oauthCred?.accessToken ?? null };
+}
+
+/**
+ * Request additional Google OAuth scopes for users who signed in before the
+ * Slides scope was added. Triggers a Google consent popup for the missing scope
+ * and returns a fresh access token that includes it.
+ */
+export async function requestSlidesAccess(): Promise<string | null> {
+  const provider = new GoogleAuthProvider();
+  provider.addScope("https://www.googleapis.com/auth/presentations");
+  provider.addScope("https://www.googleapis.com/auth/drive.file");
+  const cred = await signInWithPopup(getFirebaseAuth(), provider);
+  const oauthCred = GoogleAuthProvider.credentialFromResult(cred);
+  return oauthCred?.accessToken ?? null;
 }
 
 /** Sign out the current user. */
