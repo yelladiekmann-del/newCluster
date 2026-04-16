@@ -200,7 +200,7 @@ export function AiChatPanel() {
     if (action.type === "merge") {
       const sources = action.sources.map(name => currentClusters.find(c => c.name === name)).filter(Boolean);
       if (sources.length < 2) { toast.error("Could not find source clusters to merge"); return; }
-      const newId = `merged_${Date.now()}`;
+      const newId = `merged_${crypto.randomUUID()}`;
       const sourceIds = new Set(sources.map(s => s?.id));
       const count = currentCompanies.filter(c => sourceIds.has(c.clusterId ?? "")).length;
       const newCluster = {
@@ -224,7 +224,7 @@ export function AiChatPanel() {
     }
 
     if (action.type === "add") {
-      const newId = `added_${Date.now()}`;
+      const newId = `added_${crypto.randomUUID()}`;
       const matchedCompanies = currentCompanies.filter(c => action.companies.some(name => c.name.toLowerCase() === name.toLowerCase()));
       const newCluster = {
         id: newId,
@@ -272,7 +272,7 @@ export function AiChatPanel() {
       if (action.type === "merge") {
         const sources = action.sources.map(name => clusters.find(c => c.name === name)).filter(Boolean);
         if (sources.length < 2) continue;
-        const newId = `merged_${Date.now()}`;
+        const newId = `merged_${crypto.randomUUID()}`;
         const sourceIds = new Set(sources.map(s => s?.id));
         const count = companies.filter(c => sourceIds.has(c.clusterId ?? "")).length;
         const newCluster = {
@@ -292,7 +292,7 @@ export function AiChatPanel() {
       }
 
       if (action.type === "add") {
-        const newId = `added_${Date.now()}`;
+        const newId = `added_${crypto.randomUUID()}`;
         const matchedCompanies = companies.filter(c => action.companies.some(name => c.name.toLowerCase() === name.toLowerCase()));
         const matchedIds = new Set(matchedCompanies.map(c => c.id));
         const newCluster = {
