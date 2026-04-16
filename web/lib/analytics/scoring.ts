@@ -143,6 +143,7 @@ export const METRIC_GROUP_MAP: Record<string, string> = {
   vcGraduationRate:   "Risk",
   mortalityRate:      "Risk",
   hhi:                "Market",
+  marktreife:         "Market",
   avgSeriesScore:     "Market",
   avgPatentFamilies:  "Technology",
 };
@@ -166,6 +167,7 @@ const JUSTIFICATIONS: Partial<Record<string, { max: string; min: string }>> = {
   vcGraduationRate:   { max: "validated, lower-risk companies",     min: "pre-validation, higher upside potential" },
   mortalityRate:      { max: "high churn / disrupted segments",     min: "stable, low failure-rate segments" },
   hhi:                { max: "concentrated market",                 min: "fragmented, competitive landscape" },
+  marktreife:         { max: "emerging / immature market",          min: "mature, established market" },
   avgSeriesScore:     { max: "mature, later-stage companies",       min: "early-stage companies" },
   avgPatentFamilies:  { max: "high IP defensibility",               min: "accessible, low R&D-intensive markets" },
 };

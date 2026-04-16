@@ -5,7 +5,6 @@ import { toast } from "sonner";
 import { useSession } from "@/lib/store/session";
 import { ApiKeyStep } from "./ApiKeyStep";
 import { CompanyDataStep } from "./CompanyDataStep";
-import { DealsDataStep } from "./DealsDataStep";
 import { EmbeddingsUploadStep } from "./EmbeddingsUploadStep";
 import { Button } from "@/components/ui/button";
 import { ArrowRight, ChevronDown, ChevronUp } from "lucide-react";
@@ -17,10 +16,8 @@ export function SetupPageClient() {
   const router = useRouter();
   const {
     uid,
-    apiKey,
     pipelineStep,
     companies,
-    descCol,
     npzPreloaded,
     setPipelineStep,
   } = useSession();
@@ -33,6 +30,7 @@ export function SetupPageClient() {
     Object.keys(companies[0].dimensions).length > 0;
 
   const canContinue =
+    !!uid &&
     companies.length > 0 &&
     (hasDimensions || npzPreloaded || pipelineStep >= 1);
 
@@ -100,10 +98,7 @@ export function SetupPageClient() {
 
         {advancedOpen && (
           <div className="mt-3 flex flex-col gap-4 border border-border rounded-xl p-4 bg-card">
-            <DealsDataStep />
-            <div className="border-t border-border pt-4">
-              <EmbeddingsUploadStep />
-            </div>
+            <EmbeddingsUploadStep />
           </div>
         )}
       </div>

@@ -4,14 +4,15 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { collection, query, where, orderBy, getDocs } from "firebase/firestore";
 import { getFirebaseDb, signInWithGoogle, signOutUser } from "@/lib/firebase/client";
-import { createNewSession, resumeSession, deleteSession } from "@/lib/firebase/hooks";
+import { createNewSession, resumeSession, resumeSessionFast, deleteSession, clearSignedOutClientState } from "@/lib/firebase/hooks";
 import { useSession } from "@/lib/store/session";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card";
-import { Plus, LogOut, ArrowRight, Clock, Loader2, GitBranch, Trash2, Upload, Cpu, Network, BarChart3 } from "lucide-react";
+import { Plus, LogOut, ArrowRight, Loader2, GitBranch, Trash2, Upload, Cpu, Network, BarChart3, Layers3, FolderOpen, Sparkles, CheckCircle2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Progress } from "@/components/ui/progress";
 import {
   Dialog,
   DialogContent,
@@ -76,6 +77,86 @@ const PIPELINE_STEPS = [
     desc: "Compare clusters on funding, growth, and market metrics.",
   },
 ];
+
+function normalizeTimestamp(value?: number) {
+  if (!value) return null;
+  return value < 1e12 ? value * 1000 : value;
+}
+
+function fmtDate(value?: number) {
+  const normalized = normalizeTimestamp(value);
+  if (!normalized) return "—";
+  return new Date(normalized).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+function fmtTime(value?: number) {
+  const normalized = normalizeTimestamp(value);
+  if (!normalized) return null;
+  return new Date(normalized).toLocaleTimeString(undefined, {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function fmtRelative(value?: number) {
+  const normalized = normalizeTimestamp(value);
+  if (!normalized) return "No recent activity";
+  const diffMs = Date.now() - normalized;
+  if (diffMs < 0) return "Updated today";
+  const day = 24 * 60 * 60 * 1000;
+  if (diffMs < day) return "Updated today";
+  if (diffMs < 2 * day) return "Updated yesterday";
+  const days = Math.floor(diffMs / day);
+  if (days < 30) return `Updated ${days} days ago`;
+  const months = Math.floor(days / 30);
+  return `Updated ${months} month${months === 1 ? "" : "s"} ago`;
+}
+
+function getStepProgress(step: number) {
+  const clamped = Math.max(0, Math.min(4, step));
+  return (clamped / 4) * 100;
+}
+
+function getNextActionLabel(step: number) {
+  switch (step) {
+    case 0:
+      return "Continue setup";
+    case 1:
+      return "Finish setup";
+    case 2:
+      return "Open embed & cluster";
+    case 3:
+      return "Review clusters";
+    case 4:
+      return "Open analytics";
+    default:
+      return "Resume session";
+  }
+}
+
+function StatPill({
+  icon: Icon,
+  label,
+  value,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="rounded-2xl border border-border/70 bg-background/80 px-4 py-3 shadow-sm">
+      <div className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
+        <Icon className="h-3.5 w-3.5" />
+        {label}
+      </div>
+      <div className="mt-2 text-xl font-semibold text-foreground">{value}</div>
+    </div>
+  );
+}
 
 // ── Sign-in view ──────────────────────────────────────────────────────────────
 
@@ -158,21 +239,156 @@ function SignInView() {
 
 function PipelineStrip() {
   return (
-    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+    <div className="mb-4 grid gap-2.5">
       {PIPELINE_STEPS.map(({ icon: Icon, label, desc }, i) => (
         <div
           key={label}
-          className="flex flex-col gap-1.5 rounded-lg border border-border bg-muted/30 px-4 py-3"
+          className="flex rounded-xl border border-border/70 bg-muted/15 px-3.5 py-3"
         >
-          <div className="flex items-center gap-2">
+          <div className="grid w-full gap-x-3 gap-y-1 md:grid-cols-[auto_auto_minmax(0,160px)_1fr] md:items-center">
             <span className="text-[11px] font-bold text-primary/60 font-mono">0{i + 1}</span>
-            <Icon className="h-3.5 w-3.5 text-primary" />
-            <span className="text-xs font-semibold text-foreground">{label}</span>
+            <Icon className="h-3.5 w-3.5 shrink-0 text-primary" />
+            <span className="text-sm font-semibold leading-tight text-foreground">{label}</span>
+            <p className="text-xs leading-5 text-muted-foreground">{desc}</p>
           </div>
-          <p className="text-[11px] text-muted-foreground leading-snug">{desc}</p>
         </div>
       ))}
     </div>
+  );
+}
+
+function SessionCard({
+  session,
+  resuming,
+  deleting,
+  onResume,
+  onDelete,
+}: {
+  session: SessionRow;
+  resuming: string | null;
+  deleting: string | null;
+  onResume: (id: string) => void;
+  onDelete: (session: SessionRow) => void;
+}) {
+  const progress = getStepProgress(session.pipelineStep);
+  const nextAction = getNextActionLabel(session.pipelineStep);
+  const isBusy = resuming === session.id || deleting === session.id;
+  const stepIndex = Math.max(0, Math.min(PIPELINE_STEPS.length - 1, session.pipelineStep === 4 ? 3 : Math.max(session.pipelineStep - 1, 0)));
+  const stageCopy =
+    session.pipelineStep >= 4
+      ? "Analytics unlocked"
+      : PIPELINE_STEPS[stepIndex]?.desc ?? "Continue the clustering workflow.";
+
+  return (
+    <Card className="group/card relative flex h-full flex-col overflow-hidden border-border/70 bg-gradient-to-br from-background via-background to-muted/25 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-lg">
+      <div className="absolute inset-x-0 top-0 h-16 bg-[radial-gradient(circle_at_top_left,hsl(var(--foreground)/0.06),transparent_58%)] opacity-80" />
+      <CardHeader className="relative gap-3 border-b border-border/60 pb-3">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge
+                variant="secondary"
+                className={`shrink-0 text-[11px] ${STEP_BADGE_CLASSES[session.pipelineStep] ?? STEP_BADGE_CLASSES[0]}`}
+              >
+                {STEP_LABELS[session.pipelineStep] ?? "Unknown"}
+              </Badge>
+              <span className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
+                {fmtRelative(session.updatedAt)}
+                {fmtTime(session.updatedAt) && (
+                  <span className="ml-1 normal-case tracking-normal">
+                    at {fmtTime(session.updatedAt)}
+                  </span>
+                )}
+              </span>
+            </div>
+            <p className="mt-3 line-clamp-2 text-lg font-semibold leading-snug text-foreground">
+              {session.name ?? "Untitled session"}
+            </p>
+            <p className="mt-1 text-sm leading-5 text-muted-foreground">{stageCopy}</p>
+          </div>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 shrink-0 text-muted-foreground hover:text-destructive"
+            disabled={deleting === session.id}
+            onClick={() => onDelete(session)}
+          >
+            {deleting === session.id ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Trash2 className="h-4 w-4" />
+            )}
+          </Button>
+        </div>
+        <div className="text-xs text-muted-foreground">Created {fmtDate(session.createdAt)}</div>
+      </CardHeader>
+
+      <CardContent className="relative flex flex-1 flex-col gap-3 py-3">
+        <div className="grid grid-cols-3 gap-2">
+          <div className="rounded-xl border border-border/70 bg-muted/15 px-3 py-2.5">
+            <div className="text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">Companies</div>
+            <div className="mt-1.5 text-base font-semibold text-foreground">
+              {session.companyCount != null ? session.companyCount.toLocaleString() : "—"}
+            </div>
+          </div>
+          <div className="rounded-xl border border-border/70 bg-muted/15 px-3 py-2.5">
+            <div className="text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">Clusters</div>
+            <div className="mt-1.5 text-base font-semibold text-foreground">
+              {session.clusterCount != null ? session.clusterCount.toLocaleString() : "—"}
+            </div>
+          </div>
+          <div className="rounded-xl border border-border/70 bg-muted/15 px-3 py-2.5">
+            <div className="text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">Progress</div>
+            <div className="mt-1.5 text-base font-semibold text-foreground">{Math.round(progress)}%</div>
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-border/70 bg-background/70 p-3.5">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <div className="text-sm font-medium text-foreground">Pipeline status</div>
+              <div className="mt-0.5 text-xs text-muted-foreground">
+                {session.pipelineStep >= 4 ? "This session has completed the core pipeline." : nextAction}
+              </div>
+            </div>
+            {session.pipelineStep >= 4 ? (
+              <div className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-medium text-emerald-700">
+                <CheckCircle2 className="h-3.5 w-3.5" />
+                Complete
+              </div>
+            ) : (
+              <div className="text-xs font-medium text-muted-foreground">
+                Step {Math.max(1, session.pipelineStep + 1)} / 5
+              </div>
+            )}
+          </div>
+          <div className="mt-2.5">
+            <Progress value={progress} className="h-2 bg-muted/70" />
+          </div>
+        </div>
+      </CardContent>
+
+      <CardFooter className="relative mt-auto flex items-center justify-end gap-3 border-t border-border/60 bg-muted/25 px-4 py-3">
+        <Button
+          size="sm"
+          onClick={() => onResume(session.id)}
+          disabled={isBusy}
+          className="gap-2"
+        >
+          {resuming === session.id ? (
+            <>
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              Loading…
+            </>
+          ) : (
+            <>
+              {nextAction}
+              <ArrowRight className="h-3.5 w-3.5" />
+            </>
+          )}
+        </Button>
+      </CardFooter>
+    </Card>
   );
 }
 
@@ -219,7 +435,7 @@ function SessionsView({ authUid }: { authUid: string }) {
   async function handleResume(sessionId: string) {
     setResuming(sessionId);
     try {
-      const step = await resumeSession(sessionId);
+      const step = await resumeSessionFast(sessionId);
       router.push(STEP_ROUTES[step] ?? "/setup");
     } finally {
       setResuming(null);
@@ -241,7 +457,12 @@ function SessionsView({ authUid }: { authUid: string }) {
   }
 
   async function handleSignOut() {
-    await signOutUser();
+    try {
+      await signOutUser();
+      clearSignedOutClientState();
+    } catch (err) {
+      toast.error("Sign out failed: " + (err instanceof Error ? err.message : String(err)));
+    }
   }
 
   return (
@@ -269,19 +490,58 @@ function SessionsView({ authUid }: { authUid: string }) {
       </header>
 
       {/* Main */}
-      <main className="flex-1 px-6 py-8 max-w-5xl mx-auto w-full">
-        <div className="flex items-start justify-between mb-5">
-          <div>
-            <h2 className="text-xl font-bold">Sessions</h2>
-            <p className="text-sm text-muted-foreground mt-0.5 max-w-xl">
-              Each session maps a company list through the full AI pipeline: dimension extraction → embedding → clustering → analytics.
-            </p>
+      <main className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-6 px-6 py-8">
+        <section className="relative overflow-hidden rounded-[28px] border border-border/70 bg-gradient-to-br from-background via-background to-muted/35 shadow-sm">
+          <div className="absolute inset-x-0 top-0 h-28 bg-[radial-gradient(circle_at_top_left,hsl(var(--foreground)/0.06),transparent_58%)]" />
+          <div className="relative grid gap-6 px-6 py-7 lg:grid-cols-[1.15fr_0.85fr] lg:px-8">
+            <div className="space-y-4">
+              <div className="inline-flex items-center gap-2 rounded-full border border-border/70 bg-background/80 px-3 py-1 text-[11px] font-medium uppercase tracking-[0.22em] text-muted-foreground">
+                <Layers3 className="h-3.5 w-3.5" />
+                Session Workspace
+              </div>
+              <div>
+                <h2 className="max-w-3xl text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
+                  Organize every market map as a reusable working session.
+                </h2>
+                <p className="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground sm:text-base">
+                  Each session tracks one landscape from raw company upload through clustering, review, and analytics.
+                  Pick up where you left off, compare parallel theses, or spin up a new segment study in one click.
+                </p>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-3">
+                <StatPill icon={FolderOpen} label="Sessions" value={sessions.length.toLocaleString()} />
+                <StatPill
+                  icon={GitBranch}
+                  label="In progress"
+                  value={sessions.filter((session) => session.pipelineStep < 4).length.toLocaleString()}
+                />
+                <StatPill
+                  icon={Sparkles}
+                  label="Analytics-ready"
+                  value={sessions.filter((session) => session.pipelineStep >= 4).length.toLocaleString()}
+                />
+              </div>
+            </div>
+
+            <Card className="border-border/70 bg-background/85 shadow-sm">
+              <CardHeader className="border-b border-border/60 pb-4">
+                <div className="space-y-1">
+                  <div className="text-base font-semibold text-foreground">Pipeline overview</div>
+                  <p className="text-sm text-muted-foreground">
+                    Every session moves through the same clustering workflow.
+                  </p>
+                </div>
+              </CardHeader>
+              <CardContent className="pt-4">
+                <PipelineStrip />
+                <Button onClick={() => setDialogOpen(true)} disabled={creating} className="w-full gap-2">
+                  {creating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+                  {creating ? "Creating…" : "New Session"}
+                </Button>
+              </CardContent>
+            </Card>
           </div>
-          <Button onClick={() => setDialogOpen(true)} disabled={creating} className="gap-1.5 shrink-0 ml-4">
-            {creating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-            {creating ? "Creating…" : "New Session"}
-          </Button>
-        </div>
+        </section>
 
         {loading ? (
           <div className="flex items-center gap-2 text-sm text-muted-foreground py-8">
@@ -309,85 +569,28 @@ function SessionsView({ authUid }: { authUid: string }) {
             </Button>
           </div>
         ) : (
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <section className="space-y-4">
+            <div className="flex items-end justify-between gap-4">
+              <div>
+                <h3 className="text-xl font-semibold text-foreground">Your sessions</h3>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Open a session to continue exactly where its clustering workflow currently stands.
+                </p>
+              </div>
+            </div>
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             {sessions.map((s) => (
-              <Card
+              <SessionCard
                 key={s.id}
-                className="flex flex-col transition-shadow hover:shadow-md"
-              >
-                <CardHeader className="pb-2">
-                  <div className="flex items-start justify-between gap-2">
-                    <Badge
-                      variant="secondary"
-                      className={`shrink-0 text-xs ${STEP_BADGE_CLASSES[s.pipelineStep] ?? STEP_BADGE_CLASSES[0]}`}
-                    >
-                      {STEP_LABELS[s.pipelineStep] ?? "Unknown"}
-                    </Badge>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7 text-muted-foreground hover:text-destructive shrink-0 -mr-1 -mt-1"
-                      disabled={deleting === s.id}
-                      onClick={() => setDeleteTarget(s)}
-                    >
-                      {deleting === s.id
-                        ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                        : <Trash2 className="h-3.5 w-3.5" />
-                      }
-                    </Button>
-                  </div>
-                  <div className="mt-1">
-                    <p className="text-sm font-semibold leading-snug">
-                      {s.name ?? "Untitled session"}
-                    </p>
-                    <div className="flex items-center gap-1.5 mt-1 text-xs text-muted-foreground">
-                      <Clock className="h-3 w-3" />
-                      {new Date(s.createdAt).toLocaleDateString(undefined, {
-                        month: "short",
-                        day: "numeric",
-                        year: "numeric",
-                      })}
-                    </div>
-                  </div>
-                </CardHeader>
-                <CardContent className="pb-3 flex-1 flex flex-col gap-1">
-                  {s.companyCol && (
-                    <p className="text-xs text-muted-foreground">
-                      Column: <span className="text-foreground font-mono">{s.companyCol}</span>
-                    </p>
-                  )}
-                  {(s.companyCount != null || s.clusterCount != null) && (
-                    <p className="text-xs text-muted-foreground">
-                      {s.companyCount != null && `${s.companyCount.toLocaleString()} companies`}
-                      {s.companyCount != null && s.clusterCount != null && " · "}
-                      {s.clusterCount != null && `${s.clusterCount} clusters`}
-                    </p>
-                  )}
-                </CardContent>
-                <CardFooter className="pt-0">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => handleResume(s.id)}
-                    disabled={resuming === s.id || deleting === s.id}
-                    className="w-full gap-1.5"
-                  >
-                    {resuming === s.id ? (
-                      <>
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                        Loading…
-                      </>
-                    ) : (
-                      <>
-                        Resume
-                        <ArrowRight className="h-3.5 w-3.5" />
-                      </>
-                    )}
-                  </Button>
-                </CardFooter>
-              </Card>
+                session={s}
+                resuming={resuming}
+                deleting={deleting}
+                onResume={handleResume}
+                onDelete={setDeleteTarget}
+              />
             ))}
-          </div>
+            </div>
+          </section>
         )}
       </main>
 
@@ -449,7 +652,19 @@ function SessionsView({ authUid }: { authUid: string }) {
 // ── Root export ───────────────────────────────────────────────────────────────
 
 export function HomePageClient() {
+  const authResolved = useSession((s) => s.authResolved);
   const authUser = useSession((s) => s.authUser);
+
+  if (!authResolved) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background px-4">
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          Restoring session…
+        </div>
+      </div>
+    );
+  }
 
   if (!authUser) return <SignInView />;
   return <SessionsView authUid={authUser.uid} />;

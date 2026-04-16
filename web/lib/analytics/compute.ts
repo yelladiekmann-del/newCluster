@@ -106,6 +106,15 @@ export function computeAnalytics(
   const refYear = referenceYear ?? new Date().getFullYear();
   const rows: ClusterMetricsRow[] = [];
 
+  // Determine the most recent founding year present anywhere in the dataset.
+  // Using the dataset's own max year avoids the "nobody founded in 2026" problem
+  // while keeping the metric meaningful as a cross-cluster comparison.
+  const allFoundingYears = companies
+    .map((c) => (colMap.year_founded ? safeYear(c.originalData[colMap.year_founded]) : null))
+    .filter((y): y is number => y !== null);
+  const recentYear =
+    allFoundingYears.length > 0 ? Math.max(...allFoundingYears) : refYear - 1;
+
   for (const cluster of clusters) {
     const members = companies.filter((c) => c.clusterId === cluster.id);
     if (members.length === 0) continue;
@@ -125,7 +134,8 @@ export function computeAnalytics(
     // ── Employees ────────────────────────────────────────────────────────
     const employeeNums = members
       .map((m) => colMap.employees ? safeNum(m.originalData[colMap.employees]) : null)
-      .filter((n): n is number => n !== null);
+      // Sanity-cap: XLSX sometimes returns absurdly large floats for non-numeric cells
+      .filter((n): n is number => n !== null && n >= 0 && n <= 1_000_000);
     const avgEmployees = employeeNums.length > 0
       ? Math.round(employeeNums.reduce((a, b) => a + b, 0) / employeeNums.length)
       : null;
@@ -138,7 +148,7 @@ export function computeAnalytics(
       ? Math.round(yearNums.reduce((a, b) => a + b, 0) / yearNums.length)
       : null;
     const pctRecentlyFounded = yearNums.length > 0
-      ? Math.round((yearNums.filter((y) => refYear - y <= 2).length / yearNums.length) * 100)
+      ? Math.round((yearNums.filter((y) => y === recentYear).length / yearNums.length) * 100)
       : null;
 
     // ── Funding from companies CSV ────────────────────────────────────────
@@ -266,13 +276,22 @@ export function computeAnalytics(
 
       if (colMap.deal_date) {
         const dealYears = clusterDeals.map((d) => safeDate(d[colMap.deal_date!])?.getFullYear() ?? null);
-        const prevYearN = dealYears.filter((y) => y === refYear - 1).length;
-        const thisYearN = dealYears.filter((y) => y === refYear).length;
-        dealMomentum = prevYearN > 0
-          ? Math.round(((thisYearN / prevYearN) - 1) * 100)
+        const recN  = dealYears.filter((y) => y != null && y >= refYear - 1 && y <= refYear).length;
+        const prevN = dealYears.filter((y) => y != null && y >= refYear - 3 && y <= refYear - 2).length;
+        dealMomentum = prevN > 0
+          ? Math.round(((recN / prevN) - 1) * 100)
           : null;
       }
     }
+
+    // ── Marktreife ───────────────────────────────────────────────────────────
+    // Capital invested in last 4 years / total all-time funding from companies sheet.
+    // High % → most funding is recent → immature/emerging market.
+    // Low %  → funding spread over long history → mature market.
+    const marktreife =
+      totalInvested4yr != null && totalFunding != null && totalFunding > 0
+        ? Math.round((totalInvested4yr / totalFunding) * 1000) / 10  // one decimal %
+        : null;
 
     const avgFundingFinal = fundingNums.length > 0
       ? fundingNums.reduce((a, b) => a + b, 0) / fundingNums.length
@@ -323,6 +342,7 @@ export function computeAnalytics(
       capitalMedian,
       meanMedianRatio,
       avgSeriesScore,
+      marktreife,
       vcGraduationRate,
       mortalityRate,
       hhi,

@@ -158,6 +158,8 @@ export interface ClusterMetricsRow {
   capitalMedian: number | null;
   meanMedianRatio: number | null;
   avgSeriesScore: number | null;
+  /** Capital invested in last 4 years / total all-time funding (%). High = immature market. */
+  marktreife: number | null;
   vcGraduationRate: number | null;
   mortalityRate: number | null;
   hhi: number | null;

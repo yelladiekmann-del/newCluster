@@ -3,7 +3,7 @@
  * All functions are fire-and-forget safe — they throw on error so callers can .catch(() => {}).
  */
 
-import type { CompanyDoc, ClusterDoc } from "@/types";
+import type { CompanyDoc, ClusterDoc, ClusterMetricsRow } from "@/types";
 import {
   createSpreadsheet,
   setValues,
@@ -57,20 +57,72 @@ function setColumnWidth(sheetId: number, columnIndex: number, widthPx: number) {
   };
 }
 
+async function ensureSheetOk(res: Response): Promise<void> {
+  if (!res.ok) {
+    const body = await res.text().catch(() => res.statusText);
+    throw new Error(`Sheets API ${res.status}: ${body}`);
+  }
+}
+
+async function getSheetProperties(
+  token: string,
+  spreadsheetId: string
+): Promise<Array<{ title: string; sheetId: number }>> {
+  const res = await fetch(
+    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?fields=sheets.properties`,
+    { headers: { Authorization: `Bearer ${token}` } }
+  );
+  await ensureSheetOk(res);
+  const meta = await res.json();
+  return (meta.sheets as { properties: { title: string; sheetId: number } }[]).map((sheet) => sheet.properties);
+}
+
+async function getOrCreateSheet(
+  token: string,
+  spreadsheetId: string,
+  title: string
+): Promise<number> {
+  const sheets = await getSheetProperties(token, spreadsheetId);
+  const existing = sheets.find((sheet) => sheet.title === title);
+  if (existing) return existing.sheetId;
+  return addSheet(token, spreadsheetId, title);
+}
+
+async function clearSheet(token: string, spreadsheetId: string, title: string): Promise<void> {
+  const res = await fetch(
+    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(`${title}!A1:ZZ10000`)}:clear`,
+    { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" } }
+  );
+  await ensureSheetOk(res);
+}
+
 // ── syncSetupToSheet ─────────────────────────────────────────────────────────
 
 /**
- * Called after Setup → Continue.
- * Creates the spreadsheet and writes the "Companies" tab.
+ * Spreadsheet naming convention:
+ *   {Session Name} · {N} cos · {Mon YYYY}
+ *
+ * If no session name is available:
+ *   Cluster Analysis · {N} cos · {Mon YYYY}
+ *
+ * Examples:
+ *   "IoT Landscape 2025 · 124 cos · Apr 2026"
+ *   "Cluster Analysis · 87 cos · Apr 2026"
  */
+function buildSpreadsheetTitle(sessionName: string | null | undefined, companyCount: number): string {
+  const label = sessionName?.trim() || "Cluster Analysis";
+  const month = new Date().toLocaleDateString(undefined, { month: "short", year: "numeric" });
+  return `${label} · ${companyCount} cos · ${month}`;
+}
+
+/** Called after Setup → Continue. Creates the spreadsheet and writes the "Companies" tab. */
 export async function syncSetupToSheet(
   token: string,
   companies: CompanyDoc[],
   sessionName?: string | null
 ): Promise<{ spreadsheetId: string; spreadsheetUrl: string }> {
   const n = companies.length;
-  const prefix = sessionName ? `${sessionName} – ` : "";
-  const title = `${prefix}${n} companies – ${todayLabel()}`;
+  const title = buildSpreadsheetTitle(sessionName, n);
 
   const { spreadsheetId, spreadsheetUrl } = await createSpreadsheet(token, title, "Companies");
 
@@ -232,6 +284,72 @@ export async function syncReviewToSheet(
   });
 
   await setValues(token, spreadsheetId, "Cluster Assignments!A1", [header, ...rows]);
+  await batchUpdate(token, spreadsheetId, [
+    ...boldFreezeRequests(sheetId, header.length),
+    setColumnWidth(sheetId, 0, 220),
+  ]);
+}
+
+// ── syncAnalyticsToSheet ─────────────────────────────────────────────────────
+
+function fmtAnalyticsValue(key: keyof ClusterMetricsRow, value: ClusterMetricsRow[keyof ClusterMetricsRow]): string | number {
+  if (value == null) return "";
+  if (typeof value !== "number") return String(value);
+  if (key === "avgFunding" || key === "totalFunding" || key === "totalInvested4yr" || key === "capitalMean" || key === "capitalMedian") {
+    return Math.round(value);
+  }
+  if (key === "avgSeriesScore" || key === "avgPatentFamilies" || key === "meanMedianRatio" || key === "marktreife") {
+    return Number(value.toFixed(2));
+  }
+  return value;
+}
+
+export async function syncAnalyticsToSheet(
+  token: string,
+  spreadsheetId: string,
+  rows: ClusterMetricsRow[]
+): Promise<void> {
+  const title = "Cluster Analytics";
+  const sheetId = await getOrCreateSheet(token, spreadsheetId, title);
+  await clearSheet(token, spreadsheetId, title);
+
+  const header: Array<keyof ClusterMetricsRow | "Last Updated"> = [
+    "clusterName",
+    "companyCount",
+    "uniqueCompanies",
+    "avgEmployees",
+    "avgYearFounded",
+    "pctRecentlyFounded",
+    "dealCount",
+    "dealMomentum",
+    "avgFunding",
+    "totalFunding",
+    "totalInvested4yr",
+    "fundingMomentum",
+    "capitalMean",
+    "capitalMedian",
+    "meanMedianRatio",
+    "vcGraduationRate",
+    "mortalityRate",
+    "hhi",
+    "marktreife",
+    "avgSeriesScore",
+    "avgPatentFamilies",
+    "Last Updated",
+  ];
+
+  const values = [
+    header.map((key) => String(key)),
+    ...rows.map((row) =>
+      header.map((key) =>
+        key === "Last Updated"
+          ? todayLabel()
+          : fmtAnalyticsValue(key, row[key])
+      )
+    ),
+  ];
+
+  await setValues(token, spreadsheetId, `${title}!A1`, values);
   await batchUpdate(token, spreadsheetId, [
     ...boldFreezeRequests(sheetId, header.length),
     setColumnWidth(sheetId, 0, 220),

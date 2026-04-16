@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import type { ClusterMetricsRow } from "@/types";
 import { rankRows } from "@/lib/analytics/compute";
 import { cn } from "@/lib/utils";
@@ -13,20 +14,23 @@ interface Props {
 
 function fmtNum(n: number | null, decimals = 0): string {
   if (n == null) return "—";
-  return n.toLocaleString(undefined, { maximumFractionDigits: decimals });
+  return n.toLocaleString(undefined, {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  });
 }
 
-function fmtMoney(n: number | null): string {
+function fmtMoney(n: number | null, decimals = 1): string {
   if (n == null) return "—";
-  if (n >= 1e9) return `$${(n / 1e9).toFixed(1)}B`;
-  if (n >= 1e6) return `$${(n / 1e6).toFixed(1)}M`;
-  if (n >= 1e3) return `$${(n / 1e3).toFixed(0)}K`;
-  return `$${n}`;
+  if (n >= 1e9) return `$${(n / 1e9).toFixed(decimals)}B`;
+  if (n >= 1e6) return `$${(n / 1e6).toFixed(decimals)}M`;
+  if (n >= 1e3) return `$${(n / 1e3).toFixed(decimals)}K`;
+  return `$${n.toFixed(decimals)}`;
 }
 
-function fmtPct(n: number | null): string {
+function fmtPct(n: number | null, decimals = 0): string {
   if (n == null) return "—";
-  return `${n}%`;
+  return `${n.toFixed(decimals)}%`;
 }
 
 function MomentumChip({ value }: { value: number | null }) {
@@ -56,31 +60,37 @@ interface ColDef {
   dealsOnly?: boolean;
 }
 
-const COLS: ColDef[] = [
-  { key: "companyCount",       group: "Size",       label: "# Total",            tooltip: "Number of companies assigned to this cluster (including via deals)", fmt: (r) => fmtNum(r.companyCount),         higherIsBetter: true,  rankable: true  },
-  { key: "uniqueCompanies",    group: "Size",       label: "# Companies",        tooltip: "Number of distinct companies in the cluster", fmt: (r) => fmtNum(r.uniqueCompanies),      higherIsBetter: true,  rankable: false },
-  { key: "avgEmployees",       group: "Size",       label: "Avg. Employees",     tooltip: "Average employee count across cluster companies", fmt: (r) => fmtNum(r.avgEmployees),         higherIsBetter: true,  rankable: false },
-  { key: "avgYearFounded",     group: "Recency",    label: "Avg. Founded",       tooltip: "Average founding year of companies in this cluster", fmt: (r) => fmtNum(r.avgYearFounded),       higherIsBetter: false, rankable: false },
-  { key: "pctRecentlyFounded", group: "Recency",    label: "% Recent",           tooltip: "% of companies founded in the last 5 years", fmt: (r) => fmtPct(r.pctRecentlyFounded),  higherIsBetter: true,  rankable: true  },
-  { key: "dealCount",          group: "Deals",      label: "# Deals",            tooltip: "Total number of investment deals across cluster companies", fmt: (r) => fmtNum(r.dealCount),            higherIsBetter: true,  rankable: true,  dealsOnly: true },
-  { key: "dealMomentum",       group: "Deals",      label: "Deal Momentum",      tooltip: "Deal count trend: recent 2 years vs. prior 2 years", fmt: (r) => <MomentumChip value={r.dealMomentum} />,  rankable: false, dealsOnly: true },
-  { key: "avgFunding",         group: "Funding",    label: "Avg. Raised",        tooltip: "Average total capital raised per company", fmt: (r) => fmtMoney(r.avgFunding),         higherIsBetter: true,  rankable: true  },
-  { key: "totalFunding",       group: "Funding",    label: "Total Raised",       tooltip: "Total capital raised across all companies in this cluster", fmt: (r) => fmtMoney(r.totalFunding),       higherIsBetter: true,  rankable: true  },
-  { key: "totalInvested4yr",   group: "Funding",    label: "Capital (4yr)",      tooltip: "Total capital invested in the last 4 years", fmt: (r) => fmtMoney(r.totalInvested4yr),  higherIsBetter: true,  rankable: true,  dealsOnly: true },
-  { key: "fundingMomentum",    group: "Funding",    label: "Funding Momentum",   tooltip: "Funding trend: recent 2 years vs. prior 2 years", fmt: (r) => <MomentumChip value={r.fundingMomentum} />, rankable: false, dealsOnly: true },
-  { key: "capitalMean",        group: "Capital",    label: "Deal Mean",          tooltip: "Average size of individual investment deals", fmt: (r) => fmtMoney(r.capitalMean),   higherIsBetter: true,  rankable: true,  dealsOnly: true },
-  { key: "capitalMedian",      group: "Capital",    label: "Deal Median",        tooltip: "Median size of individual investment deals", fmt: (r) => fmtMoney(r.capitalMedian), higherIsBetter: true,  rankable: true,  dealsOnly: true },
-  { key: "meanMedianRatio",    group: "Capital",    label: "Mean/Median",        tooltip: "Mean ÷ Median. >1 means outlier deals are pulling the average up", fmt: (r) => fmtNum(r.meanMedianRatio, 2), higherIsBetter: false, rankable: false, dealsOnly: true },
-  { key: "vcGraduationRate",   group: "Risk",       label: "VC Grad. Rate",      tooltip: "% of companies that have raised a VC round", fmt: (r) => fmtPct(r.vcGraduationRate),   higherIsBetter: true,  rankable: true  },
-  { key: "mortalityRate",      group: "Risk",       label: "Mortality Rate",     tooltip: "% of companies with inactive or defunct status", fmt: (r) => fmtPct(r.mortalityRate),      higherIsBetter: false, rankable: true  },
-  { key: "hhi",                group: "Market",     label: "HHI",                tooltip: "Herfindahl–Hirschman Index: funding concentration. 0–10,000. Higher = more concentrated.", fmt: (r) => fmtNum(r.hhi),                higherIsBetter: false, rankable: true  },
-  { key: "avgSeriesScore",     group: "Market",     label: "Maturity",           tooltip: "Average funding stage maturity (Seed=1 … Series D+=5)", fmt: (r) => fmtNum(r.avgSeriesScore, 1),  higherIsBetter: true,  rankable: true,  dealsOnly: true },
-  { key: "avgPatentFamilies",  group: "Technology", label: "Avg. Patents",       tooltip: "Average number of patent families per company", fmt: (r) => fmtNum(r.avgPatentFamilies, 1), higherIsBetter: true, rankable: true  },
-];
+// d = user-controlled decimal places (0 | 1 | 2).
+// Integer-only columns (counts, years) always use 0 regardless.
+function buildCols(d: number): ColDef[] {
+  return [
+    { key: "companyCount",       group: "Size",       label: "# Total",            tooltip: "Number of companies assigned to this cluster (including via deals)", fmt: (r) => fmtNum(r.companyCount,       0),    higherIsBetter: true,  rankable: true  },
+    { key: "uniqueCompanies",    group: "Size",       label: "# Companies",        tooltip: "Number of distinct companies in the cluster",                        fmt: (r) => fmtNum(r.uniqueCompanies,    0),    higherIsBetter: true,  rankable: false },
+    { key: "avgEmployees",       group: "Size",       label: "Avg. Employees",     tooltip: "Average employee count across cluster companies",                    fmt: (r) => fmtNum(r.avgEmployees,       0),    higherIsBetter: true,  rankable: false },
+    { key: "avgYearFounded",     group: "Recency",    label: "Avg. Founded",       tooltip: "Average founding year of companies in this cluster",                 fmt: (r) => fmtNum(r.avgYearFounded,     0),    higherIsBetter: false, rankable: false },
+    { key: "pctRecentlyFounded", group: "Recency",    label: "% Recent",           tooltip: "% of companies founded in the most recent founding year present in the dataset", fmt: (r) => fmtPct(r.pctRecentlyFounded, d),  higherIsBetter: true,  rankable: true  },
+    { key: "dealCount",          group: "Deals",      label: "# Deals",            tooltip: "Total number of investment deals across cluster companies",          fmt: (r) => fmtNum(r.dealCount,          0),    higherIsBetter: true,  rankable: true,  dealsOnly: true },
+    { key: "dealMomentum",       group: "Deals",      label: "Deal Momentum",      tooltip: "Deal count trend: recent 2 years vs. prior 2 years",                fmt: (r) => <MomentumChip value={r.dealMomentum} />,  rankable: false, dealsOnly: true },
+    { key: "avgFunding",         group: "Funding",    label: "Avg. Raised",        tooltip: "Average total capital raised per company",                          fmt: (r) => fmtMoney(r.avgFunding,       d),    higherIsBetter: true,  rankable: true  },
+    { key: "totalFunding",       group: "Funding",    label: "Total Raised",       tooltip: "Total capital raised across all companies in this cluster",         fmt: (r) => fmtMoney(r.totalFunding,     d),    higherIsBetter: true,  rankable: true  },
+    { key: "totalInvested4yr",   group: "Funding",    label: "Capital (4yr)",      tooltip: "Total capital invested in the last 4 years",                       fmt: (r) => fmtMoney(r.totalInvested4yr, d),    higherIsBetter: true,  rankable: true,  dealsOnly: true },
+    { key: "fundingMomentum",    group: "Funding",    label: "Funding Momentum",   tooltip: "Funding trend: recent 2 years vs. prior 2 years",                  fmt: (r) => <MomentumChip value={r.fundingMomentum} />, rankable: false, dealsOnly: true },
+    { key: "capitalMean",        group: "Capital",    label: "Deal Mean",          tooltip: "Average size of individual investment deals",                      fmt: (r) => fmtMoney(r.capitalMean,      d),    higherIsBetter: true,  rankable: true,  dealsOnly: true },
+    { key: "capitalMedian",      group: "Capital",    label: "Deal Median",        tooltip: "Median size of individual investment deals",                       fmt: (r) => fmtMoney(r.capitalMedian,    d),    higherIsBetter: true,  rankable: true,  dealsOnly: true },
+    { key: "meanMedianRatio",    group: "Capital",    label: "Mean/Median",        tooltip: "Mean ÷ Median. >1 means outlier deals are pulling the average up", fmt: (r) => fmtNum(r.meanMedianRatio, Math.max(1, d)), higherIsBetter: false, rankable: false, dealsOnly: true },
+    { key: "vcGraduationRate",   group: "Risk",       label: "VC Grad. Rate",      tooltip: "% of companies that have raised a VC round",                       fmt: (r) => fmtPct(r.vcGraduationRate,   d),    higherIsBetter: true,  rankable: true  },
+    { key: "mortalityRate",      group: "Risk",       label: "Mortality Rate",     tooltip: "% of companies with inactive or defunct status",                   fmt: (r) => fmtPct(r.mortalityRate,      d),    higherIsBetter: false, rankable: true  },
+    { key: "hhi",                group: "Market",     label: "HHI",                tooltip: "Herfindahl–Hirschman Index: funding concentration. 0–10,000. Higher = more concentrated.", fmt: (r) => fmtNum(r.hhi, 0), higherIsBetter: false, rankable: true  },
+    { key: "marktreife",         group: "Market",     label: "Marktreife",         tooltip: "Capital invested in last 4 yrs ÷ total all-time funding. High % = emerging market; low % = mature market.", fmt: (r) => fmtPct(r.marktreife, d), higherIsBetter: false, rankable: true, dealsOnly: true },
+    { key: "avgSeriesScore",     group: "Market",     label: "Avg. Stage",         tooltip: "Average funding stage score across all deals (Pre-Seed=0, Seed=1 … IPO=7)", fmt: (r) => fmtNum(r.avgSeriesScore, Math.max(1, d)), higherIsBetter: true, rankable: true, dealsOnly: true },
+    { key: "avgPatentFamilies",  group: "Technology", label: "Avg. Patents",       tooltip: "Average number of patent families per company",                    fmt: (r) => fmtNum(r.avgPatentFamilies, Math.max(1, d)), higherIsBetter: true, rankable: true  },
+  ];
+}
 
 export function AnalyticsTable({ rows, hasDeals }: Props) {
   const typedRows = rows;
-  const visibleCols = COLS.filter((c) => !c.dealsOnly || hasDeals);
+  const [decimals, setDecimals] = useState<0 | 1 | 2>(1);
+  const visibleCols = buildCols(decimals).filter((c) => !c.dealsOnly || hasDeals);
 
   // Pre-compute ranks for rankable columns
   const ranks: Record<string, Record<string, number>> = {};
@@ -195,10 +205,31 @@ export function AnalyticsTable({ rows, hasDeals }: Props) {
           ))}
         </tbody>
       </table>
-      <div className="px-4 py-2 text-[10px] text-muted-foreground border-t border-border/30 flex gap-4">
-        <span>↑ higher is better</span>
-        <span>↓ lower is better</span>
-        <span className="font-semibold text-foreground/60">#1 ranked value shown in bold</span>
+      <div className="px-4 py-2 text-[10px] text-muted-foreground border-t border-border/30 flex items-center justify-between gap-4">
+        <div className="flex gap-4">
+          <span>↑ higher is better</span>
+          <span>↓ lower is better</span>
+          <span className="font-semibold text-foreground/60">#1 ranked value shown in bold</span>
+        </div>
+        <div className="flex items-center gap-1.5 shrink-0">
+          <span className="uppercase tracking-[0.14em]">Decimals</span>
+          <div className="flex rounded-md border border-border/60 overflow-hidden">
+            {([0, 1, 2] as const).map((d) => (
+              <button
+                key={d}
+                onClick={() => setDecimals(d)}
+                className={cn(
+                  "px-2 py-0.5 text-[10px] font-medium transition-colors border-r border-border/40 last:border-r-0",
+                  decimals === d
+                    ? "bg-foreground text-background"
+                    : "hover:bg-muted/50 text-muted-foreground"
+                )}
+              >
+                {d}
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
     </div>
   );

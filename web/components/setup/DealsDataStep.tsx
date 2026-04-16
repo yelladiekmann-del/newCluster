@@ -8,6 +8,7 @@ import { useSession } from "@/lib/store/session";
 import { persistSession } from "@/lib/firebase/hooks";
 import { ref, uploadBytesResumable } from "firebase/storage";
 import { getFirebaseStorage } from "@/lib/firebase/client";
+import { parseTabularFile, rowsToCsv } from "@/lib/tabular-upload";
 import { toast } from "sonner";
 
 export function DealsDataStep() {
@@ -17,11 +18,18 @@ export function DealsDataStep() {
 
   const handleFile = useCallback(
     async (file: File) => {
-      if (!uid) return;
+      if (!uid) {
+        toast.error("Select or create a session before uploading deals data.");
+        return;
+      }
       try {
+        const parsed = await parseTabularFile(file);
+        const csv = rowsToCsv(parsed.rows);
+        const blob = new Blob([csv], { type: "text/csv" });
+
         const storage = getFirebaseStorage();
         const storageRef = ref(storage, `sessions/${uid}/deals.csv`);
-        const task = uploadBytesResumable(storageRef, file);
+        const task = uploadBytesResumable(storageRef, blob);
 
         setUploadPct(0);
         await new Promise<void>((resolve, reject) => {
@@ -38,10 +46,8 @@ export function DealsDataStep() {
         setDealsStoragePath(path);
         await persistSession(uid, { dealsStoragePath: path });
 
-        const text = await file.text();
-        const lines = text.split("\n").filter((l) => l.trim()).length - 1;
-        setRowCount(Math.max(0, lines));
-        toast.success(`Deals data uploaded (${lines.toLocaleString()} rows)`);
+        setRowCount(parsed.rows.length);
+        toast.success(`Deals data uploaded (${parsed.rows.length.toLocaleString()} rows)`);
       } catch (err) {
         setUploadPct(null);
         toast.error(String(err));
@@ -64,7 +70,14 @@ export function DealsDataStep() {
         replaceLabel="Drop a new file to replace"
         idleLabel="Upload deals CSV for funding & momentum analytics"
         hint=".csv, .xlsx, .xls"
-        disabled={uploadPct !== null}
+        disabled={!uid || uploadPct !== null}
+        disabledReason={
+          !uid
+            ? "Deals upload is disabled until a session is active."
+            : uploadPct !== null
+            ? "A deals upload is already in progress."
+            : undefined
+        }
       />
       {uploadPct !== null && (
         <div className="flex flex-col gap-1">

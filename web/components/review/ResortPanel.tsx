@@ -213,10 +213,7 @@ export function ResortPanel() {
       {sorting && progress && (
         <div className="flex flex-col gap-1 mb-3">
           <div className="flex justify-between text-xs text-muted-foreground">
-            <span>
-              Processed {progress.done}/{progress.total} companies · batch{" "}
-              {progress.batchesDone}/{progress.batchesTotal}
-            </span>
+            <span>Processed {progress.done}/{progress.total} companies</span>
             <span>{progressPct}%</span>
           </div>
           <Progress value={progressPct} className="h-1.5" />

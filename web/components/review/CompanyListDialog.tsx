@@ -29,7 +29,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useSession } from "@/lib/store/session";
 import { toast } from "sonner";
-import { Search } from "lucide-react";
+import { Plus, Search } from "lucide-react";
+import { sortClustersOutliersLast } from "@/lib/cluster-order";
 
 interface Props {
   clusterId: string | null;
@@ -42,6 +43,7 @@ export function CompanyListDialog({ clusterId, onClose }: Props) {
   const { uid, companies, clusters, updateCompany, setClusters, descCol } = useSession();
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(0);
+  const [mode, setMode] = useState<"members" | "add">("members");
   const [moveConfirm, setMoveConfirm] = useState<{
     companyId: string;
     companyName: string;
@@ -51,7 +53,7 @@ export function CompanyListDialog({ clusterId, onClose }: Props) {
 
   const cluster = clusters.find((c) => c.id === clusterId);
 
-  const filtered = useMemo(() => {
+  const members = useMemo(() => {
     if (!clusterId) return [];
     return companies
       .filter(
@@ -62,6 +64,20 @@ export function CompanyListDialog({ clusterId, onClose }: Props) {
       .sort((a, b) => a.rowIndex - b.rowIndex);
   }, [companies, clusterId, search]);
 
+  const addCandidates = useMemo(() => {
+    if (!clusterId) return [];
+    const q = search.toLowerCase();
+    return companies
+      .filter((c) => c.clusterId !== clusterId)
+      .filter((company) => {
+        const name = company.name.toLowerCase();
+        const desc = descCol ? String(company.originalData?.[descCol] ?? "").toLowerCase() : "";
+        return !q || name.includes(q) || desc.includes(q);
+      })
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [clusterId, companies, descCol, search]);
+
+  const filtered = mode === "members" ? members : addCandidates;
   const page_items = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
   const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
 
@@ -91,7 +107,9 @@ export function CompanyListDialog({ clusterId, onClose }: Props) {
 
   // nonTargetClusters already includes the Outliers cluster doc (isOutliers: true)
   // so we do NOT add a hardcoded Outliers item — that would duplicate it.
-  const nonTargetClusters = clusters.filter((c) => c.id !== clusterId);
+  const nonTargetClusters = sortClustersOutliersLast(
+    clusters.filter((c) => c.id !== clusterId)
+  );
 
   const showDesc = !!descCol;
 
@@ -110,16 +128,46 @@ export function CompanyListDialog({ clusterId, onClose }: Props) {
               {cluster?.name ?? "Companies"}
             </DialogTitle>
             <Badge variant="secondary" className="text-xs font-mono">
-              {filtered.length}
+              {mode === "members" ? members.length : addCandidates.length}
             </Badge>
           </div>
         </DialogHeader>
+
+        <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            variant={mode === "members" ? "default" : "outline"}
+            size="sm"
+            className="h-8 text-xs"
+            onClick={() => {
+              setMode("members");
+              setSearch("");
+              setPage(0);
+            }}
+          >
+            In cluster
+          </Button>
+          <Button
+            type="button"
+            variant={mode === "add" ? "default" : "outline"}
+            size="sm"
+            className="h-8 text-xs gap-1.5"
+            onClick={() => {
+              setMode("add");
+              setSearch("");
+              setPage(0);
+            }}
+          >
+            <Plus className="h-3.5 w-3.5" />
+            Add companies
+          </Button>
+        </div>
 
         {/* Search */}
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
           <Input
-            placeholder="Search companies…"
+            placeholder={mode === "members" ? "Search companies in this cluster…" : "Search all other companies…"}
             value={search}
             onChange={(e) => { setSearch(e.target.value); setPage(0); }}
             className="pl-9 text-sm h-9"
@@ -134,13 +182,18 @@ export function CompanyListDialog({ clusterId, onClose }: Props) {
                 <th className="text-left px-4 py-2.5 text-xs font-medium text-muted-foreground border-b border-border w-48">
                   Company
                 </th>
+                {mode === "add" && (
+                  <th className="text-left px-4 py-2.5 text-xs font-medium text-muted-foreground border-b border-border w-40">
+                    Current Cluster
+                  </th>
+                )}
                 {showDesc && (
                   <th className="text-left px-4 py-2.5 text-xs font-medium text-muted-foreground border-b border-border">
                     Description
                   </th>
                 )}
                 <th className="px-4 py-2.5 text-xs font-medium text-muted-foreground border-b border-border w-52">
-                  Move to
+                  {mode === "members" ? "Move to" : "Add"}
                 </th>
               </tr>
             </thead>
@@ -155,6 +208,11 @@ export function CompanyListDialog({ clusterId, onClose }: Props) {
                   <td className="px-4 py-2.5 font-medium text-foreground">
                     {company.name}
                   </td>
+                  {mode === "add" && (
+                    <td className="px-4 py-2.5 text-xs text-muted-foreground">
+                      {nonTargetClusters.find((c) => c.id === company.clusterId)?.name ?? "Outliers"}
+                    </td>
+                  )}
                   {showDesc && (
                     <td className="px-4 py-2.5 text-xs text-muted-foreground">
                       {(() => {
@@ -168,45 +226,68 @@ export function CompanyListDialog({ clusterId, onClose }: Props) {
                     </td>
                   )}
                   <td className="px-4 py-2.5 w-52">
-                    <Select
-                      value=""
-                      onValueChange={(v) => {
-                        if (!v) return;
-                        const target = nonTargetClusters.find((c) => c.id === v);
-                        setMoveConfirm({
-                          companyId: company.id,
-                          companyName: company.name,
-                          targetId: v,
-                          targetName: target?.name ?? "Outliers",
-                        });
-                      }}
-                    >
-                      <SelectTrigger className="h-7 text-xs w-40 border-border/60">
-                        <SelectValue placeholder="Move to…" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {nonTargetClusters.map((c) => (
-                          <SelectItem key={c.id} value={c.id}>
-                            <div className="flex items-center gap-2">
-                              {!c.isOutliers && (
-                                <div
-                                  className="h-2 w-2 rounded-full shrink-0"
-                                  style={{ backgroundColor: c.color }}
-                                />
-                              )}
-                              {c.name}
-                            </div>
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    {mode === "members" ? (
+                      <Select
+                        value=""
+                        onValueChange={(v) => {
+                          if (!v) return;
+                          const target = nonTargetClusters.find((c) => c.id === v);
+                          setMoveConfirm({
+                            companyId: company.id,
+                            companyName: company.name,
+                            targetId: v,
+                            targetName: target?.name ?? "Outliers",
+                          });
+                        }}
+                      >
+                        <SelectTrigger className="h-7 text-xs w-40 border-border/60">
+                          <SelectValue placeholder="Move to…" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {nonTargetClusters.map((c) => (
+                            <SelectItem key={c.id} value={c.id}>
+                              <div className="flex items-center gap-2">
+                                {!c.isOutliers && (
+                                  <div
+                                    className="h-2 w-2 rounded-full shrink-0"
+                                    style={{ backgroundColor: c.color }}
+                                  />
+                                )}
+                                {c.name}
+                              </div>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7 text-xs gap-1"
+                        onClick={() =>
+                          setMoveConfirm({
+                            companyId: company.id,
+                            companyName: company.name,
+                            targetId: clusterId ?? "",
+                            targetName: cluster?.name ?? "Cluster",
+                          })
+                        }
+                      >
+                        <Plus className="h-3 w-3" />
+                        Add
+                      </Button>
+                    )}
                   </td>
                 </tr>
               ))}
               {page_items.length === 0 && (
                 <tr>
-                  <td colSpan={showDesc ? 3 : 2} className="px-4 py-10 text-center text-sm text-muted-foreground">
-                    {search ? "No companies match your search." : "No companies in this cluster."}
+                  <td colSpan={showDesc ? (mode === "add" ? 4 : 3) : (mode === "add" ? 3 : 2)} className="px-4 py-10 text-center text-sm text-muted-foreground">
+                    {search
+                      ? "No companies match your search."
+                      : mode === "members"
+                      ? "No companies in this cluster."
+                      : "No additional companies available."}
                   </td>
                 </tr>
               )}

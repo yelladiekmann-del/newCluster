@@ -1,10 +1,10 @@
 "use client";
 
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { useSession } from "@/lib/store/session";
-import { persistSession } from "@/lib/firebase/hooks";
+import { persistSession, loadCompanies } from "@/lib/firebase/hooks";
 import { DimensionWeightSliders } from "./DimensionWeightSliders";
 import { ClusterParamsPanel } from "./ClusterParamsPanel";
 import { ClusterMetricsBar } from "./ClusterMetricsBar";
@@ -13,24 +13,42 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
 import { saveAs } from "file-saver";
-import { ArrowRight, Cpu, Download, GitBranch, Loader2, Sparkles } from "lucide-react";
+import { ArrowLeft, ArrowRight, Cpu, Download, GitBranch, Loader2, Sparkles } from "lucide-react";
 import { createParser } from "eventsource-parser";
 import { doc, writeBatch } from "firebase/firestore";
 import { getFirebaseDb } from "@/lib/firebase/client";
 import { syncClustersToSheet } from "@/lib/sheets/sync";
 import { CLUSTER_COLORS } from "@/types";
 import type { ClusterDoc } from "@/types";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 
 export function EmbedPageClient() {
   const router = useRouter();
   const {
     uid, apiKey,
-    companies, setClusters, updateCompany,
-    customWeights, clusterParams,
-    setClusterMetrics, setClustersConfirmed,
+    companies, setCompanies, setClusters, updateCompany,
+    companyCol, customWeights, clusterParams,
+    setClusterMetrics, setClustersConfirmed, clustersConfirmed,
     embeddingsStoragePath, npzPreloaded,
     setPipelineStep, pipelineStep,
   } = useSession();
+
+  // Lazy-load companies after optimistic resume navigation
+  const [loadError, setLoadError] = useState(false);
+  const [loadAttempted, setLoadAttempted] = useState(false);
+  const loadData = useCallback(() => {
+    if (!uid) return;
+    setLoadError(false);
+    setLoadAttempted(false);
+    if (companies.length === 0)
+      loadCompanies(uid, companyCol)
+        .then(setCompanies)
+        .catch(() => setLoadError(true))
+        .finally(() => setLoadAttempted(true));
+    else
+      setLoadAttempted(true);
+  }, [uid]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { loadData(); }, [uid]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Local state — not persisted until confirmed
   const [featureMatrix, setFeatureMatrix] = useState<number[][] | null>(null);
@@ -41,6 +59,8 @@ export function EmbedPageClient() {
   const [clusterProgress, setClusterProgress] = useState(0);
   const clusterTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [confirming, setConfirming] = useState(false);
+  const [backWarningOpen, setBackWarningOpen] = useState(false);
+  const [reclusterWarningOpen, setReclusterWarningOpen] = useState(false);
   const [clusterResult, setClusterResult] = useState<{
     labels: number[];
     embedded2d: number[][];
@@ -226,6 +246,26 @@ export function EmbedPageClient() {
     }
   }, [uid, embeddingsUrl, embeddingsStoragePath, companies, clusterParams, setClusterMetrics, updateCompany]);
 
+  // ── Back navigation ─────────────────────────────────────────────────────
+
+  const handleBack = useCallback(() => {
+    if (clusterResult !== null) {
+      setBackWarningOpen(true);
+    } else {
+      router.push("/setup");
+    }
+  }, [clusterResult, router]);
+
+  // ── Re-cluster gate ──────────────────────────────────────────────────────
+
+  const onClusterClick = useCallback(() => {
+    if (clustersConfirmed) {
+      setReclusterWarningOpen(true);
+    } else {
+      handleCluster();
+    }
+  }, [clustersConfirmed, handleCluster]);
+
   // ── Confirm & name clusters ──────────────────────────────────────────────
 
   const handleConfirm = useCallback(async () => {
@@ -324,6 +364,25 @@ export function EmbedPageClient() {
     ? Math.round((embedProgress.done / embedProgress.total) * 100)
     : 0;
 
+  // Show error state (failed load, or load completed but returned no companies)
+  if (uid && loadAttempted && (loadError || companies.length === 0)) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full gap-3">
+        <p className="text-sm text-muted-foreground">Failed to load session data.</p>
+        <Button variant="outline" size="sm" onClick={loadData}>Retry</Button>
+      </div>
+    );
+  }
+
+  // Show spinner while companies load after fast resume
+  if (uid && !loadAttempted && companies.length === 0) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
   return (
     <div className="max-w-3xl mx-auto px-6 py-8 pb-24 flex flex-col gap-6">
       <div>
@@ -398,7 +457,7 @@ export function EmbedPageClient() {
         <ClusterParamsPanel />
 
         <Button
-          onClick={handleCluster}
+          onClick={onClusterClick}
           disabled={!hasEmbeddings || clustering}
           variant={hasEmbeddings ? "default" : "secondary"}
           className="self-start gap-1.5"
@@ -428,12 +487,13 @@ export function EmbedPageClient() {
         )}
       </section>
 
-      {/* Sticky bottom action bar — visible once clusters exist */}
-      {hasClusters && (
-        <div className="fixed bottom-0 left-0 right-0 z-10 bg-background/95 backdrop-blur-sm border-t border-border px-6 py-3 flex items-center justify-between">
-          <p className="text-xs text-muted-foreground">
-            Gemini will name each cluster and generate descriptions.
-          </p>
+      {/* Sticky bottom action bar — always visible */}
+      <div className="fixed bottom-0 left-56 right-0 z-10 bg-background/95 backdrop-blur-sm border-t border-border px-6 py-3 flex items-center justify-between">
+        <Button variant="ghost" size="sm" onClick={handleBack} className="gap-1.5 text-muted-foreground hover:text-foreground">
+          <ArrowLeft className="h-4 w-4" />
+          Back to Setup
+        </Button>
+        {hasClusters ? (
           <Button
             onClick={handleConfirm}
             disabled={!apiKey || confirming}
@@ -447,8 +507,32 @@ export function EmbedPageClient() {
             {confirming ? "Naming clusters…" : "Confirm & name clusters"}
             {!confirming && <ArrowRight className="h-4 w-4" />}
           </Button>
-        </div>
-      )}
+        ) : (
+          <p className="text-xs text-muted-foreground">
+            Run clustering above to continue.
+          </p>
+        )}
+      </div>
+
+      {/* Navigation warning dialogs */}
+      <ConfirmDialog
+        open={backWarningOpen}
+        title="Discard clustering results?"
+        description="Your clustering results haven't been confirmed yet. Going back will discard them."
+        confirmLabel="Discard & go back"
+        variant="destructive"
+        onConfirm={() => { setBackWarningOpen(false); router.push("/setup"); }}
+        onCancel={() => setBackWarningOpen(false)}
+      />
+      <ConfirmDialog
+        open={reclusterWarningOpen}
+        title="Re-cluster?"
+        description="Re-clustering will overwrite your confirmed clusters and any edits made in Review & Edit. This cannot be undone."
+        confirmLabel="Re-cluster"
+        variant="destructive"
+        onConfirm={() => { setReclusterWarningOpen(false); handleCluster(); }}
+        onCancel={() => setReclusterWarningOpen(false)}
+      />
     </div>
   );
 }

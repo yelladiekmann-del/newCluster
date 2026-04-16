@@ -36,7 +36,7 @@ const CLUSTER_REVIEW_PROMPT = `Please review all clusters in this analysis and p
 
 **3. MERGE** — Identify pairs or groups of clusters that are too similar and should be combined. For each merge, specify which clusters to combine and suggest a name for the result.
 
-**4. ADD** — Identify important market segments that are absent from the current clustering. For each new cluster to add, provide: a proposed name, a one-sentence description, and 3–5 example companies from the dataset that would belong there.
+**4. ADD** — Identify important market segments that are absent from the current clustering. For each new cluster to add, provide: a proposed name, a concise 2-sentence description, and 3–5 example companies from the dataset that would belong there. The description should start with a category-style phrase like "Companies providing..." or "Platforms enabling..." and should not begin with "This cluster consists of" or similar phrasing.
 
 Ground all recommendations in the specific companies and cluster compositions you know.
 
@@ -46,7 +46,7 @@ After your prose recommendations, append a machine-readable action list using EX
 [
   {"type": "delete", "clusterName": "<exact cluster name>"},
   {"type": "merge", "sources": ["<cluster A>", "<cluster B>"], "newName": "<merged name>"},
-  {"type": "add", "name": "<new cluster name>", "description": "<one sentence>", "companies": ["<company1>", "<company2>", "<company3>"]}
+  {"type": "add", "name": "<new cluster name>", "description": "Companies providing .... Unlike nearby clusters, they focus on ....", "companies": ["<company1>", "<company2>", "<company3>"]}
 ]
 </actions>
 
@@ -199,10 +199,12 @@ export function AiChatPanel() {
       const sources = action.sources.map(name => currentClusters.find(c => c.name === name)).filter(Boolean);
       if (sources.length < 2) { toast.error("Could not find source clusters to merge"); return; }
       const newId = `merged_${Date.now()}`;
+      const mergedNames = sources.map(s => s?.name ?? "").filter(Boolean).join(" & ");
+      const fallbackDescription = `Merged cluster combining ${mergedNames}.`;
       const newCluster = {
         id: newId,
         name: action.newName,
-        description: "",
+        description: fallbackDescription,
         color: getNextClusterColor(currentClusters),
         isOutliers: false,
         companyCount: 0,
@@ -283,7 +285,7 @@ export function AiChatPanel() {
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="px-5 py-3 border-b border-border flex items-center gap-2">
+      <div className="px-5 py-3 border-b border-border/70 flex items-center gap-2 bg-muted/20">
         <Sparkles className="h-4 w-4 text-primary" />
         <span className="text-sm font-semibold">AI Assistant</span>
         <span className="text-xs text-muted-foreground ml-auto">
@@ -304,7 +306,7 @@ export function AiChatPanel() {
                   p === "✦ Request cluster review" ? "review" : "chat"
                 )
               }
-              className="text-xs px-2.5 py-1 rounded-full border border-border text-muted-foreground hover:text-primary hover:border-primary transition-colors"
+              className="text-xs px-2.5 py-1 rounded-full border border-border/70 bg-background text-muted-foreground hover:text-primary hover:border-primary transition-colors"
             >
               {p}
             </button>
@@ -394,7 +396,7 @@ export function AiChatPanel() {
       )}
 
       {/* Input */}
-      <div className="px-4 pb-4 pt-2 border-t border-border flex gap-2">
+      <div className="px-4 pb-4 pt-2 border-t border-border/70 flex gap-2 bg-muted/10">
         <Input
           placeholder="Ask anything about the clusters…"
           value={input}

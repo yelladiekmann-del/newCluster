@@ -22,6 +22,7 @@ export interface AuthUser {
 
 export interface SessionState {
   // Auth
+  authResolved: boolean;
   uid: string | null;
   sessionId: string | null;
   authUser: AuthUser | null;
@@ -70,6 +71,7 @@ export interface SessionState {
   sessionName: string | null;
 
   // Actions
+  setAuthResolved: (resolved: boolean) => void;
   setUid: (uid: string | null) => void;
   setSessionId: (id: string | null) => void;
   setAuthUser: (user: AuthUser | null) => void;
@@ -110,6 +112,7 @@ const defaultClusterParams: ClusterParams = {
 };
 
 export const useSession = create<SessionState>((set) => ({
+  authResolved: false,
   uid: null,
   sessionId: null,
   authUser: null,
@@ -137,6 +140,7 @@ export const useSession = create<SessionState>((set) => ({
   scoringConfig: null,
   sessionName: null,
 
+  setAuthResolved: (authResolved) => set({ authResolved }),
   setUid: (uid) => set({ uid }),
   setSessionId: (sessionId) => set({ sessionId }),
   setAuthUser: (authUser) => set({ authUser }),

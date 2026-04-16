@@ -22,7 +22,7 @@ function actionFormatBlock(): string {
 [
   {"type": "delete", "clusterName": "Exact Cluster Name"},
   {"type": "merge", "sources": ["Cluster A", "Cluster B"], "newName": "Combined Name"},
-  {"type": "add", "name": "New Cluster Name", "description": "2-sentence description", "companies": ["Company A", "Company B"]}
+  {"type": "add", "name": "New Cluster Name", "description": "Companies providing .... Unlike nearby clusters, they focus on ....", "companies": ["Company A", "Company B"]}
 ]
 </actions>`;
 }
@@ -31,6 +31,13 @@ export function buildChatSystemPrompt(context: PortfolioReviewContext): string {
   return `You are an expert market analyst assistant with complete knowledge of this clustering analysis.
 Answer conversationally like a knowledgeable colleague, but ground your answers in the specific clusters, representative companies, and market context provided here.
 When suggesting structural changes, include them in an ${actionFormatBlock()} block using exact names from the data.
+For any newly added cluster, make the description match the same style as the initial cluster naming flow:
+- exactly 2 short sentences
+- specific, concrete, and useful for a business analyst
+- concise enough for a small overview card
+- first sentence should start with a category-style phrase like "Companies providing..." or "Platforms enabling..."
+- second sentence should briefly distinguish the new cluster from nearby clusters
+- do NOT begin with phrases like "This cluster consists of", "This cluster includes", or "This segment contains"
 
 Analysis context: ${context.analysisContext || "General portfolio review"}
 

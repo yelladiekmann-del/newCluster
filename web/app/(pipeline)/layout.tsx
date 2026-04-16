@@ -1,16 +1,9 @@
-import { PipelineNav } from "@/components/pipeline/PipelineNav";
+import { PipelineSessionGuard } from "@/components/pipeline/PipelineSessionGuard";
 
 export default function PipelineLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  return (
-    <div className="flex h-screen overflow-hidden">
-      <PipelineNav />
-      <main className="flex-1 overflow-y-auto bg-background">
-        {children}
-      </main>
-    </div>
-  );
+  return <PipelineSessionGuard>{children}</PipelineSessionGuard>;
 }

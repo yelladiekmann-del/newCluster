@@ -32,9 +32,9 @@ function synthesizeDescription(summary: ClusterSummary, name: string): string {
   const representativeCompanies = summary.representativeCompanies.slice(0, 3).join(", ");
   const themeText = topThemes.length > 0 ? topThemes.join(" and ") : "shared operating patterns";
   if (representativeCompanies) {
-    return `${name} includes companies such as ${representativeCompanies}, which consistently center on ${themeText}. These businesses cluster together because they solve related problems with a similar market-facing proposition.`;
+    return `${name} covers companies such as ${representativeCompanies}, focused on ${themeText}. They share a similar value proposition and market position within this segment.`;
   }
-  return `${name} includes companies that consistently center on ${themeText}. These businesses cluster together because they solve related problems with a similar market-facing proposition.`;
+  return `${name} covers companies focused on ${themeText}. They share a similar value proposition and market position within this segment.`;
 }
 
 async function generateNames(
@@ -99,6 +99,8 @@ For each cluster, write exactly 2 short sentences that:
 - are specific, concrete, and useful for a business analyst
 - stay concise enough to fit comfortably in a small overview card
 - avoid long enumerations of subcategories, examples, or excessive detail
+- begin with a category-style phrase like "Companies providing..." or "Platforms enabling..."
+- do NOT begin with phrases like "This cluster consists of", "This cluster includes", or "This segment contains"
 
 ${summaries
   .map(
@@ -116,7 +118,7 @@ ${Object.entries(summary.topDimensions)
   .join("\n\n")}
 
 Return ONLY a JSON object mapping cluster id strings to descriptions:
-{"0": "Description here.", "1": "Description here.", "...": "..."}
+{"0": "Companies providing .... Unlike nearby clusters, they focus on ....", "1": "Platforms enabling .... They stand apart because ....", "...": "..."}
 No explanation, no markdown, just the JSON.`;
 
   const raw = await callGeminiText({ apiKey, prompt, temperature: 0.3 });

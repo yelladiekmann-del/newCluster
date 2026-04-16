@@ -1,5 +1,6 @@
 "use client";
 
+import { useRef } from "react";
 import { Upload, CheckCircle2 } from "lucide-react";
 
 interface FileUploadZoneProps {
@@ -11,6 +12,7 @@ interface FileUploadZoneProps {
   idleLabel?: string;
   hint?: string;
   disabled?: boolean;
+  disabledReason?: string;
 }
 
 export function FileUploadZone({
@@ -22,9 +24,26 @@ export function FileUploadZone({
   idleLabel = "Drop file here or browse",
   hint,
   disabled = false,
+  disabledReason,
 }: FileUploadZoneProps) {
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  function openPicker() {
+    if (disabled) return;
+    const input = inputRef.current;
+    if (!input) return;
+    input.value = "";
+    input.click();
+  }
+
+  function handleFile(file: File | null | undefined) {
+    if (!file || disabled) return;
+    onFile(file);
+    if (inputRef.current) inputRef.current.value = "";
+  }
+
   return (
-    <label
+    <div
       className={`flex flex-col items-center justify-center gap-2 border rounded-xl p-6 transition-colors ${
         disabled
           ? "opacity-50 cursor-not-allowed border-dashed border-border"
@@ -32,13 +51,26 @@ export function FileUploadZone({
           ? "border-primary/40 bg-primary/5 hover:bg-primary/8 cursor-pointer"
           : "border-dashed border-border hover:border-primary/60 hover:bg-muted/40 cursor-pointer"
       }`}
+      role="button"
+      tabIndex={disabled ? -1 : 0}
+      aria-disabled={disabled}
+      onClick={openPicker}
+      onKeyDown={
+        disabled
+          ? undefined
+          : (e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                openPicker();
+              }
+            }
+      }
       onDrop={
         disabled
           ? undefined
           : (e) => {
               e.preventDefault();
-              const file = e.dataTransfer.files[0];
-              if (file) onFile(file);
+              handleFile(e.dataTransfer.files[0]);
             }
       }
       onDragOver={disabled ? undefined : (e) => e.preventDefault()}
@@ -65,16 +97,21 @@ export function FileUploadZone({
           {hint && <span className="text-xs text-muted-foreground">{hint}</span>}
         </>
       )}
+      {disabledReason && (
+        <span className="text-xs text-muted-foreground text-center">
+          {disabledReason}
+        </span>
+      )}
       <input
+        ref={inputRef}
         type="file"
         accept={accept}
         className="hidden"
         disabled={disabled}
         onChange={(e) => {
-          const file = e.target.files?.[0];
-          if (file) onFile(file);
+          handleFile(e.target.files?.[0]);
         }}
       />
-    </label>
+    </div>
   );
 }

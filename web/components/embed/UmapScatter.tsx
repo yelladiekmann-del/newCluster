@@ -6,6 +6,7 @@ import { useSession } from "@/lib/store/session";
 import { CLUSTER_COLORS } from "@/types";
 import { Button } from "@/components/ui/button";
 import { Download } from "lucide-react";
+import { sortClustersOutliersLast } from "@/lib/cluster-order";
 
 const Plot = dynamic(() => import("react-plotly.js"), { ssr: false });
 
@@ -27,9 +28,20 @@ export function UmapScatter() {
 
   // Build a color map for all unique cluster IDs.
   // Prefer the stored cluster color; fall back to CLUSTER_COLORS by index.
-  const uniqueClusterIds = [...new Set(
-    companies.map((c) => c.clusterId ?? "outliers")
-  )].filter((id) => id !== "outliers");
+  const orderedClusters = sortClustersOutliersLast(clusters);
+  const companyClusterIds = [...new Set(
+    companies
+      .map((company) => company.clusterId ?? "outliers")
+      .filter((id) => id !== "outliers")
+  )];
+
+  const uniqueClusterIds =
+    orderedClusters.filter((cluster) => !cluster.isOutliers).length > 0
+      ? orderedClusters
+          .filter((cluster) => !cluster.isOutliers)
+          .map((cluster) => cluster.id)
+          .filter((id) => companies.some((company) => (company.clusterId ?? "outliers") === id))
+      : companyClusterIds;
 
   const colorById: Record<string, string> = { outliers: "#6b7280" };
   uniqueClusterIds.forEach((id, i) => {
@@ -58,20 +70,30 @@ export function UmapScatter() {
     traceMap[label].names.push(company.name);
   }
 
-  const traces = Object.entries(traceMap).map(([name, { x, y, names, color, isOutlier }]) => ({
-    type: "scatter" as const,
-    mode: "markers" as const,
-    name,
-    x,
-    y,
-    text: names,
-    hovertemplate: "%{text}<extra></extra>",
-    marker: {
-      color,
-      size: isOutlier ? 5 : 7,
-      opacity: isOutlier ? 0.35 : 0.82,
-    },
-  }));
+  const orderedTraceNames = [
+    ...(orderedClusters.filter((cluster) => !cluster.isOutliers).length > 0
+      ? orderedClusters.filter((cluster) => !cluster.isOutliers).map((cluster) => cluster.name)
+      : uniqueClusterIds.map((id) => nameById[id])),
+    "Outliers",
+  ].filter((name, index, arr) => arr.indexOf(name) === index && traceMap[name]);
+
+  const traces = orderedTraceNames.map((name) => {
+    const { x, y, names, color, isOutlier } = traceMap[name];
+    return {
+      type: "scatter" as const,
+      mode: "markers" as const,
+      name,
+      x,
+      y,
+      text: names,
+      hovertemplate: "%{text}<extra></extra>",
+      marker: {
+        color,
+        size: isOutlier ? 5 : 7,
+        opacity: isOutlier ? 0.35 : 0.82,
+      },
+    };
+  });
 
   if (traces.length === 0) return null;
 
@@ -80,9 +102,6 @@ export function UmapScatter() {
       <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
         <div>
           <p className="text-sm font-semibold text-foreground">Cluster Map</p>
-          <p className="text-xs text-muted-foreground">
-            UMAP projection with transparent export background
-          </p>
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" className="gap-1.5" onClick={() => handleExport("png")}>

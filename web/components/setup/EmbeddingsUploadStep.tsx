@@ -24,7 +24,10 @@ export function EmbeddingsUploadStep() {
 
   const handleFile = useCallback(
     async (file: File) => {
-      if (!uid) return;
+      if (!uid) {
+        toast.error("Select or create a session before uploading embeddings.");
+        return;
+      }
       if (!file.name.endsWith(".npz")) {
         toast.error("Please upload a .npz file");
         return;
@@ -78,7 +81,14 @@ export function EmbeddingsUploadStep() {
         replaceLabel="Drop a new .npz to replace"
         idleLabel="Upload a saved .npz to skip the embed step"
         hint=".npz"
-        disabled={uploadPct !== null}
+        disabled={!uid || uploadPct !== null}
+        disabledReason={
+          !uid
+            ? "Embeddings upload is disabled until a session is active."
+            : uploadPct !== null
+            ? "An embeddings upload is already in progress."
+            : undefined
+        }
       />
       {uploadPct !== null && (
         <div className="flex flex-col gap-1">

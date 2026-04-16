@@ -1,13 +1,16 @@
 "use client";
 
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "@/lib/store/session";
+import { loadCompanies, loadClusters } from "@/lib/firebase/hooks";
 import { ClusterOverviewGrid } from "./ClusterOverviewGrid";
 import { ClusterEditorPanel } from "./ClusterEditorPanel";
 import { AiChatPanel } from "./AiChatPanel";
 import { ResortPanel } from "./ResortPanel";
 import { Button } from "@/components/ui/button";
-import { ArrowRight, Download } from "lucide-react";
+import { ArrowLeft, ArrowRight, Download, Loader2 } from "lucide-react";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { InfoTooltip } from "@/components/ui/tooltip";
 import { UmapScatter } from "@/components/embed/UmapScatter";
 import { saveAs } from "file-saver";
@@ -22,7 +25,32 @@ function qualityLabel(score: number): string {
 
 export function ReviewPageClient() {
   const router = useRouter();
-  const { companies, clusters, companyCol, clusterMetrics } = useSession();
+  const { uid, companies, clusters, companyCol, clusterMetrics, setCompanies, setClusters } = useSession();
+  const [loadError, setLoadError] = useState(false);
+  const [loadAttempted, setLoadAttempted] = useState(false);
+  const [backWarningOpen, setBackWarningOpen] = useState(false);
+
+  const loadData = useCallback(() => {
+    if (!uid) return;
+    setLoadError(false);
+    setLoadAttempted(false);
+    const p1 = companies.length === 0
+      ? loadCompanies(uid, companyCol).then(setCompanies)
+      : Promise.resolve();
+    const p2 = clusters.length === 0
+      ? loadClusters(uid).then(setClusters)
+      : Promise.resolve();
+    Promise.all([p1, p2])
+      .catch(() => setLoadError(true))
+      .finally(() => setLoadAttempted(true));
+  }, [uid]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Lazy-load companies + clusters after optimistic navigation (resume fast path).
+  // companies.csv already contains _clusterId and _umapX/_umapY so cluster
+  // assignments and UMAP coords are restored automatically.
+  useEffect(() => {
+    loadData();
+  }, [uid]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function handleContinue() {
     const { googleAccessToken, spreadsheetId } = useSession.getState();
@@ -44,6 +72,25 @@ export function ReviewPageClient() {
     const csv = Papa.unparse(rows);
     saveAs(new Blob([csv], { type: "text/csv" }), "cluster_results.csv");
   };
+
+  // Show error state (failed load, or load completed but returned no companies)
+  if (uid && loadAttempted && (loadError || companies.length === 0)) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full gap-3">
+        <p className="text-sm text-muted-foreground">Failed to load session data.</p>
+        <Button variant="outline" size="sm" onClick={loadData}>Retry</Button>
+      </div>
+    );
+  }
+
+  // Show spinner while data loads after fast resume
+  if (uid && !loadAttempted && companies.length === 0) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
 
   return (
     <div className="overflow-y-auto h-full">
@@ -91,11 +138,11 @@ export function ReviewPageClient() {
       </div>
 
       {/* Two-column editor + chat */}
-      <div className="flex gap-0 mt-5 border-t border-border">
-        <div className="flex-1 border-r border-border p-5 min-h-[600px]">
+      <div className="grid gap-4 mt-5 px-6 lg:grid-cols-[minmax(0,1fr)_420px]">
+        <div className="min-h-[600px] rounded-2xl border border-border/70 bg-background/80 p-5 shadow-sm">
           <ClusterEditorPanel />
         </div>
-        <div className="w-[420px] shrink-0 h-[680px] sticky top-0 overflow-hidden flex flex-col">
+        <div className="h-[680px] overflow-hidden rounded-2xl border border-border/70 bg-background/80 shadow-sm lg:sticky lg:top-4">
           <AiChatPanel />
         </div>
       </div>
@@ -105,14 +152,25 @@ export function ReviewPageClient() {
 
       {/* Sticky bottom action bar */}
       <div className="sticky bottom-0 z-10 bg-background/95 backdrop-blur-sm border-t border-border px-6 py-3 flex items-center justify-between">
-        <span className="text-xs text-muted-foreground">
-          {clusters.filter((c) => !c.isOutliers).length} clusters · {companies.length} companies
-        </span>
+        <Button variant="ghost" size="sm" onClick={() => setBackWarningOpen(true)} className="gap-1.5 text-muted-foreground hover:text-foreground">
+          <ArrowLeft className="h-4 w-4" />
+          Back to Embed
+        </Button>
         <Button onClick={handleContinue} className="gap-2">
           Continue to Analytics
           <ArrowRight className="h-4 w-4" />
         </Button>
       </div>
+
+      {/* Back navigation warning */}
+      <ConfirmDialog
+        open={backWarningOpen}
+        title="Go back to Embed & Cluster?"
+        description="Your cluster edits are already saved. However, if you re-run clustering it will overwrite all cluster assignments and names."
+        confirmLabel="Go Back"
+        onConfirm={() => { setBackWarningOpen(false); router.push("/embed"); }}
+        onCancel={() => setBackWarningOpen(false)}
+      />
     </div>
   );
 }

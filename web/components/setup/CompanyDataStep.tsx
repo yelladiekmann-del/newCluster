@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { CheckCircle2, Sparkles, Loader2, Download } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
@@ -16,12 +16,14 @@ import type { CompanyDoc } from "@/types";
 import { DIMENSIONS } from "@/types";
 import { ref, uploadBytesResumable } from "firebase/storage";
 import { getFirebaseStorage } from "@/lib/firebase/client";
+import { parseTabularFile, rowsToCsv } from "@/lib/tabular-upload";
 import { saveAs } from "file-saver";
 import Papa from "papaparse";
 import { createParser } from "eventsource-parser";
 
 export function CompanyDataStep() {
   const {
+    authUser,
     uid,
     apiKey,
     companies,
@@ -40,11 +42,19 @@ export function CompanyDataStep() {
   const [extractProgress, setExtractProgress] = useState<{ done: number; total: number; errors: number } | null>(null);
   const [extracting, setExtracting] = useState(false);
   const autoExtractTriggered = useRef(false);
+  const hasActiveSession = !!uid;
 
   const hasDimensions =
     companies.length > 0 &&
     !!companies[0]?.dimensions &&
     Object.keys(companies[0].dimensions).length > 0;
+
+  useEffect(() => {
+    setUploadPct(null);
+    setExtractProgress(null);
+    setExtracting(false);
+    autoExtractTriggered.current = false;
+  }, [uid]);
 
   const runExtraction = useCallback(async (companiesSnap = companies) => {
     const currentApiKey = useSession.getState().apiKey;
@@ -114,89 +124,110 @@ export function CompanyDataStep() {
   }, [companies, pipelineStep, setPipelineStep, setCompanies]);
 
   const handleFile = useCallback(
-    (file: File) => {
-      Papa.parse<Record<string, unknown>>(file, {
-        header: true,
-        skipEmptyLines: true,
-        complete: (results) => {
-          const rows = results.data;
-          if (!rows.length) { toast.error("File appears to be empty"); return; }
+    async (file: File) => {
+      if (!uid) {
+        toast.error("Select or create a session before uploading company data.");
+        return;
+      }
 
-          const cols = Object.keys(rows[0]);
-
-          // Auto-detect standard column names
-          const nameCol =
-            cols.find((c) => /^name$/i.test(c)) ||
-            cols.find((c) => /company/i.test(c)) ||
-            cols[0];
-          const dCol =
-            cols.find((c) => /description/i.test(c)) ||
-            cols.find((c) => /desc/i.test(c)) ||
-            null;
-
-          // Check if dimensions are already present in the CSV
-          const dimCols = DIMENSIONS.filter((d) => cols.includes(d));
-          const dimsAlreadyPresent = dimCols.length >= 4; // at least half the dimensions
-
-          const companyDocs: CompanyDoc[] = rows.map((row, i) => ({
-            id: `r${i}`,
-            rowIndex: i,
-            name: String(row[nameCol] ?? ""),
-            originalData: row,
-            dimensions: dimsAlreadyPresent
-              ? Object.fromEntries(dimCols.map((d) => [d, String(row[d] ?? "")]))
-              : {},
-            clusterId: null,
-            umapX: null,
-            umapY: null,
-          }));
-
-          setCompanyCol(nameCol);
-          setDescCol(dCol);
-          autoExtractTriggered.current = false;
-
-          if (!uid) {
-            // Offline fallback — populate store immediately, no upload
-            setCompanies(companyDocs);
-            toast.warning("Not signed in — data loaded locally but not saved");
-            return;
-          }
-
-          // Populate store immediately — no Firestore wait
-          setCompanies(companyDocs);
-
-          // Show progress bar immediately for visual feedback
-          setUploadPct(0);
-
-          (async () => {
-            try {
-              const storage = getFirebaseStorage();
-              const task = uploadBytesResumable(ref(storage, `sessions/${uid}/companies.csv`), file);
-              await new Promise<void>((resolve, reject) => {
-                task.on(
-                  "state_changed",
-                  (snap) => setUploadPct(Math.round((snap.bytesTransferred / snap.totalBytes) * 100)),
-                  reject,
-                  resolve
-                );
-              });
-              setUploadPct(null);
-              await persistSession(uid, { companyCol: nameCol, descCol: dCol, pipelineStep: 0, companyCount: rows.length });
-              toast.success(`${rows.length.toLocaleString()} companies loaded`);
-
-              // Auto-extract only if dims are NOT already in the CSV
-              if (!dimsAlreadyPresent && dCol && useSession.getState().apiKey && !autoExtractTriggered.current) {
-                autoExtractTriggered.current = true;
-                runExtraction(companyDocs);
-              }
-            } catch (err) {
-              toast.error("Save failed — " + (err instanceof Error ? err.message : String(err)));
-              setUploadPct(null);
-            }
-          })();
-        },
-        error: (err) => toast.error(`Parse error: ${err.message}`),
+      console.info("[CompanyDataStep] file_selected", {
+        uid,
+        name: file.name,
+        size: file.size,
       });
+      try {
+        const parsed = await parseTabularFile(file);
+        const rows = parsed.rows;
+        console.info("[CompanyDataStep] parse_completed", {
+          uid,
+          fileName: file.name,
+          rowCount: rows.length,
+          source: parsed.source,
+          sheetName: parsed.sheetName,
+          headerRow: parsed.headerRow,
+        });
+        if (!rows.length) { toast.error("File appears to be empty"); return; }
+
+        const cols = parsed.columns;
+
+        const nameCol =
+          cols.find((c) => /^companies$/i.test(c)) ||
+          cols.find((c) => /^company$/i.test(c)) ||
+          cols.find((c) => /^name$/i.test(c)) ||
+          cols.find((c) => /company/i.test(c)) ||
+          cols[0];
+        const dCol =
+          cols.find((c) => /description/i.test(c)) ||
+          cols.find((c) => /desc/i.test(c)) ||
+          null;
+
+        const dimCols = DIMENSIONS.filter((d) => cols.includes(d));
+        const dimsAlreadyPresent = dimCols.length >= 4;
+
+        const companyDocs: CompanyDoc[] = rows.map((row, i) => ({
+          id: `r${i}`,
+          rowIndex: i,
+          name: String(row[nameCol] ?? ""),
+          originalData: row,
+          dimensions: dimsAlreadyPresent
+            ? Object.fromEntries(dimCols.map((d) => [d, String(row[d] ?? "")]))
+            : {},
+          clusterId: null,
+          umapX: null,
+          umapY: null,
+        }));
+
+        setCompanyCol(nameCol);
+        setDescCol(dCol);
+        autoExtractTriggered.current = false;
+        setCompanies(companyDocs);
+        setUploadPct(0);
+
+        const csv = rowsToCsv(rows);
+        const blob = new Blob([csv], { type: "text/csv" });
+
+        try {
+          console.info("[CompanyDataStep] upload_started", { uid, fileName: file.name });
+          const storage = getFirebaseStorage();
+          const task = uploadBytesResumable(ref(storage, `sessions/${uid}/companies.csv`), blob);
+          await new Promise<void>((resolve, reject) => {
+            task.on(
+              "state_changed",
+              (snap) => setUploadPct(Math.round((snap.bytesTransferred / snap.totalBytes) * 100)),
+              reject,
+              resolve
+            );
+          });
+          setUploadPct(null);
+          await persistSession(uid, { companyCol: nameCol, descCol: dCol, pipelineStep: 0, companyCount: rows.length });
+          console.info("[CompanyDataStep] upload_completed", {
+            uid,
+            fileName: file.name,
+            rowCount: rows.length,
+          });
+          toast.success(`${rows.length.toLocaleString()} companies loaded`);
+
+          if (!dimsAlreadyPresent && dCol && useSession.getState().apiKey && !autoExtractTriggered.current) {
+            autoExtractTriggered.current = true;
+            runExtraction(companyDocs);
+          }
+        } catch (err) {
+          console.error("[CompanyDataStep] upload_failed", {
+            uid,
+            fileName: file.name,
+            message: err instanceof Error ? err.message : String(err),
+          });
+          toast.error("Save failed — " + (err instanceof Error ? err.message : String(err)));
+          setUploadPct(null);
+        }
+      } catch (err) {
+        console.error("[CompanyDataStep] parse_failed", {
+          uid,
+          fileName: file.name,
+          message: err instanceof Error ? err.message : String(err),
+        });
+        toast.error(`Parse error: ${err instanceof Error ? err.message : String(err)}`);
+      }
     },
     [uid, setCompanies, setCompanyCol, setDescCol, runExtraction]
   );
@@ -229,6 +260,14 @@ export function CompanyDataStep() {
             )}
           </div>
 
+          {!hasActiveSession && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+              {authUser
+                ? "Choose or create a session before uploading company data."
+                : "Sign in and create a session before uploading company data."}
+            </div>
+          )}
+
           <FileUploadZone
             accept=".csv,.xlsx,.xls"
             onFile={handleFile}
@@ -237,7 +276,14 @@ export function CompanyDataStep() {
             replaceLabel="Drop a new file to replace"
             idleLabel="Drop CSV / Excel here or browse"
             hint=".csv, .xlsx, .xls"
-            disabled={uploadPct !== null}
+            disabled={!hasActiveSession || uploadPct !== null}
+            disabledReason={
+              !hasActiveSession
+                ? "Upload is disabled until a session is active."
+                : uploadPct !== null
+                ? "A company upload is already in progress."
+                : undefined
+            }
           />
 
           {uploadPct !== null && (

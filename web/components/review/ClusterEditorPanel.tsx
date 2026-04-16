@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { useSession } from "@/lib/store/session";
-import { persistSession } from "@/lib/firebase/hooks";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
@@ -18,7 +17,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { CompanyListDialog } from "./CompanyListDialog";
-import { doc, writeBatch, deleteDoc } from "firebase/firestore";
+import { doc, writeBatch } from "firebase/firestore";
 import { getFirebaseDb } from "@/lib/firebase/client";
 import { toast } from "sonner";
 import { Users, Trash2, Check } from "lucide-react";
@@ -172,7 +171,7 @@ export function ClusterEditorPanel() {
                   className="gap-1 h-7 text-xs text-muted-foreground"
                 >
                   <Users className="h-3 w-3" />
-                  Browse {cluster.companyCount} companies
+                  Browse companies
                 </Button>
                 <Button
                   variant="ghost"

@@ -2,10 +2,12 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { CheckCircle2, Circle, ChevronLeft, LogOut, Table2 } from "lucide-react";
+import { CheckCircle2, ChevronLeft, LogOut, Table2 } from "lucide-react";
 import { useSession } from "@/lib/store/session";
 import { signOutUser } from "@/lib/firebase/client";
+import { clearSignedOutClientState } from "@/lib/firebase/hooks";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 
 const STEPS = [
   { label: "Setup", href: "/setup", step: 0 },
@@ -17,22 +19,30 @@ const STEPS = [
 export function PipelineNav() {
   const pathname = usePathname();
   const router = useRouter();
-  const { pipelineStep, companies, clusters, authUser, spreadsheetUrl } = useSession();
+  const { pipelineStep, companies, clusters, authUser, spreadsheetUrl, sessionName } = useSession();
 
   async function handleSignOut() {
-    await signOutUser();
-    router.push("/");
+    try {
+      await signOutUser();
+      clearSignedOutClientState();
+      router.push("/");
+    } catch (err) {
+      toast.error("Sign out failed: " + (err instanceof Error ? err.message : String(err)));
+    }
   }
 
   return (
     <aside className="w-56 shrink-0 flex flex-col h-full border-r border-border bg-sidebar px-4 py-6 gap-6">
       {/* Logo + back link */}
       <div className="flex flex-col gap-2">
-        <img
-          src="https://innovators.hamburg/wordpress/wp-content/uploads/2022/01/Logo_hy.png"
-          alt="hy"
-          className="h-5 w-auto object-contain"
-        />
+        <div className="flex items-center gap-2">
+          <img
+            src="https://innovators.hamburg/wordpress/wp-content/uploads/2022/01/Logo_hy.png"
+            alt="hy"
+            className="h-5 w-auto object-contain shrink-0"
+          />
+          <span className="text-sm font-semibold text-foreground tracking-tight">Clustering Tool</span>
+        </div>
         <Link
           href="/"
           className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-primary transition-colors w-fit"
@@ -44,26 +54,25 @@ export function PipelineNav() {
 
       <div className="border-t border-sidebar-border -mx-4" />
 
-      {/* Progress bar */}
-      <div className="flex flex-col gap-1">
-        <div className="flex justify-between text-[11px] text-muted-foreground mb-1">
-          <span>Pipeline</span>
-          <span>{Math.round((pipelineStep / 4) * 100)}%</span>
+      {/* Current session name */}
+      {sessionName && (
+        <div className="px-2.5 -mt-3">
+          <div className="text-[10px] font-medium uppercase tracking-[0.18em] text-muted-foreground mb-0.5">
+            Current session
+          </div>
+          <div className="text-xs font-medium text-foreground truncate" title={sessionName}>
+            {sessionName}
+          </div>
         </div>
-        <div className="h-1 rounded-full bg-muted overflow-hidden">
-          <div
-            className="h-full bg-primary rounded-full transition-all duration-500"
-            style={{ width: `${(pipelineStep / 4) * 100}%` }}
-          />
-        </div>
-      </div>
+      )}
 
       {/* Step list */}
       <nav className="flex flex-col gap-1">
-        {STEPS.map(({ label, href, step }) => {
+        {STEPS.map(({ label, href, step }, i) => {
           const done = pipelineStep > step;
           const active = pathname === href;
           const accessible = pipelineStep >= step || active;
+          const stepNumber = i + 1;
 
           return (
             <Link
@@ -81,10 +90,17 @@ export function PipelineNav() {
             >
               {done ? (
                 <CheckCircle2 className="h-4 w-4 text-primary shrink-0" />
-              ) : active ? (
-                <Circle className="h-4 w-4 text-primary shrink-0 fill-primary/20" />
               ) : (
-                <Circle className="h-4 w-4 text-muted-foreground shrink-0" />
+                <span
+                  className={cn(
+                    "h-4 w-4 shrink-0 rounded-full flex items-center justify-center text-[10px] font-semibold border",
+                    active
+                      ? "border-primary bg-primary/20 text-primary"
+                      : "border-muted-foreground/40 text-muted-foreground"
+                  )}
+                >
+                  {stepNumber}
+                </span>
               )}
               {label}
             </Link>
