@@ -13,6 +13,8 @@ interface CallGeminiTextOptions {
   history?: GeminiInputMessage[];
   userMessage?: string;
   temperature?: number;
+  /** Set to 0 to disable gemini-2.5-flash thinking (faster for structured JSON tasks). */
+  thinkingBudget?: number;
   tools?: Array<Record<string, unknown>>;
 }
 
@@ -23,6 +25,7 @@ export async function callGeminiText({
   history = [],
   userMessage,
   temperature = 0.3,
+  thinkingBudget,
   tools,
 }: CallGeminiTextOptions): Promise<string> {
   const contents =
@@ -47,7 +50,10 @@ export async function callGeminiText({
         : {}),
       contents,
       ...(tools ? { tools } : {}),
-      generationConfig: { temperature },
+      generationConfig: {
+        temperature,
+        ...(thinkingBudget !== undefined ? { thinkingConfig: { thinkingBudget } } : {}),
+      },
     }),
     signal: AbortSignal.timeout(60_000),
   });

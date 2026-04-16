@@ -9,8 +9,8 @@ function formatSummary(summary: ClusterSummary): string {
     .join("\n");
   const snippets = summary.representativeSnippets.map((snippet) => `  - ${snippet}`).join("\n");
   return `CLUSTER ${summary.clusterId} (${summary.companyCount} companies)
-Current name: ${summary.clusterName}
 Representative companies: ${summary.representativeCompanies.join(", ") || "—"}
+Nearest clusters: ${summary.nearestClusterNames.join(", ") || "—"}
 Representative snippets:
 ${snippets || "  - —"}
 Top dimensions:
@@ -37,26 +37,55 @@ function synthesizeDescription(summary: ClusterSummary, name: string): string {
   return `${name} covers companies focused on ${themeText}. They share a similar value proposition and market position within this segment.`;
 }
 
-async function generateNames(
+/**
+ * Single Gemini call that returns both name and description for every cluster.
+ * Replaces the previous 2–3 sequential calls (generateNames → normalizeNames → generateDescriptions).
+ * thinkingBudget=0 disables gemini-2.5-flash reasoning mode for fast structured output.
+ */
+async function generateNamesAndDescriptions(
   apiKey: string,
-  summaries: ClusterSummary[]
-): Promise<Record<string, string>> {
-  const prompt = `You are a market intelligence analyst naming clusters of companies.
+  summaries: ClusterSummary[],
+): Promise<{ names: Record<string, string>; descriptions: Record<string, string> }> {
+  const prompt = `You are a market intelligence analyst naming and describing clusters of companies.
 
 Below are ${summaries.length} clusters with their dominant characteristics, representative companies, and sample descriptions.
-Assign each cluster a SHORT, DISTINCTIVE market-category name (2-5 words) that:
+
+For EACH cluster provide:
+1. A SHORT, DISTINCTIVE market-category name (2–5 words)
+2. Exactly 2 sentences describing what type of companies belong here and what sets them apart
+
+Name requirements:
 - Captures what makes THIS cluster unique versus the others
-- Stays at a similar level of abstraction across the full set
-- Reads like a real market segment, not an internal tag
-- Has NO duplicates
+- Same level of abstraction across all clusters
+- Reads like a real market segment (e.g. "Embedded Lending Infrastructure", "SMB Expense Automation")
+- NO duplicates — every name must be unique
+
+Description requirements:
+- Begin with a phrase like "Companies providing..." or "Platforms enabling..."
+- Specific, concrete, and useful for a business analyst
+- Briefly distinguish from the nearest clusters listed
+- Exactly 2 sentences, no long enumerations
 
 ${summaries.map(formatSummary).join("\n\n")}
 
-Return ONLY a JSON object mapping cluster id strings to names, like:
-{"0": "Embedded Lending Infrastructure", "1": "SMB Expense Automation"}
-No explanation, no markdown, just JSON.`;
+Return ONLY a JSON object like:
+{"0": {"name": "Embedded Lending Infrastructure", "description": "Companies providing... They stand apart from..."}, "1": {"name": "...", "description": "..."}}
+No explanation, no markdown, just the JSON.`;
 
-  return parseJsonObject<Record<string, string>>(await callGeminiText({ apiKey, prompt, temperature: 0.2 })) ?? {};
+  const raw = await callGeminiText({ apiKey, prompt, temperature: 0.25, thinkingBudget: 0 });
+
+  const parsed =
+    parseJsonObject<Record<string, { name?: string; description?: string }>>(raw) ??
+    parseJsonObject<Record<string, { name?: string; description?: string }>>(extractFirstJsonObject(raw) ?? "") ??
+    {};
+
+  const names: Record<string, string> = {};
+  const descriptions: Record<string, string> = {};
+  for (const [id, value] of Object.entries(parsed)) {
+    if (value?.name) names[id] = value.name.trim();
+    if (value?.description) descriptions[id] = value.description.trim();
+  }
+  return { names, descriptions };
 }
 
 async function normalizeNames(
@@ -80,143 +109,7 @@ Revise the names only where needed so the final set:
 
 Return ONLY a JSON object mapping cluster id strings to the final names.`;
 
-  return parseJsonObject<Record<string, string>>(await callGeminiText({ apiKey, prompt, temperature: 0.2 })) ?? currentNames;
-}
-
-async function generateDescriptions(
-  apiKey: string,
-  summaries: ClusterSummary[],
-  names: Record<string, string>,
-  logContext?: { uid?: string }
-): Promise<Record<string, string>> {
-  const prompt = `You are a market intelligence analyst describing clusters of companies.
-
-Below are ${summaries.length} clusters with their dominant characteristics.
-For each cluster, write exactly 2 short sentences that:
-- explain what type of companies belong to this cluster
-- describe the shared value proposition or operating model
-- briefly distinguish this cluster from nearby clusters
-- are specific, concrete, and useful for a business analyst
-- stay concise enough to fit comfortably in a small overview card
-- avoid long enumerations of subcategories, examples, or excessive detail
-- begin with a category-style phrase like "Companies providing..." or "Platforms enabling..."
-- do NOT begin with phrases like "This cluster consists of", "This cluster includes", or "This segment contains"
-
-${summaries
-  .map(
-    (summary) => `CLUSTER ${summary.clusterId} — "${names[summary.clusterId] || summary.clusterName}" (${summary.companyCount} companies)
-Nearest clusters: ${summary.nearestClusterNames.join(", ") || "—"}
-Representative companies: ${summary.representativeCompanies.join(", ") || "—"}
-Representative snippets:
-${summary.representativeSnippets.map((snippet) => `  - ${snippet}`).join("\n") || "  - —"}
-Top dimensions:
-${Object.entries(summary.topDimensions)
-  .filter(([, values]) => values.length > 0)
-  .map(([dimension, values]) => `  ${dimension}: ${values.join(" / ")}`)
-  .join("\n") || "  —"}`
-  )
-  .join("\n\n")}
-
-Return ONLY a JSON object mapping cluster id strings to descriptions:
-{"0": "Companies providing .... Unlike nearby clusters, they focus on ....", "1": "Platforms enabling .... They stand apart because ....", "...": "..."}
-No explanation, no markdown, just the JSON.`;
-
-  const raw = await callGeminiText({ apiKey, prompt, temperature: 0.3 });
-  return parseClusterDescriptions(raw, names, summaries, logContext);
-}
-
-function logDescriptionIssue(
-  event: string,
-  details: {
-    uid?: string;
-    clusterCount: number;
-    recoveryPath: string;
-    raw: string;
-  }
-) {
-  console.warn("[name-clusters] description-generation issue", {
-    event,
-    uid: details.uid ?? null,
-    clusterCount: details.clusterCount,
-    recoveryPath: details.recoveryPath,
-    rawExcerpt: details.raw.slice(0, 300),
-  });
-}
-
-function remapNameKeyedDescriptions(
-  parsed: Record<string, unknown>,
-  names: Record<string, string>
-): { mapped: Record<string, string>; remapped: boolean } {
-  const nameToId = new Map(
-    Object.entries(names).map(([id, name]) => [name.trim().toLowerCase(), id])
-  );
-  const mapped: Record<string, string> = {};
-  let remapped = false;
-
-  for (const [key, value] of Object.entries(parsed)) {
-    if (typeof value !== "string") continue;
-    if (key in names) {
-      mapped[key] = value.trim();
-      continue;
-    }
-    const clusterId = nameToId.get(key.trim().toLowerCase());
-    if (clusterId) {
-      mapped[clusterId] = value.trim();
-      remapped = true;
-    }
-  }
-
-  return { mapped, remapped };
-}
-
-function parseClusterDescriptions(
-  raw: string,
-  names: Record<string, string>,
-  summaries: ClusterSummary[],
-  logContext?: { uid?: string }
-): Record<string, string> {
-  const clusterCount = summaries.length;
-
-  const direct = parseJsonObject<Record<string, unknown>>(raw);
-  if (direct) {
-    const { mapped, remapped } = remapNameKeyedDescriptions(direct, names);
-    if (Object.keys(mapped).length > 0) {
-      if (remapped) {
-        logDescriptionIssue("name_keyed_json", {
-          uid: logContext?.uid,
-          clusterCount,
-          recoveryPath: "direct_json_name_remap",
-          raw,
-        });
-      }
-      return mapped;
-    }
-  }
-
-  const extracted = extractFirstJsonObject(raw);
-  if (extracted) {
-    const recovered = parseJsonObject<Record<string, unknown>>(extracted);
-    if (recovered) {
-      const { mapped, remapped } = remapNameKeyedDescriptions(recovered, names);
-      if (Object.keys(mapped).length > 0) {
-        logDescriptionIssue(remapped ? "name_keyed_json" : "mixed_text_json", {
-          uid: logContext?.uid,
-          clusterCount,
-          recoveryPath: remapped ? "substring_json_name_remap" : "substring_json",
-          raw,
-        });
-        return mapped;
-      }
-    }
-  }
-
-  logDescriptionIssue("non_json_or_empty", {
-    uid: logContext?.uid,
-    clusterCount,
-    recoveryPath: "fallback_only",
-    raw,
-  });
-  return {};
+  return parseJsonObject<Record<string, string>>(await callGeminiText({ apiKey, prompt, temperature: 0.2, thinkingBudget: 0 })) ?? currentNames;
 }
 
 export async function nameClustersFromSummaries(
@@ -224,14 +117,15 @@ export async function nameClustersFromSummaries(
   summaries: ClusterSummary[],
   logContext?: { uid?: string }
 ): Promise<ClusterNamingResult[]> {
-  let names = await generateNames(apiKey, summaries);
+  let { names, descriptions } = await generateNamesAndDescriptions(apiKey, summaries);
+
+  // Dedup safety net — only triggers a second call if the combined prompt returned duplicates
   if (hasDuplicateNames(names)) {
     names = await normalizeNames(apiKey, summaries, names);
   }
 
-  const descriptions = await generateDescriptions(apiKey, summaries, names, logContext);
-  const fallbackCount = summaries.filter((summary) => !descriptions[summary.clusterId]?.trim()).length;
-  console.info("[name-clusters] description-generation summary", {
+  const fallbackCount = summaries.filter((s) => !descriptions[s.clusterId]?.trim()).length;
+  console.info("[name-clusters] naming summary", {
     uid: logContext?.uid ?? null,
     clusterCount: summaries.length,
     resolvedCount: summaries.length - fallbackCount,
