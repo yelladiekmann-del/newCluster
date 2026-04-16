@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "@/lib/store/session";
 import { loadCompanies, loadClusters } from "@/lib/firebase/hooks";
@@ -9,16 +9,13 @@ import { ClusterEditorPanel } from "./ClusterEditorPanel";
 import { AiChatPanel } from "./AiChatPanel";
 import { ResortPanel } from "./ResortPanel";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, ArrowRight, Download, Loader2, Presentation } from "lucide-react";
+import { ArrowLeft, ArrowRight, Download, Loader2 } from "lucide-react";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { InfoTooltip } from "@/components/ui/tooltip";
-import { UmapScatter, type UmapScatterHandle } from "@/components/embed/UmapScatter";
+import { UmapScatter } from "@/components/embed/UmapScatter";
 import { saveAs } from "file-saver";
 import Papa from "papaparse";
 import { syncReviewToSheet } from "@/lib/sheets/sync";
-import { exportClusterSlide } from "@/lib/slides/export";
-import { requestSlidesAccess } from "@/lib/firebase/client";
-import { toast } from "sonner";
 
 function qualityLabel(score: number): string {
   if (score >= 0.5) return "Good";
@@ -32,8 +29,6 @@ export function ReviewPageClient() {
   const [loadError, setLoadError] = useState(false);
   const [loadAttempted, setLoadAttempted] = useState(false);
   const [backWarningOpen, setBackWarningOpen] = useState(false);
-  const [creatingSlide, setCreatingSlide] = useState(false);
-  const scatterRef = useRef<UmapScatterHandle>(null);
 
   const loadData = useCallback(() => {
     if (!uid) return;
@@ -76,56 +71,6 @@ export function ReviewPageClient() {
     });
     const csv = Papa.unparse(rows);
     saveAs(new Blob([csv], { type: "text/csv" }), "cluster_results.csv");
-  };
-
-  const handleCreateSlide = async () => {
-    if (!uid || !scatterRef.current) return;
-    setCreatingSlide(true);
-    try {
-      let { googleAccessToken, sessionName } = useSession.getState();
-
-      // If no token at all, get one upfront.
-      if (!googleAccessToken) {
-        const fresh = await requestSlidesAccess();
-        if (!fresh) throw new Error("Could not obtain Google access token.");
-        useSession.getState().setGoogleAccessToken(fresh);
-        googleAccessToken = fresh;
-      }
-
-      const plotDiv = scatterRef.current.getPlotDiv();
-      const doExport = (token: string) =>
-        exportClusterSlide(token, uid, plotDiv, clusters, sessionName);
-
-      let url: string;
-      try {
-        url = await doExport(googleAccessToken);
-      } catch (firstErr) {
-        const msg = firstErr instanceof Error ? firstErr.message : String(firstErr);
-        // On any permission/scope error automatically re-auth (shows Google
-        // consent popup once) and retry. This handles users who signed in before
-        // drive.readonly was added without needing a manual log-out.
-        if (msg.includes("403") || msg.includes("insufficient") || msg.toLowerCase().includes("permission")) {
-          toast.info("Re-authorising Google access…");
-          const fresh = await requestSlidesAccess();
-          if (!fresh) throw new Error("Could not obtain Google access token.");
-          useSession.getState().setGoogleAccessToken(fresh);
-          url = await doExport(fresh);
-        } else {
-          throw firstErr;
-        }
-      }
-
-      toast.success("Slide created!", {
-        description: "Opening in a new tab…",
-        action: { label: "Open", onClick: () => window.open(url, "_blank") },
-      });
-      window.open(url, "_blank");
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      toast.error(`Slide export failed: ${msg}`);
-    } finally {
-      setCreatingSlide(false);
-    }
   };
 
   // Show error state (failed load, or load completed but returned no companies)
@@ -175,20 +120,6 @@ export function ReviewPageClient() {
           )}
         </div>
         <div className="flex gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleCreateSlide}
-            disabled={creatingSlide || clusters.filter((c) => !c.isOutliers).length === 0}
-            className="gap-1.5"
-          >
-            {creatingSlide ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <Presentation className="h-3.5 w-3.5" />
-            )}
-            {creatingSlide ? "Creating…" : "Create Slide"}
-          </Button>
           <Button variant="outline" size="sm" onClick={handleDownload} className="gap-1.5">
             <Download className="h-3.5 w-3.5" />
             Download CSV
@@ -203,7 +134,7 @@ export function ReviewPageClient() {
 
       {/* UMAP scatter */}
       <div className="px-6 pt-4">
-        <UmapScatter ref={scatterRef} />
+        <UmapScatter />
       </div>
 
       {/* Two-column editor + chat */}
