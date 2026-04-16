@@ -69,7 +69,7 @@ const PIPELINE_STEPS = [
   {
     icon: Network,
     label: "Review & Edit",
-    desc: "Inspect clusters on a UMAP map and refine them with AI assistance.",
+    desc: "",
   },
   {
     icon: BarChart3,
