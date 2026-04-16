@@ -84,8 +84,7 @@ export function ReviewPageClient() {
     try {
       let { googleAccessToken, sessionName } = useSession.getState();
 
-      // If the token is missing or the user signed in before the presentations
-      // scope was added, trigger an incremental auth popup to get a fresh token.
+      // If no token at all, get one upfront.
       if (!googleAccessToken) {
         const fresh = await requestSlidesAccess();
         if (!fresh) throw new Error("Could not obtain Google access token.");
@@ -94,13 +93,27 @@ export function ReviewPageClient() {
       }
 
       const plotDiv = scatterRef.current.getPlotDiv();
-      const url = await exportClusterSlide(
-        googleAccessToken,
-        uid,
-        plotDiv,
-        clusters,
-        sessionName
-      );
+      const doExport = (token: string) =>
+        exportClusterSlide(token, uid, plotDiv, clusters, sessionName);
+
+      let url: string;
+      try {
+        url = await doExport(googleAccessToken);
+      } catch (firstErr) {
+        const msg = firstErr instanceof Error ? firstErr.message : String(firstErr);
+        // On any permission/scope error automatically re-auth (shows Google
+        // consent popup once) and retry. This handles users who signed in before
+        // drive.readonly was added without needing a manual log-out.
+        if (msg.includes("403") || msg.includes("insufficient") || msg.toLowerCase().includes("permission")) {
+          toast.info("Re-authorising Google access…");
+          const fresh = await requestSlidesAccess();
+          if (!fresh) throw new Error("Could not obtain Google access token.");
+          useSession.getState().setGoogleAccessToken(fresh);
+          url = await doExport(fresh);
+        } else {
+          throw firstErr;
+        }
+      }
 
       toast.success("Slide created!", {
         description: "Opening in a new tab…",
@@ -109,14 +122,7 @@ export function ReviewPageClient() {
       window.open(url, "_blank");
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      // Scope error — guide the user to re-auth
-      if (msg.includes("403") || msg.includes("insufficient")) {
-        toast.error("Missing permissions", {
-          description: "Sign out and sign back in to grant Slides access, then try again.",
-        });
-      } else {
-        toast.error(`Slide export failed: ${msg}`);
-      }
+      toast.error(`Slide export failed: ${msg}`);
     } finally {
       setCreatingSlide(false);
     }
