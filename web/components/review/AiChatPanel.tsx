@@ -34,7 +34,7 @@ const CLUSTER_REVIEW_PROMPT = `Please review all clusters in this analysis and p
 
 **2. DELETE** — List clusters that are too small, too vague, overlap heavily with another, or add no analytical value. Explain why each should be removed.
 
-**3. MERGE** — Identify pairs or groups of clusters that are too similar and should be combined. For each merge, specify which clusters to combine and suggest a name for the result.
+**3. MERGE** — Identify pairs or groups of clusters that are too similar and should be combined. For each merge, specify which clusters to combine, suggest a name for the result, and write a concise 2-sentence description for the merged cluster. The description should start with "Companies providing..." or "Platforms enabling..." and briefly distinguish it from nearby clusters.
 
 **4. ADD** — Identify important market segments that are absent from the current clustering. For each new cluster to add, provide: a proposed name, a concise 2-sentence description, and 3–5 example companies from the dataset that would belong there. The description should start with a category-style phrase like "Companies providing..." or "Platforms enabling..." and should not begin with "This cluster consists of" or similar phrasing.
 
@@ -45,7 +45,7 @@ After your prose recommendations, append a machine-readable action list using EX
 <actions>
 [
   {"type": "delete", "clusterName": "<exact cluster name>"},
-  {"type": "merge", "sources": ["<cluster A>", "<cluster B>"], "newName": "<merged name>"},
+  {"type": "merge", "sources": ["<cluster A>", "<cluster B>"], "newName": "<merged name>", "description": "Companies providing .... Unlike nearby clusters, they focus on ...."},
   {"type": "add", "name": "<new cluster name>", "description": "Companies providing .... Unlike nearby clusters, they focus on ....", "companies": ["<company1>", "<company2>", "<company3>"]}
 ]
 </actions>
