@@ -165,4 +165,4 @@ export const UmapScatter = forwardRef<UmapScatterHandle>(function UmapScatter(_p
       />
     </div>
   );
-}
+});
