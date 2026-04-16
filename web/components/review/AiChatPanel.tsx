@@ -68,6 +68,7 @@ export function AiChatPanel() {
 
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [applying, setApplying] = useState(false);
   const [contextInput, setContextInput] = useState("");
   const [pendingActions, setPendingActions] = useState<ClusterAction[] | null>(null);
   const [applyConfirm, setApplyConfirm] = useState<{ actions: ClusterAction[]; label: string } | null>(null);
@@ -445,10 +446,15 @@ export function AiChatPanel() {
               <Button
                 size="sm"
                 className="h-7 text-xs gap-1"
+                disabled={applying}
                 onClick={() => setApplyConfirm({ actions: pendingActions, label: `Apply all ${pendingActions.length} actions` })}
               >
-                <CheckCircle2 className="h-3 w-3" />
-                Apply all
+                {applying ? (
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                ) : (
+                  <CheckCircle2 className="h-3 w-3" />
+                )}
+                {applying ? "Applying…" : "Apply all"}
               </Button>
               <Button
                 size="sm"
@@ -511,14 +517,19 @@ export function AiChatPanel() {
                 if (!applyConfirm) return;
                 const actionsToApply = applyConfirm.actions;
                 setApplyConfirm(null);
-                if (actionsToApply.length === 1) {
-                  await applyAction(actionsToApply[0]);
-                } else {
-                  await applyAllActions(actionsToApply);
+                setApplying(true);
+                try {
+                  if (actionsToApply.length === 1) {
+                    await applyAction(actionsToApply[0]);
+                  } else {
+                    await applyAllActions(actionsToApply);
+                  }
+                  setPendingActions((prev) =>
+                    prev?.filter((a) => !actionsToApply.includes(a)) ?? null
+                  );
+                } finally {
+                  setApplying(false);
                 }
-                setPendingActions((prev) =>
-                  prev?.filter((a) => !actionsToApply.includes(a)) ?? null
-                );
               }}
             >
               Apply
