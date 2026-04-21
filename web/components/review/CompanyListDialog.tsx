@@ -94,10 +94,14 @@ export function CompanyListDialog({ clusterId, onClose }: Props) {
       })
     );
 
-    // Persist updated companies to Storage CSV
+    // Delta save — only write the single moved company
     try {
-      const { saveCompaniesToStorage } = await import("@/lib/firebase/companies-storage");
-      await saveCompaniesToStorage(uid, useSession.getState().companies);
+      const { saveChangedCompaniesToFirestore } = await import("@/lib/firebase/companies-storage");
+      await saveChangedCompaniesToFirestore(
+        uid,
+        useSession.getState().companies,
+        new Set([companyId])
+      );
     } catch (err) {
       toast.error("Failed to save move: " + String(err));
     }

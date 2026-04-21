@@ -53,7 +53,9 @@ export function EmbedPageClient() {
   // Local state — not persisted until confirmed
   const [featureMatrix, setFeatureMatrix] = useState<number[][] | null>(null);
   const [embeddingsUrl, setEmbeddingsUrl] = useState<string | null>(null);
-  const [embedProgress, setEmbedProgress] = useState<{ done: number; total: number; errors: number } | null>(null);
+  const [embedProgress, setEmbedProgress] = useState<{ done: number; total: number; errors: number; skipped: number } | null>(null);
+  /** Final error count from the last completed embed run — used to show re-embed prompt. */
+  const [lastEmbedErrors, setLastEmbedErrors] = useState(0);
   const [embedding, setEmbedding] = useState(false);
   const [clustering, setClustering] = useState(false);
   const [clusterProgress, setClusterProgress] = useState(0);
@@ -77,7 +79,8 @@ export function EmbedPageClient() {
   const handleEmbed = useCallback(async () => {
     if (!apiKey || !uid || companies.length === 0) return;
     setEmbedding(true);
-    setEmbedProgress({ done: 0, total: companies.length, errors: 0 });
+    setEmbedProgress({ done: 0, total: companies.length, errors: 0, skipped: 0 });
+    setLastEmbedErrors(0);
     setClusterResult(null);
 
     try {
@@ -89,6 +92,9 @@ export function EmbedPageClient() {
           companies: companies.map((c) => ({ id: c.id, dimensions: c.dimensions })),
           weights: customWeights,
           dimPerField: 256,
+          // Pass existing matrix so already-embedded (non-zero) rows are skipped.
+          // This makes re-runs only process companies that previously failed.
+          existingMatrix: featureMatrix ?? null,
         }),
       });
 
@@ -98,17 +104,34 @@ export function EmbedPageClient() {
         return;
       }
 
-      const matrix: number[][] = [];
+      // Start with existing matrix — rows will be overwritten as new results arrive
+      const matrix: number[][] = featureMatrix ? [...featureMatrix] : [];
+      let rowIdx = 0;
+      let finalErrors = 0;
+      let finalSkipped = 0;
+
       const parser = createParser({
         onEvent: (event) => {
           const data = JSON.parse(event.data);
           if (data.type === "progress") {
-            setEmbedProgress({ done: data.done, total: data.total, errors: data.errors });
-            if (data.row) matrix.push(data.row);
+            setEmbedProgress({
+              done: data.done,
+              total: data.total,
+              errors: data.errors,
+              skipped: data.skipped ?? 0,
+            });
+            if (data.row) {
+              matrix[rowIdx] = data.row;
+              rowIdx++;
+            }
+            finalErrors = data.errors;
+            finalSkipped = data.skipped ?? 0;
+          } else if (data.type === "done") {
+            finalErrors = data.errors ?? finalErrors;
+            finalSkipped = data.skipped ?? finalSkipped;
           } else if (data.type === "error") {
             toast.error(`Embedding error: ${data.message}`);
           }
-          // "done" is now just a signal — matrix is already fully accumulated
         },
       });
 
@@ -125,14 +148,38 @@ export function EmbedPageClient() {
         const url = await saveEmbeddingsToStorage(uid!, matrix);
         setEmbeddingsUrl(url);
         setFeatureMatrix(matrix);
-        toast.success(`${matrix.length.toLocaleString()} companies embedded`);
+        setLastEmbedErrors(finalErrors);
+
+        const newlyEmbedded = matrix.length - finalSkipped;
+        if (finalErrors === 0) {
+          if (finalSkipped > 0) {
+            toast.success(`${newlyEmbedded.toLocaleString()} companies embedded (${finalSkipped.toLocaleString()} skipped — already done)`);
+          } else {
+            toast.success(`${matrix.length.toLocaleString()} companies embedded`);
+          }
+        } else {
+          const errorPct = Math.round((finalErrors / matrix.length) * 100);
+          if (errorPct >= 10) {
+            toast.error(
+              `${finalErrors.toLocaleString()} companies failed to embed (${errorPct}%). ` +
+              `Your Gemini quota may be exhausted. Click Re-embed to retry failures.`,
+              { duration: 8000 }
+            );
+          } else {
+            toast.warning(
+              `${finalErrors.toLocaleString()} companies failed to embed and were skipped. ` +
+              `Click Re-embed to retry.`,
+              { duration: 6000 }
+            );
+          }
+        }
       }
     } catch (err) {
       toast.error(String(err));
     } finally {
       setEmbedding(false);
     }
-  }, [apiKey, uid, companies, customWeights]);
+  }, [apiKey, uid, companies, customWeights, featureMatrix]);
 
   // ── Download embeddings ──────────────────────────────────────────────────
 
@@ -406,16 +453,34 @@ export function EmbedPageClient() {
         {embedding && embedProgress && (
           <div className="flex flex-col gap-1">
             <div className="flex justify-between text-xs text-muted-foreground">
-              <span>Embedding {embedProgress.done}/{embedProgress.total} companies…</span>
+              <span>
+                Embedding {embedProgress.done}/{embedProgress.total} companies…
+                {embedProgress.skipped > 0 && (
+                  <span className="ml-1 text-muted-foreground">({embedProgress.skipped} skipped)</span>
+                )}
+              </span>
               {embedProgress.errors > 0 && (
-                <span className="text-destructive">{embedProgress.errors} errors</span>
+                <span className="font-semibold text-destructive px-1.5 py-0.5 rounded bg-destructive/10">
+                  ⚠ {embedProgress.errors} failed
+                </span>
               )}
             </div>
             <Progress value={embedPct} className="h-1.5" />
           </div>
         )}
 
-        <div className="flex gap-2">
+        {/* Post-run error warning */}
+        {!embedding && lastEmbedErrors > 0 && featureMatrix && (
+          <div className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
+            <span className="mt-0.5 shrink-0">⚠</span>
+            <span>
+              <strong>{lastEmbedErrors.toLocaleString()} companies</strong> failed to embed (stored as zero vectors).
+              Clustering may be lower quality. Click <strong>Re-embed failed</strong> to retry only those companies.
+            </span>
+          </div>
+        )}
+
+        <div className="flex flex-wrap gap-2">
           <Button
             onClick={handleEmbed}
             disabled={!apiKey || embedding || companies.length === 0}
@@ -428,6 +493,18 @@ export function EmbedPageClient() {
             )}
             {hasEmbeddings ? "↺ Re-embed" : "Embed"}
           </Button>
+          {/* Show Re-embed failed button separately when errors exist — makes intent clear */}
+          {!embedding && lastEmbedErrors > 0 && featureMatrix && (
+            <Button
+              variant="outline"
+              onClick={handleEmbed}
+              disabled={!apiKey || embedding}
+              className="gap-1.5 border-amber-500/50 text-amber-700 dark:text-amber-400 hover:bg-amber-500/10"
+            >
+              <Cpu className="h-3.5 w-3.5" />
+              Re-embed failed ({lastEmbedErrors.toLocaleString()})
+            </Button>
+          )}
           {featureMatrix && !embedding && (
             <Button variant="outline" onClick={handleDownloadEmbeddings} className="gap-1.5">
               <Download className="h-3.5 w-3.5" />

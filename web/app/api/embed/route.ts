@@ -11,9 +11,11 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json();
-    const { companies, weights } = body as {
+    const { companies, weights, existingMatrix } = body as {
       companies: Array<{ id: string; dimensions: Record<string, string> }>;
       weights?: Record<string, number> | null;
+      /** Previously saved feature matrix. Non-zero rows are skipped (incremental re-embed). */
+      existingMatrix?: number[][] | null;
     };
 
     if (!companies?.length) {
@@ -28,7 +30,7 @@ export async function POST(req: NextRequest) {
           controller.enqueue(enc.encode(`data: ${JSON.stringify(data)}\n\n`));
 
         try {
-          for await (const event of embedAll(companies, apiKey, weights)) {
+          for await (const event of embedAll(companies, apiKey, weights, existingMatrix)) {
             send(event);
           }
         } catch (err) {

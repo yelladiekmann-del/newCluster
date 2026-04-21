@@ -183,18 +183,22 @@ export function AiChatPanel() {
     const db = getFirebaseDb();
     const batch = writeBatch(db);
     const { clusters: currentClusters, companies: currentCompanies, setClusters, setCompanies } = useSession.getState();
-    const { saveCompaniesToStorage } = await import("@/lib/firebase/companies-storage");
+    const { saveChangedCompaniesToFirestore } = await import("@/lib/firebase/companies-storage");
 
     if (action.type === "delete") {
       const target = currentClusters.find(c => c.name === action.clusterName);
       if (!target) { toast.error(`Cluster "${action.clusterName}" not found`); return; }
       batch.delete(doc(db, "sessions", uid, "clusters", target.id));
       await batch.commit();
-      const affected = currentCompanies.filter(c => c.clusterId === target.id).length;
+      // Only companies that were IN the deleted cluster need to be written
+      const changedIds = new Set(
+        currentCompanies.filter(c => c.clusterId === target.id).map(c => c.id)
+      );
+      const affected = changedIds.size;
       const updatedCompanies = currentCompanies.map(c => c.clusterId === target.id ? { ...c, clusterId: "outliers" } : c);
       setCompanies(updatedCompanies);
       setClusters(currentClusters.filter(c => c.id !== target.id).map(c => c.id === "outliers" ? { ...c, companyCount: c.companyCount + affected } : c));
-      await saveCompaniesToStorage(uid, updatedCompanies);
+      await saveChangedCompaniesToFirestore(uid, updatedCompanies, changedIds);
       toast.success(`Deleted "${action.clusterName}"`);
     }
 
@@ -217,10 +221,14 @@ export function AiChatPanel() {
         if (src) batch.delete(doc(db, "sessions", uid, "clusters", src.id));
       }
       await batch.commit();
+      // Only companies that were in source clusters need updating
+      const changedIds = new Set(
+        currentCompanies.filter(c => sourceIds.has(c.clusterId ?? "")).map(c => c.id)
+      );
       const updatedCompanies = currentCompanies.map(c => sourceIds.has(c.clusterId ?? "") ? { ...c, clusterId: newId } : c);
       setCompanies(updatedCompanies);
       setClusters([...currentClusters.filter(c => !sourceIds.has(c.id)), newCluster]);
-      await saveCompaniesToStorage(uid, updatedCompanies);
+      await saveChangedCompaniesToFirestore(uid, updatedCompanies, changedIds);
       toast.success(`Merged into "${action.newName}"`);
     }
 
@@ -241,7 +249,8 @@ export function AiChatPanel() {
       const updatedCompanies = currentCompanies.map(c => matchedIds.has(c.id) ? { ...c, clusterId: newId } : c);
       setCompanies(updatedCompanies);
       setClusters([...currentClusters, newCluster]);
-      await saveCompaniesToStorage(uid, updatedCompanies);
+      // Only write the matched companies (those reassigned to the new cluster)
+      await saveChangedCompaniesToFirestore(uid, updatedCompanies, matchedIds);
       toast.success(`Added cluster "${action.name}" with ${matchedCompanies.length} companies`);
     }
   }, [uid]);
@@ -254,11 +263,13 @@ export function AiChatPanel() {
     if (!uid || actions.length === 0) return;
     const db = getFirebaseDb();
     const batch = writeBatch(db);
-    const { saveCompaniesToStorage } = await import("@/lib/firebase/companies-storage");
+    const { saveChangedCompaniesToFirestore } = await import("@/lib/firebase/companies-storage");
 
     // Thread running state through all actions so each one sees the result of the previous
     let clusters = useSession.getState().clusters;
     let companies = useSession.getState().companies;
+    // Track which company IDs were touched across ALL actions — delta save at the end
+    const allChangedIds = new Set<string>();
 
     for (const action of actions) {
       if (action.type === "delete") {
@@ -266,6 +277,7 @@ export function AiChatPanel() {
         if (!target) continue;
         batch.delete(doc(db, "sessions", uid, "clusters", target.id));
         const affected = companies.filter(c => c.clusterId === target.id).length;
+        companies.filter(c => c.clusterId === target.id).forEach(c => allChangedIds.add(c.id));
         companies = companies.map(c => c.clusterId === target.id ? { ...c, clusterId: "outliers" } : c);
         clusters = clusters.filter(c => c.id !== target.id).map(c => c.id === "outliers" ? { ...c, companyCount: c.companyCount + affected } : c);
       }
@@ -288,6 +300,7 @@ export function AiChatPanel() {
         for (const src of sources) {
           if (src) batch.delete(doc(db, "sessions", uid, "clusters", src.id));
         }
+        companies.filter(c => sourceIds.has(c.clusterId ?? "")).forEach(c => allChangedIds.add(c.id));
         companies = companies.map(c => sourceIds.has(c.clusterId ?? "") ? { ...c, clusterId: newId } : c);
         clusters = [...clusters.filter(c => !sourceIds.has(c.id)), newCluster];
       }
@@ -305,17 +318,18 @@ export function AiChatPanel() {
           companyCount: matchedCompanies.length,
         };
         batch.set(doc(db, "sessions", uid, "clusters", newId), newCluster);
+        matchedIds.forEach(id => allChangedIds.add(id));
         companies = companies.map(c => matchedIds.has(c.id) ? { ...c, clusterId: newId } : c);
         clusters = [...clusters, newCluster];
       }
     }
 
-    // Single round-trip: one Firestore commit, one state update, one storage save
+    // Single round-trip: one Firestore commit, one state update, delta save for changed companies only
     await batch.commit();
     const { setClusters, setCompanies } = useSession.getState();
     setCompanies(companies);
     setClusters(clusters);
-    await saveCompaniesToStorage(uid, companies);
+    await saveChangedCompaniesToFirestore(uid, companies, allChangedIds);
     toast.success(`Applied ${actions.length} action${actions.length !== 1 ? "s" : ""}`);
   }, [uid]);
 

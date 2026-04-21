@@ -3,7 +3,9 @@
  *   1. Firestore subcollection: sessions/{uid}/companies/{i}  ← primary (always reliable)
  *   2. Firebase Storage:        sessions/{uid}/companies.csv   ← archive / legacy fallback
  *
- * Every save writes to both. Every load reads Firestore first (fast, always works).
+ * Every full save writes to both. Delta saves only write changed docs to Firestore
+ * (Storage archive is not updated — it's non-fatal legacy only).
+ * Every load reads Firestore first (fast, always works).
  * Storage is only used as a fallback for sessions that pre-date dual-write.
  */
 
@@ -19,29 +21,94 @@ const STORAGE_PATH = (uid: string) => `sessions/${uid}/companies.csv`;
 
 // ── Firestore subcollection (primary) ─────────────────────────────────────────
 
-const BATCH_SIZE = 500; // Firestore max writes per batch
+/**
+ * Reduced from 500 → 100.
+ * Firestore enforces a 10 MB per-batch write limit in addition to the 500-doc count limit.
+ * With large CompanyDocs (originalData + 8 AI dimension fields), each doc can be 10–25 KB.
+ * 500 × 20 KB = 10 MB → crashes at the limit. 100 × 20 KB = 2 MB → 5× safety margin.
+ */
+const BATCH_SIZE = 100;
 
-/** Write companies to Firestore subcollection sessions/{uid}/companies */
+/** Max batches committed in parallel. Balances Firestore throughput vs. connection pressure. */
+const PARALLEL_COMMITS = 5;
+
+/** Commit an array of CompanyDoc chunks to Firestore in parallel groups. */
+async function commitChunks(
+  uid: string,
+  chunks: { startIdx: number; docs: CompanyDoc[] }[]
+): Promise<void> {
+  const db = getFirebaseDb();
+  for (let g = 0; g < chunks.length; g += PARALLEL_COMMITS) {
+    const group = chunks.slice(g, g + PARALLEL_COMMITS);
+    await Promise.all(
+      group.map(async ({ startIdx, docs: chunkDocs }) => {
+        const batch = writeBatch(db);
+        chunkDocs.forEach((c, offset) => {
+          const safe = JSON.parse(JSON.stringify(c)) as CompanyDoc;
+          batch.set(doc(db, "sessions", uid, "companies", `r${startIdx + offset}`), safe);
+        });
+        await batch.commit();
+      })
+    );
+  }
+}
+
+/** Write ALL companies to Firestore subcollection sessions/{uid}/companies */
 export async function saveCompaniesToFirestore(
   uid: string,
   companies: CompanyDoc[]
 ): Promise<void> {
-  const db = getFirebaseDb();
   console.log("[saveCompanies] Firestore — writing", companies.length, "docs to sessions/", uid, "/companies");
-  // Chunk into batches of ≤ 500
+
+  const chunks: { startIdx: number; docs: CompanyDoc[] }[] = [];
   for (let start = 0; start < companies.length; start += BATCH_SIZE) {
-    const chunk = companies.slice(start, start + BATCH_SIZE);
-    const batch = writeBatch(db);
-    chunk.forEach((c, offset) => {
-      const idx = start + offset;
-      // Strip undefined values — Firestore rejects them
-      const safe = JSON.parse(JSON.stringify(c)) as CompanyDoc;
-      batch.set(doc(db, "sessions", uid, "companies", `r${idx}`), safe);
-    });
-    await batch.commit();
-    console.log("[saveCompanies] Firestore — batch committed", start, "–", start + chunk.length - 1);
+    chunks.push({ startIdx: start, docs: companies.slice(start, start + BATCH_SIZE) });
   }
+
+  await commitChunks(uid, chunks);
   console.log("[saveCompanies] Firestore — all", companies.length, "docs written ✓");
+}
+
+/**
+ * Write ONLY the changed companies to Firestore (delta save).
+ * Use this instead of saveCompaniesToFirestore when you know which specific
+ * company IDs were modified — avoids rewriting the entire collection on every edit.
+ *
+ * Callers: AiChatPanel, ResortPanel, CompanyListDialog
+ */
+export async function saveChangedCompaniesToFirestore(
+  uid: string,
+  companies: CompanyDoc[],
+  changedIds: Set<string>
+): Promise<void> {
+  if (changedIds.size === 0) return;
+
+  const changed = companies.filter((c) => changedIds.has(c.id));
+  console.log("[saveChangedCompanies] Firestore — writing", changed.length, "changed docs");
+
+  const chunks: { startIdx: number; docs: CompanyDoc[] }[] = [];
+  for (let i = 0; i < changed.length; i += BATCH_SIZE) {
+    const slice = changed.slice(i, i + BATCH_SIZE);
+    // Use rowIndex as the Firestore doc key (matches what saveCompaniesToFirestore writes)
+    chunks.push({ startIdx: -1, docs: slice }); // startIdx unused — we use rowIndex directly
+  }
+
+  const db = getFirebaseDb();
+  // For delta saves, write by rowIndex (not positional) to address the correct Firestore doc
+  for (let g = 0; g < chunks.length; g += PARALLEL_COMMITS) {
+    const group = chunks.slice(g, g + PARALLEL_COMMITS);
+    await Promise.all(
+      group.map(async ({ docs: chunkDocs }) => {
+        const batch = writeBatch(db);
+        chunkDocs.forEach((c) => {
+          const safe = JSON.parse(JSON.stringify(c)) as CompanyDoc;
+          batch.set(doc(db, "sessions", uid, "companies", `r${c.rowIndex}`), safe);
+        });
+        await batch.commit();
+      })
+    );
+  }
+  console.log("[saveChangedCompanies] ✓ wrote", changedIds.size, "changed companies");
 }
 
 // ── Storage (archive) ─────────────────────────────────────────────────────────

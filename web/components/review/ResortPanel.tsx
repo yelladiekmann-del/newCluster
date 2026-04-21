@@ -4,7 +4,7 @@ import { useState, useCallback } from "react";
 import { useSession } from "@/lib/store/session";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
-import { saveCompaniesToStorage } from "@/lib/firebase/companies-storage";
+import { saveChangedCompaniesToFirestore } from "@/lib/firebase/companies-storage";
 import { createParser } from "eventsource-parser";
 import { toast } from "sonner";
 import { Loader2, Shuffle, ChevronDown, ChevronUp } from "lucide-react";
@@ -131,7 +131,12 @@ export function ResortPanel() {
       });
 
       setCompanies(updatedCompanies);
-      await saveCompaniesToStorage(uid, updatedCompanies);
+      // Delta save — only write companies whose clusterId actually changed
+      const changedIds = new Set(switches.map((s) => {
+        const c = currentCompanies.find((co) => co.name === s.company);
+        return c?.id;
+      }).filter((id): id is string => id !== undefined));
+      await saveChangedCompaniesToFirestore(uid, updatedCompanies, changedIds);
 
       // Recompute cluster counts
       const countMap: Record<string, number> = {};
