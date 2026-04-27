@@ -145,11 +145,23 @@ async function getPerDimensionEmbedding(
   sem: Semaphore
 ): Promise<number[]> {
   const dims = DIMENSIONS.filter((d) => dimensions[d] !== undefined);
-  if (!dims.length) return new Array(DIM_PER_FIELD * DIMENSIONS.length).fill(0);
 
-  // Embed all dimensions in parallel (batched by DIM_CONCURRENCY)
-  // Errors propagate — do NOT catch here
-  const parts: number[][] = new Array(dims.length);
+  // CRITICAL: always allocate ALL 8 dimension slots, initialised to zero vectors.
+  // If a company is missing some dimensions (partial extraction), those slots stay
+  // as zero vectors. This guarantees every company produces exactly
+  // DIMENSIONS.length × DIM_PER_FIELD = 2048 values — a homogeneous matrix.
+  // Without this, companies with 7/8 dims produce 1792-dim rows, causing NumPy's
+  // "inhomogeneous shape" crash in the ML service when building the feature matrix.
+  const parts: number[][] = DIMENSIONS.map(() => new Array(DIM_PER_FIELD).fill(0));
+
+  if (!dims.length) {
+    // All dimensions missing — return the pre-allocated zero vector
+    return new Array(DIM_PER_FIELD * DIMENSIONS.length).fill(0);
+  }
+
+  // Embed present dimensions in parallel (batched by DIM_CONCURRENCY)
+  // Write into the slot matching the dimension's canonical position in DIMENSIONS.
+  // Errors propagate — do NOT catch here.
   for (let i = 0; i < dims.length; i += DIM_CONCURRENCY) {
     const chunk = dims.slice(i, i + DIM_CONCURRENCY);
     const vecs = await Promise.all(
@@ -157,7 +169,8 @@ async function getPerDimensionEmbedding(
     );
     chunk.forEach((d, j) => {
       const w = weights[d] ?? 1.0;
-      parts[i + j] = vecs[j].map((v) => v * w);
+      const dimIdx = DIMENSIONS.indexOf(d); // canonical slot — never shifts with missing dims
+      parts[dimIdx] = vecs[j].map((v) => v * w);
     });
   }
 
