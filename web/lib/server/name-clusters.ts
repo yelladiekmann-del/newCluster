@@ -72,7 +72,7 @@ Return ONLY a JSON object like:
 {"0": {"name": "Embedded Lending Infrastructure", "description": "Companies providing... They stand apart from..."}, "1": {"name": "...", "description": "..."}}
 No explanation, no markdown, just the JSON.`;
 
-  const raw = await callGeminiText({ apiKey, prompt, temperature: 0.25, model: "gemini-2.0-flash" });
+  const raw = await callGeminiText({ apiKey, prompt, temperature: 0.25, model: "gemini-2.5-flash" });
 
   const parsed =
     parseJsonObject<Record<string, { name?: string; description?: string }>>(raw) ??
@@ -109,7 +109,7 @@ Revise the names only where needed so the final set:
 
 Return ONLY a JSON object mapping cluster id strings to the final names.`;
 
-  return parseJsonObject<Record<string, string>>(await callGeminiText({ apiKey, prompt, temperature: 0.2, model: "gemini-2.0-flash" })) ?? currentNames;
+  return parseJsonObject<Record<string, string>>(await callGeminiText({ apiKey, prompt, temperature: 0.2, model: "gemini-2.5-flash" })) ?? currentNames;
 }
 
 export async function nameClustersFromSummaries(

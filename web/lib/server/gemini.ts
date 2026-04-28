@@ -14,12 +14,10 @@ interface CallGeminiTextOptions {
   temperature?: number;
   /**
    * Model to use. Defaults to gemini-2.5-flash.
-   * Use "gemini-2.0-flash" for faster structured-output tasks that don't need deep reasoning.
    */
   model?: string;
   /**
    * Set to 0 to disable gemini-2.5-flash thinking mode (faster for structured JSON tasks).
-   * Only supported on gemini-2.5-* models — omit when using gemini-2.0-flash.
    */
   thinkingBudget?: number;
   tools?: Array<Record<string, unknown>>;
