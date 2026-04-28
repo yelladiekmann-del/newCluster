@@ -49,30 +49,45 @@ export async function callGeminiText({
             : []),
         ];
 
-  const res = await fetch(`${GEN_BASE}/${model}:generateContent?key=${apiKey}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      ...(systemInstruction
-        ? { system_instruction: { parts: [{ text: systemInstruction }] } }
-        : {}),
-      contents,
-      ...(tools ? { tools } : {}),
-      generationConfig: {
-        temperature,
-        ...(thinkingBudget !== undefined ? { thinkingConfig: { thinkingBudget } } : {}),
-      },
-    }),
-    signal: AbortSignal.timeout(60_000),
+  const body = JSON.stringify({
+    ...(systemInstruction
+      ? { system_instruction: { parts: [{ text: systemInstruction }] } }
+      : {}),
+    contents,
+    ...(tools ? { tools } : {}),
+    generationConfig: {
+      temperature,
+      ...(thinkingBudget !== undefined ? { thinkingConfig: { thinkingBudget } } : {}),
+    },
   });
 
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(`Gemini error ${res.status}${text ? `: ${text.slice(0, 200)}` : ""}`);
+  const MAX_ATTEMPTS = 5;
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+    const res = await fetch(`${GEN_BASE}/${model}:generateContent?key=${apiKey}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body,
+      signal: AbortSignal.timeout(60_000),
+    });
+
+    if (res.status === 429) {
+      if (attempt < MAX_ATTEMPTS - 1) {
+        // Exponential backoff: 2s, 4s, 8s, 16s
+        await new Promise((r) => setTimeout(r, (2 ** (attempt + 1)) * 1000 + Math.random() * 500));
+        continue;
+      }
+    }
+
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      throw new Error(`Gemini error ${res.status}${text ? `: ${text.slice(0, 200)}` : ""}`);
+    }
+
+    const data = await res.json();
+    return data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
   }
 
-  const data = await res.json();
-  return data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+  throw new Error("Gemini API rate limit exceeded after 5 retries. Please wait a moment and try again.");
 }
 
 export function repairJson(raw: string): string {
