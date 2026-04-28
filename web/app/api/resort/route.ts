@@ -2,6 +2,7 @@ import type { NextRequest } from "next/server";
 
 import { buildClusterSummaries } from "@/lib/server/cluster-summaries";
 import { extractFirstJsonObject, parseJsonObject } from "@/lib/server/gemini";
+import { getGeminiKey } from "@/lib/server/gemini-key";
 
 export const maxDuration = 300;
 
@@ -199,8 +200,7 @@ Omit "reasons" entirely if all assignments are clear. No markdown, just the JSON
 }
 
 export async function POST(req: NextRequest) {
-  const apiKey = req.headers.get("x-gemini-key");
-  if (!apiKey) return Response.json({ error: "Missing x-gemini-key" }, { status: 401 });
+  const apiKey = getGeminiKey();
 
   try {
     const body = await req.json();

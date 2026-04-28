@@ -18,7 +18,7 @@ interface SortReport {
 }
 
 export function ResortPanel() {
-  const { uid, apiKey, companies, clusters } = useSession();
+  const { uid, companies, clusters } = useSession();
   const descCol = useSession((state) => state.descCol);
 
   const [includeOutliers, setIncludeOutliers] = useState(false);
@@ -36,7 +36,7 @@ export function ResortPanel() {
   const clusterIdByName = Object.fromEntries(clusters.map((c) => [c.name, c.id]));
 
   const handleSort = useCallback(async () => {
-    if (!apiKey || !uid) return;
+    if (!uid) return;
     setSorting(true);
     setProgress(null);
     setReport(null);
@@ -44,7 +44,7 @@ export function ResortPanel() {
     try {
       const res = await fetch("/api/resort", {
         method: "POST",
-        headers: { "Content-Type": "application/json", "x-gemini-key": apiKey },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           sessionId: uid,
           companies: companies.map((c) => ({
@@ -163,7 +163,7 @@ export function ResortPanel() {
     } finally {
       setSorting(false);
     }
-  }, [apiKey, uid, companies, clusters, includeOutliers, clusterNameById, clusterIdByName, descCol]);
+  }, [uid, companies, clusters, includeOutliers, clusterNameById, clusterIdByName, descCol]);
 
   const progressPct = progress ? Math.round((progress.done / progress.total) * 100) : 0;
   const nonOutlierClusters = clusters.filter((c) => !c.isOutliers);
@@ -201,7 +201,7 @@ export function ResortPanel() {
           <Button
             size="sm"
             onClick={handleSort}
-            disabled={!apiKey || sorting || nonOutlierClusters.length < 2}
+            disabled={sorting || nonOutlierClusters.length < 2}
             className="gap-1.5"
           >
             {sorting ? (

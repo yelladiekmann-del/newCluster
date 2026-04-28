@@ -1,13 +1,11 @@
 import type { NextRequest } from "next/server";
 import { extractAllDimensions, type CompanyRow } from "@/lib/gemini/extract-dimensions";
+import { getGeminiKey } from "@/lib/server/gemini-key";
 
 export const maxDuration = 300;
 
 export async function POST(req: NextRequest) {
-  const apiKey = req.headers.get("x-gemini-key");
-  if (!apiKey) {
-    return Response.json({ error: "Missing x-gemini-key header" }, { status: 401 });
-  }
+  const apiKey = getGeminiKey();
 
   const { rows } = (await req.json()) as { rows: CompanyRow[] };
   if (!Array.isArray(rows) || rows.length === 0) {

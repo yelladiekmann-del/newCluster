@@ -25,7 +25,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 export function EmbedPageClient() {
   const router = useRouter();
   const {
-    uid, apiKey,
+    uid,
     companies, setCompanies, setClusters, updateCompany,
     companyCol, customWeights, clusterParams,
     setClusterMetrics, setClustersConfirmed, clustersConfirmed,
@@ -77,7 +77,7 @@ export function EmbedPageClient() {
   // ── Embed ────────────────────────────────────────────────────────────────
 
   const handleEmbed = useCallback(async () => {
-    if (!apiKey || !uid || companies.length === 0) return;
+    if (!uid || companies.length === 0) return;
     setEmbedding(true);
     setEmbedProgress({ done: 0, total: companies.length, errors: 0, skipped: 0 });
     setLastEmbedErrors(0);
@@ -86,7 +86,7 @@ export function EmbedPageClient() {
     try {
       const res = await fetch("/api/embed", {
         method: "POST",
-        headers: { "Content-Type": "application/json", "x-gemini-key": apiKey },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           sessionId: uid,
           companies: companies.map((c) => ({ id: c.id, dimensions: c.dimensions })),
@@ -179,7 +179,7 @@ export function EmbedPageClient() {
     } finally {
       setEmbedding(false);
     }
-  }, [apiKey, uid, companies, customWeights, featureMatrix]);
+  }, [uid, companies, customWeights, featureMatrix]);
 
   // ── Download embeddings ──────────────────────────────────────────────────
 
@@ -316,7 +316,7 @@ export function EmbedPageClient() {
   // ── Confirm & name clusters ──────────────────────────────────────────────
 
   const handleConfirm = useCallback(async () => {
-    if (!apiKey || !uid || !clusterResult) return;
+    if (!uid || !clusterResult) return;
     setConfirming(true);
 
     try {
@@ -334,7 +334,7 @@ export function EmbedPageClient() {
       // Name + describe via Gemini
       const namingRes = await fetch("/api/name-clusters", {
         method: "POST",
-        headers: { "Content-Type": "application/json", "x-gemini-key": apiKey },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ uid }),
       });
       if (!namingRes.ok) {
@@ -405,7 +405,7 @@ export function EmbedPageClient() {
     } finally {
       setConfirming(false);
     }
-  }, [apiKey, uid, clusterResult, companies, setClusters, setClustersConfirmed, pipelineStep, setPipelineStep, router]);
+  }, [uid, clusterResult, companies, setClusters, setClustersConfirmed, pipelineStep, setPipelineStep, router]);
 
   const embedPct = embedProgress
     ? Math.round((embedProgress.done / embedProgress.total) * 100)
@@ -483,7 +483,7 @@ export function EmbedPageClient() {
         <div className="flex flex-wrap gap-2">
           <Button
             onClick={handleEmbed}
-            disabled={!apiKey || embedding || companies.length === 0}
+            disabled={embedding || companies.length === 0}
             className="gap-1.5"
           >
             {embedding ? (
@@ -498,7 +498,7 @@ export function EmbedPageClient() {
             <Button
               variant="outline"
               onClick={handleEmbed}
-              disabled={!apiKey || embedding}
+              disabled={embedding}
               className="gap-1.5 border-amber-500/50 text-amber-700 dark:text-amber-400 hover:bg-amber-500/10"
             >
               <Cpu className="h-3.5 w-3.5" />
@@ -573,7 +573,7 @@ export function EmbedPageClient() {
         {hasClusters ? (
           <Button
             onClick={handleConfirm}
-            disabled={!apiKey || confirming}
+            disabled={confirming}
             className="gap-2"
           >
             {confirming ? (

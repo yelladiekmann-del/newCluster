@@ -4,16 +4,14 @@ import type { ChatMessage } from "@/types";
 import { normalizeAndValidateActions } from "@/lib/server/action-validation";
 import { buildChatSystemPrompt, buildStructuredReviewUserMessage } from "@/lib/server/chat-prompts";
 import { callGeminiText } from "@/lib/server/gemini";
+import { getGeminiKey } from "@/lib/server/gemini-key";
 import { buildReviewContext } from "@/lib/server/review-context";
 import { loadSessionSnapshot } from "@/lib/server/session-data";
 
 export const maxDuration = 120;
 
 export async function POST(req: NextRequest) {
-  const apiKey = req.headers.get("x-gemini-key");
-  if (!apiKey) {
-    return Response.json({ error: "Missing x-gemini-key header" }, { status: 401 });
-  }
+  const apiKey = getGeminiKey();
 
   const {
     uid,

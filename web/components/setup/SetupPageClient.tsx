@@ -3,7 +3,6 @@
 import { useState, useCallback } from "react";
 import { toast } from "sonner";
 import { useSession } from "@/lib/store/session";
-import { ApiKeyStep } from "./ApiKeyStep";
 import { CompanyDataStep } from "./CompanyDataStep";
 import { EmbeddingsUploadStep } from "./EmbeddingsUploadStep";
 import { Button } from "@/components/ui/button";
@@ -71,12 +70,9 @@ export function SetupPageClient() {
       <div>
         <h1 className="text-2xl font-bold text-foreground">Setup</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Configure your API key, upload company data, and extract AI dimensions.
+          Upload company data and extract AI dimensions.
         </p>
       </div>
-
-      {/* API Key */}
-      <ApiKeyStep />
 
       {/* Company Data + inline dimension extraction */}
       <CompanyDataStep />

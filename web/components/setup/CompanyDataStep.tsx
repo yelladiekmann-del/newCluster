@@ -25,7 +25,6 @@ export function CompanyDataStep() {
   const {
     authUser,
     uid,
-    apiKey,
     companies,
     companyCol,
     descCol,
@@ -57,10 +56,9 @@ export function CompanyDataStep() {
   }, [uid]);
 
   const runExtraction = useCallback(async (companiesSnap = companies) => {
-    const currentApiKey = useSession.getState().apiKey;
     const currentDescCol = useSession.getState().descCol;
     const currentUid = useSession.getState().uid;
-    if (!currentApiKey || !currentUid || !currentDescCol || companiesSnap.length === 0) return;
+    if (!currentUid || !currentDescCol || companiesSnap.length === 0) return;
 
     setExtracting(true);
     setExtractProgress({ done: 0, total: companiesSnap.length, errors: 0 });
@@ -73,7 +71,7 @@ export function CompanyDataStep() {
     try {
       const res = await fetch("/api/extract-dimensions", {
         method: "POST",
-        headers: { "Content-Type": "application/json", "x-gemini-key": currentApiKey },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ rows }),
       });
 
@@ -207,7 +205,7 @@ export function CompanyDataStep() {
           });
           toast.success(`${rows.length.toLocaleString()} companies loaded`);
 
-          if (!dimsAlreadyPresent && dCol && useSession.getState().apiKey && !autoExtractTriggered.current) {
+          if (!dimsAlreadyPresent && dCol && !autoExtractTriggered.current) {
             autoExtractTriggered.current = true;
             runExtraction(companyDocs);
           }
@@ -324,7 +322,7 @@ export function CompanyDataStep() {
                   )}
                   <Button
                     size="sm"
-                    disabled={!apiKey || extracting || companies.length === 0}
+                    disabled={extracting || companies.length === 0}
                     onClick={() => runExtraction()}
                     className="gap-1.5 h-7 text-xs"
                   >
@@ -352,9 +350,7 @@ export function CompanyDataStep() {
 
               {!extracting && !hasDimensions && (
                 <p className="text-xs text-muted-foreground">
-                  {!apiKey
-                    ? "Enter your API key above to enable AI dimension extraction."
-                    : !descCol
+                  {!descCol
                     ? "No description column detected — extraction requires a description."
                     : "Extraction will start automatically after upload."}
                 </p>

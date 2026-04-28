@@ -2,15 +2,13 @@ import type { NextRequest } from "next/server";
 
 import { adminDb } from "@/lib/firebase/admin";
 import { fetchMarketContext } from "@/lib/server/market-context";
+import { getGeminiKey } from "@/lib/server/gemini-key";
 import { loadSessionSnapshot } from "@/lib/server/session-data";
 
 export const maxDuration = 120;
 
 export async function POST(req: NextRequest) {
-  const apiKey = req.headers.get("x-gemini-key");
-  if (!apiKey) {
-    return Response.json({ error: "Missing x-gemini-key header" }, { status: 401 });
-  }
+  const apiKey = getGeminiKey();
 
   const { uid, analysisContext } = (await req.json()) as {
     uid?: string;

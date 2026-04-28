@@ -20,7 +20,7 @@ import { createParser } from "eventsource-parser";
 const DIM_PILLS = DIMENSIONS;
 
 export function DimensionExtractionStep() {
-  const { uid, apiKey, companies, descCol, companyCol, setCompanies, pipelineStep, setPipelineStep } =
+  const { uid, companies, descCol, companyCol, setCompanies, pipelineStep, setPipelineStep } =
     useSession();
 
   const hasDimensions =
@@ -34,7 +34,7 @@ export function DimensionExtractionStep() {
   const [running, setRunning] = useState(false);
 
   const run = useCallback(async () => {
-    if (!apiKey || !uid || !descCol) return;
+    if (!uid || !descCol) return;
     setRunning(true);
     setProgress({ done: 0, total: companies.length, errors: 0 });
 
@@ -46,10 +46,7 @@ export function DimensionExtractionStep() {
     try {
       const res = await fetch("/api/extract-dimensions", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-gemini-key": apiKey,
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ rows }),
       });
 
@@ -113,7 +110,7 @@ export function DimensionExtractionStep() {
     } finally {
       setRunning(false);
     }
-  }, [apiKey, uid, descCol, companies, setCompanies, pipelineStep, setPipelineStep]);
+  }, [uid, descCol, companies, setCompanies, pipelineStep, setPipelineStep]);
 
   const downloadEnriched = useCallback(() => {
     const rows = companies.map((c) => ({
@@ -169,7 +166,7 @@ export function DimensionExtractionStep() {
         <div className="flex gap-2 flex-wrap">
           <Button
             size="sm"
-            disabled={!apiKey || running || companies.length === 0}
+            disabled={running || companies.length === 0}
             onClick={run}
             className="gap-1.5"
           >
@@ -194,11 +191,6 @@ export function DimensionExtractionStep() {
           )}
         </div>
 
-        {!apiKey && (
-          <p className="text-xs text-muted-foreground">
-            Add your Gemini API key above to enable dimension extraction.
-          </p>
-        )}
       </CardContent>
     </Card>
   );

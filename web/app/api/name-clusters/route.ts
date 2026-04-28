@@ -4,14 +4,12 @@ import type { ClusterDoc } from "@/types";
 import { buildClusterSummaries } from "@/lib/server/cluster-summaries";
 import { nameClustersFromSummaries } from "@/lib/server/name-clusters";
 import { loadSessionSnapshot } from "@/lib/server/session-data";
+import { getGeminiKey } from "@/lib/server/gemini-key";
 
 export const maxDuration = 120;
 
 export async function POST(req: NextRequest) {
-  const apiKey = req.headers.get("x-gemini-key");
-  if (!apiKey) {
-    return Response.json({ error: "Missing x-gemini-key header" }, { status: 401 });
-  }
+  const apiKey = getGeminiKey();
 
   const { uid } = (await req.json()) as { uid?: string };
 

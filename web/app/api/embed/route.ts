@@ -1,15 +1,12 @@
 import type { NextRequest } from "next/server";
 import { embedAll } from "@/lib/gemini/embed";
+import { getGeminiKey } from "@/lib/server/gemini-key";
 
 export const maxDuration = 300;
 
 export async function POST(req: NextRequest) {
   try {
-    const apiKey = req.headers.get("x-gemini-key");
-    if (!apiKey) {
-      return Response.json({ error: "Missing x-gemini-key header" }, { status: 401 });
-    }
-
+    const apiKey = getGeminiKey();
     const body = await req.json();
     const { companies, weights, existingMatrix } = body as {
       companies: Array<{ id: string; dimensions: Record<string, string> }>;

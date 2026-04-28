@@ -59,7 +59,7 @@ function expandPrompt(p: string): string {
 
 export function AiChatPanel() {
   const {
-    uid, apiKey, clusters, companies,
+    uid, clusters, companies,
     chatMessages, addChatMessage,
     chatOnboarded, setChatOnboarded,
     setChatAnalysisContext,
@@ -81,12 +81,12 @@ export function AiChatPanel() {
   // ── Onboarding ──────────────────────────────────────────────────────────
 
   const handleStartAnalysis = useCallback(async () => {
-    if (!apiKey || !uid) return;
+    if (!uid) return;
     setLoading(true);
     try {
       const res = await fetch("/api/chat/context", {
         method: "POST",
-        headers: { "Content-Type": "application/json", "x-gemini-key": apiKey },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           uid,
           analysisContext: contextInput,
@@ -113,13 +113,13 @@ export function AiChatPanel() {
     } finally {
       setLoading(false);
     }
-  }, [apiKey, uid, contextInput, companies, clusters, setChatMarketContextRaw, setChatAnalysisContext, setChatOnboarded, addChatMessage]);
+  }, [uid, contextInput, companies, clusters, setChatMarketContextRaw, setChatAnalysisContext, setChatOnboarded, addChatMessage]);
 
   // ── Send message ─────────────────────────────────────────────────────────
 
   const handleSend = useCallback(async (messageText?: string, displayOverride?: string, mode: "chat" | "review" = "chat") => {
     const text = messageText ?? input.trim();
-    if (!text || !apiKey || loading) return;
+    if (!text || loading) return;
     setInput("");
     setLoading(true);
 
@@ -138,7 +138,7 @@ export function AiChatPanel() {
     try {
       const res = await fetch("/api/chat", {
         method: "POST",
-        headers: { "Content-Type": "application/json", "x-gemini-key": apiKey },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           uid,
           history: chatMessages,
@@ -170,7 +170,7 @@ export function AiChatPanel() {
     } finally {
       setLoading(false);
     }
-  }, [apiKey, uid, input, loading, chatMessages, addChatMessage]);
+  }, [uid, input, loading, chatMessages, addChatMessage]);
 
   // ── Apply actions ────────────────────────────────────────────────────────
 
@@ -355,13 +355,12 @@ export function AiChatPanel() {
         />
         <Button
           onClick={handleStartAnalysis}
-          disabled={loading || !apiKey}
+          disabled={loading}
           className="gap-1.5 self-start"
         >
           {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
           Start analysis →
         </Button>
-        {!apiKey && <p className="text-xs text-destructive">API key required</p>}
       </div>
     );
   }
