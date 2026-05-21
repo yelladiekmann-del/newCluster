@@ -67,13 +67,16 @@ export async function loadSessionSnapshot(uid: string): Promise<SessionSnapshot>
   }
 
   const session = sessionSnap.data() as SessionDoc;
-  const companyCol = session.companyCol ?? "name";
-  const companies = await loadCompaniesFromStorage(uid, companyCol);
+
+  // Firestore subcollection is always the source of truth (structured, fast Admin SDK read).
+  // Fall back to Storage CSV only for legacy sessions that pre-date the dual-write migration.
+  const firestoreCompanies = await loadCompaniesFromFirestore(uid);
+  const companies =
+    firestoreCompanies.length > 0
+      ? firestoreCompanies
+      : await loadCompaniesFromStorage(uid, session.companyCol ?? "name");
+
   const clusters = await loadClusters(uid);
 
-  return {
-    session,
-    companies: companies.length > 0 ? companies : await loadCompaniesFromFirestore(uid),
-    clusters,
-  };
+  return { session, companies, clusters };
 }

@@ -376,8 +376,8 @@ export function EmbedPageClient() {
       setClusters(newClusters);
       setClustersConfirmed(true);
 
-      // Persist clusterId/umapX/umapY to Storage CSV
-      await saveCompaniesToStorage(uid, useSession.getState().companies);
+      // No second save needed — companies (with clusterId/umapX/Y) were already
+      // written to Firestore + Storage in the first saveCompaniesToStorage call above.
 
       const nextStep = Math.max(pipelineStep, 3) as 3;
       setPipelineStep(nextStep);

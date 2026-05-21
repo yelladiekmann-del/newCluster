@@ -54,8 +54,9 @@ async function commitChunks(
       batches.slice(g, g + PARALLEL_COMMITS).map(async (batch) => {
         const fb = writeBatch(db);
         batch.forEach(({ key, doc: c }) => {
-          const safe = JSON.parse(JSON.stringify(c)) as CompanyDoc;
-          fb.set(doc(db, "sessions", uid, "companies", key), safe);
+          // structuredClone strips undefined values (Firestore rejects them) without
+          // the overhead of a JSON serialise + parse round-trip
+          fb.set(doc(db, "sessions", uid, "companies", key), structuredClone(c) as CompanyDoc);
         });
         await fb.commit();
       })

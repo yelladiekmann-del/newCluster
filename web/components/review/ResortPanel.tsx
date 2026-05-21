@@ -50,9 +50,16 @@ export function ResortPanel() {
           companies: companies.map((c) => ({
             id: c.id,
             name: c.name,
-            dimensions: c.dimensions,
+            // Truncate dimension values to 300 chars — the server further truncates
+            // to 600 when building the prompt, so anything beyond 300 is wasted bandwidth.
+            // At 10k companies this cuts the POST body from ~20 MB to ~8 MB.
+            dimensions: Object.fromEntries(
+              Object.entries(c.dimensions).map(([k, v]) => [k, v.slice(0, 300)])
+            ),
             clusterId: c.clusterId ?? "outliers",
-            originalDesc: descCol ? String(c.originalData?.[descCol] ?? "") : undefined,
+            originalDesc: descCol
+              ? String(c.originalData?.[descCol] ?? "").slice(0, 300)
+              : undefined,
           })),
           clusters: clusters.map((c) => ({
             id: c.id,
