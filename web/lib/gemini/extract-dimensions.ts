@@ -10,7 +10,7 @@ import { DIMENSIONS } from "@/types";
 const GEN_URL =
   "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
 
-const BATCH_SIZE = 20;
+const BATCH_SIZE = 30;
 
 export interface CompanyRow {
   name: string;
@@ -93,7 +93,12 @@ async function callGemini(
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: { temperature: 0.1 },
+        generationConfig: {
+          temperature: 0.1,
+          // Disable thinking — extraction is slot-filling, not reasoning.
+          // thinking tokens add 15–25s latency per batch with zero quality gain.
+          thinkingConfig: { thinkingBudget: 0 },
+        },
       }),
       signal: AbortSignal.timeout(60_000),
     });
@@ -172,7 +177,7 @@ export interface ExtractionProgress {
   errors: number;
 }
 
-const MAX_CONCURRENT_BATCHES = 8;
+const MAX_CONCURRENT_BATCHES = 20;
 
 /**
  * Extract dimensions for all rows, calling `onProgress` after each batch.

@@ -12,8 +12,7 @@ import { UmapScatter } from "./UmapScatter";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
-import { saveAs } from "file-saver";
-import { ArrowLeft, ArrowRight, Cpu, Download, GitBranch, Loader2, Sparkles } from "lucide-react";
+import { ArrowLeft, ArrowRight, Cpu, GitBranch, Loader2, Sparkles } from "lucide-react";
 import { createParser } from "eventsource-parser";
 import { doc, writeBatch } from "firebase/firestore";
 import { getFirebaseDb } from "@/lib/firebase/client";
@@ -29,7 +28,7 @@ export function EmbedPageClient() {
     companies, setCompanies, setClusters,
     companyCol, customWeights, clusterParams,
     setClusterMetrics, setClustersConfirmed, clustersConfirmed,
-    embeddingsStoragePath, npzPreloaded,
+    embeddingsStoragePath, setEmbeddingsStoragePath, npzPreloaded,
     setPipelineStep, pipelineStep,
   } = useSession();
 
@@ -51,8 +50,6 @@ export function EmbedPageClient() {
   useEffect(() => { loadData(); }, [uid]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Local state — not persisted until confirmed
-  const [featureMatrix, setFeatureMatrix] = useState<number[][] | null>(null);
-  const [embeddingsUrl, setEmbeddingsUrl] = useState<string | null>(null);
   const [embedProgress, setEmbedProgress] = useState<{ done: number; total: number; errors: number; skipped: number } | null>(null);
   /** Final error count from the last completed embed run — used to show re-embed prompt. */
   const [lastEmbedErrors, setLastEmbedErrors] = useState(0);
@@ -71,7 +68,7 @@ export function EmbedPageClient() {
     nOutliers: number;
   } | null>(null);
 
-  const hasEmbeddings = !!featureMatrix || !!embeddingsUrl || npzPreloaded;
+  const hasEmbeddings = !!embeddingsStoragePath || npzPreloaded;
   const hasClusters = clusterResult !== null;
 
   // ── Embed ────────────────────────────────────────────────────────────────
@@ -91,10 +88,8 @@ export function EmbedPageClient() {
           sessionId: uid,
           companies: companies.map((c) => ({ id: c.id, dimensions: c.dimensions })),
           weights: customWeights,
-          dimPerField: 256,
-          // Pass existing matrix so already-embedded (non-zero) rows are skipped.
-          // This makes re-runs only process companies that previously failed.
-          existingMatrix: featureMatrix ?? null,
+          // Pass existing storage path so the server can download and skip already-embedded rows
+          embeddingsStoragePath: embeddingsStoragePath ?? null,
         }),
       });
 
@@ -104,11 +99,9 @@ export function EmbedPageClient() {
         return;
       }
 
-      // Start with existing matrix — rows will be overwritten as new results arrive
-      const matrix: number[][] = featureMatrix ? [...featureMatrix] : [];
-      let rowIdx = 0;
       let finalErrors = 0;
       let finalSkipped = 0;
+      let finalTotal = companies.length;
 
       const parser = createParser({
         onEvent: (event) => {
@@ -120,15 +113,19 @@ export function EmbedPageClient() {
               errors: data.errors,
               skipped: data.skipped ?? 0,
             });
-            if (data.row) {
-              matrix[rowIdx] = data.row;
-              rowIdx++;
-            }
             finalErrors = data.errors;
             finalSkipped = data.skipped ?? 0;
+            finalTotal = data.total;
           } else if (data.type === "done") {
             finalErrors = data.errors ?? finalErrors;
             finalSkipped = data.skipped ?? finalSkipped;
+            // Server uploads matrix to Storage and returns the path
+            if (data.embeddingsStoragePath) {
+              setEmbeddingsStoragePath(data.embeddingsStoragePath);
+              persistSession(uid, { embeddingsStoragePath: data.embeddingsStoragePath }).catch(
+                (err) => console.error("[embed] persistSession failed:", err)
+              );
+            }
           } else if (data.type === "error") {
             toast.error(`Embedding error: ${data.message}`);
           }
@@ -143,35 +140,29 @@ export function EmbedPageClient() {
         parser.feed(decoder.decode(value, { stream: true }));
       }
 
-      if (matrix.length > 0) {
-        const { saveEmbeddingsToStorage } = await import("@/lib/firebase/companies-storage");
-        const url = await saveEmbeddingsToStorage(uid!, matrix);
-        setEmbeddingsUrl(url);
-        setFeatureMatrix(matrix);
-        setLastEmbedErrors(finalErrors);
+      setLastEmbedErrors(finalErrors);
+      const newlyEmbedded = finalTotal - finalSkipped;
 
-        const newlyEmbedded = matrix.length - finalSkipped;
-        if (finalErrors === 0) {
-          if (finalSkipped > 0) {
-            toast.success(`${newlyEmbedded.toLocaleString()} companies embedded (${finalSkipped.toLocaleString()} skipped — already done)`);
-          } else {
-            toast.success(`${matrix.length.toLocaleString()} companies embedded`);
-          }
+      if (finalErrors === 0) {
+        if (finalSkipped > 0) {
+          toast.success(`${newlyEmbedded.toLocaleString()} companies embedded (${finalSkipped.toLocaleString()} skipped — already done)`);
         } else {
-          const errorPct = Math.round((finalErrors / matrix.length) * 100);
-          if (errorPct >= 10) {
-            toast.error(
-              `${finalErrors.toLocaleString()} companies failed to embed (${errorPct}%). ` +
-              `Your Gemini quota may be exhausted. Click Re-embed to retry failures.`,
-              { duration: 8000 }
-            );
-          } else {
-            toast.warning(
-              `${finalErrors.toLocaleString()} companies failed to embed and were skipped. ` +
-              `Click Re-embed to retry.`,
-              { duration: 6000 }
-            );
-          }
+          toast.success(`${finalTotal.toLocaleString()} companies embedded`);
+        }
+      } else {
+        const errorPct = Math.round((finalErrors / finalTotal) * 100);
+        if (errorPct >= 10) {
+          toast.error(
+            `${finalErrors.toLocaleString()} companies failed to embed (${errorPct}%). ` +
+            `Your Gemini quota may be exhausted. Click Re-embed to retry failures.`,
+            { duration: 8000 }
+          );
+        } else {
+          toast.warning(
+            `${finalErrors.toLocaleString()} companies failed to embed and were skipped. ` +
+            `Click Re-embed to retry.`,
+            { duration: 6000 }
+          );
         }
       }
     } catch (err) {
@@ -179,26 +170,12 @@ export function EmbedPageClient() {
     } finally {
       setEmbedding(false);
     }
-  }, [uid, companies, customWeights, featureMatrix]);
-
-  // ── Download embeddings ──────────────────────────────────────────────────
-
-  const handleDownloadEmbeddings = useCallback(() => {
-    if (!featureMatrix) return;
-    const payload = {
-      companies: companies.map((c) => ({ id: c.id, name: c.name })),
-      featureMatrix,
-    };
-    saveAs(
-      new Blob([JSON.stringify(payload)], { type: "application/json" }),
-      "embeddings.json"
-    );
-  }, [featureMatrix, companies]);
+  }, [uid, companies, customWeights, embeddingsStoragePath, setEmbeddingsStoragePath]);
 
   // ── Cluster ──────────────────────────────────────────────────────────────
 
   const handleCluster = useCallback(async () => {
-    if (!uid || (!embeddingsUrl && !embeddingsStoragePath)) return;
+    if (!uid || !embeddingsStoragePath) return;
     setClustering(true);
     setClusterProgress(0);
 
@@ -217,8 +194,7 @@ export function EmbedPageClient() {
         body: JSON.stringify({
           sessionId: uid,
           companyIds: companies.map((c) => c.id),
-          embeddingsUrl: embeddingsUrl ?? undefined,
-          embeddingsStoragePath: !embeddingsUrl && embeddingsStoragePath ? embeddingsStoragePath : undefined,
+          embeddingsStoragePath,
           minClusterSize: clusterParams.minClusterSize,
           minSamples: clusterParams.minSamples,
           clusterEpsilon: clusterParams.clusterEpsilon,
@@ -289,7 +265,7 @@ export function EmbedPageClient() {
       if (clusterTimerRef.current) clearInterval(clusterTimerRef.current);
       setClustering(false);
     }
-  }, [uid, embeddingsUrl, embeddingsStoragePath, companies, clusterParams, setClusterMetrics, setCompanies]);
+  }, [uid, embeddingsStoragePath, companies, clusterParams, setClusterMetrics, setCompanies]);
 
   // ── Back navigation ─────────────────────────────────────────────────────
 
@@ -468,7 +444,7 @@ export function EmbedPageClient() {
         )}
 
         {/* Post-run error warning */}
-        {!embedding && lastEmbedErrors > 0 && featureMatrix && (
+        {!embedding && lastEmbedErrors > 0 && embeddingsStoragePath && (
           <div className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
             <span className="mt-0.5 shrink-0">⚠</span>
             <span>
@@ -492,7 +468,7 @@ export function EmbedPageClient() {
             {hasEmbeddings ? "↺ Re-embed" : "Embed"}
           </Button>
           {/* Show Re-embed failed button separately when errors exist — makes intent clear */}
-          {!embedding && lastEmbedErrors > 0 && featureMatrix && (
+          {!embedding && lastEmbedErrors > 0 && embeddingsStoragePath && (
             <Button
               variant="outline"
               onClick={handleEmbed}
@@ -501,12 +477,6 @@ export function EmbedPageClient() {
             >
               <Cpu className="h-3.5 w-3.5" />
               Re-embed failed ({lastEmbedErrors.toLocaleString()})
-            </Button>
-          )}
-          {featureMatrix && !embedding && (
-            <Button variant="outline" onClick={handleDownloadEmbeddings} className="gap-1.5">
-              <Download className="h-3.5 w-3.5" />
-              Download embeddings
             </Button>
           )}
         </div>

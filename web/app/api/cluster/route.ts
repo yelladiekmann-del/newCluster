@@ -1,4 +1,5 @@
 import type { NextRequest } from "next/server";
+import { adminStorage } from "@/lib/firebase/admin";
 
 export const maxDuration = 300;
 
@@ -44,24 +45,23 @@ export async function POST(req: NextRequest) {
       try {
         let mlBody: Record<string, unknown>;
 
-        if (embeddingsUrl) {
-          send({ type: "progress", stage: "fetching_embeddings" });
-          console.log("[api/cluster] Fetching embeddings from Storage...");
+        send({ type: "progress", stage: "fetching_embeddings" });
 
-          const matrixRes = await fetch(embeddingsUrl);
-          if (!matrixRes.ok) {
-            const text = await matrixRes.text();
-            console.error("[api/cluster] Storage fetch failed:", matrixRes.status, text);
-            send({ type: "error", error: "Could not fetch embeddings from Storage" });
-            return;
-          }
-          const featureMatrix: number[][] = await matrixRes.json();
-          console.log(
-            `[api/cluster] Fetched matrix: ${featureMatrix.length} rows × ${featureMatrix[0]?.length ?? 0} cols`
-          );
-          mlBody = { ...rest, featureMatrix };
+        if (embeddingsStoragePath) {
+          // Generate a short-lived signed URL so the ML service can download
+          // the matrix directly — avoids forwarding 90+ MB through this route.
+          console.log("[api/cluster] Generating signed URL for:", embeddingsStoragePath);
+          const bucket = adminStorage().bucket();
+          const [signedUrl] = await bucket.file(embeddingsStoragePath).getSignedUrl({
+            action: "read",
+            expires: Date.now() + 15 * 60 * 1000, // 15 minutes
+          });
+          console.log("[api/cluster] Signed URL generated, passing to ML service");
+          mlBody = { ...rest, embeddingsUrl: signedUrl };
         } else {
-          mlBody = { ...rest, embeddingsStoragePath };
+          // Legacy: public download URL — pass directly to ML service
+          console.log("[api/cluster] Using legacy embeddingsUrl:", embeddingsUrl);
+          mlBody = { ...rest, embeddingsUrl };
         }
 
         const companyCount = (rest as Record<string, unknown[]>).companyIds?.length ?? "?";

@@ -9,7 +9,7 @@
  * Storage is only used as a fallback for sessions that pre-date dual-write.
  */
 
-import { ref, uploadBytes, getBytes, getDownloadURL } from "firebase/storage";
+import { ref, uploadBytes, getBytes } from "firebase/storage";
 import { getFirebaseStorage, getFirebaseDb } from "./client";
 import { writeBatch, doc } from "firebase/firestore";
 import Papa from "papaparse";
@@ -138,17 +138,6 @@ export async function saveCompaniesToStorage(
     // Non-fatal: Firestore is the source of truth
     console.warn("[saveCompanies] Storage upload failed (non-fatal):", err);
   }
-}
-
-/** Upload featureMatrix JSON to Storage and return a public download URL. */
-export async function saveEmbeddingsToStorage(
-  uid: string,
-  matrix: number[][]
-): Promise<string> {
-  const blob = new Blob([JSON.stringify(matrix)], { type: "application/json" });
-  const r = ref(getFirebaseStorage(), `sessions/${uid}/embeddings.json`);
-  await uploadBytes(r, blob);
-  return getDownloadURL(r);
 }
 
 /**
