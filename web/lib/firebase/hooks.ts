@@ -61,13 +61,11 @@ export function clearSignedOutClientState() {
   sessionStorage.removeItem("hy_google_token");
 
   const store = useSession.getState();
-  const apiKey = sessionStorage.getItem("hy_gemini_key");
   store.reset();
   store.setUid(null);
   store.setSessionId(null);
   store.setAuthUser(null);
   store.setGoogleAccessToken(null);
-  store.setApiKey(apiKey);
 }
 
 /**
@@ -164,9 +162,6 @@ export async function createNewSession(authUid: string, name?: string): Promise<
   store.setSessionId(sessionId);
   store.setSessionName(name ?? "Untitled session");
 
-  const key = sessionStorage.getItem("hy_gemini_key");
-  if (key) store.setApiKey(key);
-
   attachSessionListener(sessionId);
   return sessionId;
 }
@@ -205,9 +200,6 @@ export async function resumeSessionFast(sessionId: string): Promise<number> {
   store.setSpreadsheetUrl(d.spreadsheetUrl ?? null);
   store.setSessionName(d.name ?? null);
 
-  const key = sessionStorage.getItem("hy_gemini_key");
-  if (key) store.setApiKey(key);
-
   attachSessionListener(sessionId);
   return d.pipelineStep ?? 0;
 }
@@ -241,9 +233,6 @@ export async function resumeSession(sessionId: string): Promise<number> {
   store.setSpreadsheetId(d.spreadsheetId ?? null);
   store.setSpreadsheetUrl(d.spreadsheetUrl ?? null);
   store.setSessionName(d.name ?? null);
-
-  const key = sessionStorage.getItem("hy_gemini_key");
-  if (key) store.setApiKey(key);
 
   const [companies, clusters, msgs] = await Promise.all([
     loadCompanies(sessionId, d.companyCol ?? "name"),

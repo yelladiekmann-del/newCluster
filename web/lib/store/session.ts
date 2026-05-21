@@ -27,9 +27,6 @@ export interface SessionState {
   sessionId: string | null;
   authUser: AuthUser | null;
 
-  // API key lives only in sessionStorage — never Firestore
-  apiKey: string | null;
-
   // Google OAuth token — per-user, lives in sessionStorage
   googleAccessToken: string | null;
 
@@ -75,7 +72,6 @@ export interface SessionState {
   setUid: (uid: string | null) => void;
   setSessionId: (id: string | null) => void;
   setAuthUser: (user: AuthUser | null) => void;
-  setApiKey: (key: string | null) => void;
   setGoogleAccessToken: (token: string | null) => void;
   setSpreadsheetId: (id: string | null) => void;
   setSpreadsheetUrl: (url: string | null) => void;
@@ -116,7 +112,6 @@ export const useSession = create<SessionState>((set) => ({
   uid: null,
   sessionId: null,
   authUser: null,
-  apiKey: null,
   googleAccessToken: null,
   spreadsheetId: null,
   spreadsheetUrl: null,
@@ -144,7 +139,6 @@ export const useSession = create<SessionState>((set) => ({
   setUid: (uid) => set({ uid }),
   setSessionId: (sessionId) => set({ sessionId }),
   setAuthUser: (authUser) => set({ authUser }),
-  setApiKey: (apiKey) => set({ apiKey }),
   setGoogleAccessToken: (googleAccessToken) => set({ googleAccessToken }),
   setSpreadsheetId: (spreadsheetId) => set({ spreadsheetId }),
   setSpreadsheetUrl: (spreadsheetUrl) => set({ spreadsheetUrl }),
