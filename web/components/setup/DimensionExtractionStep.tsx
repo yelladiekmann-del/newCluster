@@ -10,8 +10,7 @@ import { Progress } from "@/components/ui/progress";
 import { useSession } from "@/lib/store/session";
 import { persistSession } from "@/lib/firebase/hooks";
 import { DIMENSIONS } from "@/types";
-import { doc, writeBatch } from "firebase/firestore";
-import { getFirebaseDb } from "@/lib/firebase/client";
+import { saveChangedCompaniesToFirestore } from "@/lib/firebase/companies-storage";
 import { toast } from "sonner";
 import { saveAs } from "file-saver";
 import Papa from "papaparse";
@@ -81,23 +80,17 @@ export function DimensionExtractionStep() {
 
       // Write dimensions back to companies
       if (results.length === companies.length) {
-        const db = getFirebaseDb();
         const updatedCompanies = companies.map((c, i) => ({
           ...c,
           dimensions: results[i] ?? {},
         }));
 
-        // Batch write to Firestore
-        const batchSize = 400;
-        for (let i = 0; i < updatedCompanies.length; i += batchSize) {
-          const batch = writeBatch(db);
-          for (const c of updatedCompanies.slice(i, i + batchSize)) {
-            batch.update(doc(db, "sessions", uid, "companies", c.id), {
-              dimensions: c.dimensions,
-            });
-          }
-          await batch.commit();
-        }
+        // Delta save — all companies changed, safe 100-doc batches with parallel commits
+        await saveChangedCompaniesToFirestore(
+          uid,
+          updatedCompanies,
+          new Set(updatedCompanies.map((c) => c.id))
+        );
 
         setCompanies(updatedCompanies);
         const nextStep = Math.max(pipelineStep, 1) as 1;

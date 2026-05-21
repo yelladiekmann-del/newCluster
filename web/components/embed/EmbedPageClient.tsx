@@ -26,7 +26,7 @@ export function EmbedPageClient() {
   const router = useRouter();
   const {
     uid,
-    companies, setCompanies, setClusters, updateCompany,
+    companies, setCompanies, setClusters,
     companyCol, customWeights, clusterParams,
     setClusterMetrics, setClustersConfirmed, clustersConfirmed,
     embeddingsStoragePath, npzPreloaded,
@@ -273,15 +273,13 @@ export function EmbedPageClient() {
         daviesBouldin: result.metrics?.daviesBouldin ?? null,
       });
 
-      result.labels.forEach((label: number, i: number) => {
-        const company = companies[i];
-        if (!company) return;
-        updateCompany(company.id, {
-          clusterId: label === -1 ? "outliers" : String(label),
-          umapX: result.embedded2d?.[i]?.[0] ?? null,
-          umapY: result.embedded2d?.[i]?.[1] ?? null,
-        });
-      });
+      // Single O(N) pass instead of N × O(N) updateCompany calls
+      setCompanies(companies.map((c, i) => ({
+        ...c,
+        clusterId: result.labels[i] === -1 ? "outliers" : String(result.labels[i]),
+        umapX: result.embedded2d?.[i]?.[0] ?? null,
+        umapY: result.embedded2d?.[i]?.[1] ?? null,
+      })));
 
       setClusterProgress(100);
       toast.success(`${result.nClusters} clusters found · ${result.nOutliers} outliers`);
@@ -291,7 +289,7 @@ export function EmbedPageClient() {
       if (clusterTimerRef.current) clearInterval(clusterTimerRef.current);
       setClustering(false);
     }
-  }, [uid, embeddingsUrl, embeddingsStoragePath, companies, clusterParams, setClusterMetrics, updateCompany]);
+  }, [uid, embeddingsUrl, embeddingsStoragePath, companies, clusterParams, setClusterMetrics, setCompanies]);
 
   // ── Back navigation ─────────────────────────────────────────────────────
 

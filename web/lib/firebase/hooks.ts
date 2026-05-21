@@ -304,7 +304,7 @@ export async function loadChatHistory(uid: string): Promise<ChatMessage[]> {
 export async function deleteSession(sessionId: string): Promise<void> {
   const db = getFirebaseDb();
 
-  // Delete Firestore subcollections
+  // Delete small subcollections in one batch each
   for (const coll of ["clusters", "chatHistory"]) {
     const snap = await getDocs(collection(db, "sessions", sessionId, coll));
     if (snap.docs.length > 0) {
@@ -312,6 +312,15 @@ export async function deleteSession(sessionId: string): Promise<void> {
       snap.docs.forEach((d) => b.delete(d.ref));
       await b.commit();
     }
+  }
+
+  // Delete companies subcollection in safe chunks of 400
+  // (can be up to 10k docs — must not exceed Firestore's 500-op batch limit)
+  const companiesSnap = await getDocs(collection(db, "sessions", sessionId, "companies"));
+  for (let i = 0; i < companiesSnap.docs.length; i += 400) {
+    const b = writeBatch(db);
+    companiesSnap.docs.slice(i, i + 400).forEach((d) => b.delete(d.ref));
+    await b.commit();
   }
 
   // Delete session doc
