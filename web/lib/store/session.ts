@@ -47,6 +47,7 @@ export interface SessionState {
   // Embed
   embeddingsStoragePath: string | null;
   npzPreloaded: boolean;
+  lastEmbedErrors: number;
 
   // Cluster
   clusterParams: ClusterParams;
@@ -85,6 +86,7 @@ export interface SessionState {
   updateCluster: (id: string, patch: Partial<ClusterDoc>) => void;
   setEmbeddingsStoragePath: (path: string | null) => void;
   setNpzPreloaded: (v: boolean) => void;
+  setLastEmbedErrors: (n: number) => void;
   setClusterParams: (params: Partial<ClusterParams>) => void;
   setClusterMetrics: (m: ClusterMetrics | null) => void;
   setClustersConfirmed: (v: boolean) => void;
@@ -123,6 +125,7 @@ export const useSession = create<SessionState>((set) => ({
   clusters: [],
   embeddingsStoragePath: null,
   npzPreloaded: false,
+  lastEmbedErrors: 0,
   clusterParams: { ...defaultClusterParams },
   clusterMetrics: null,
   clustersConfirmed: false,
@@ -159,6 +162,7 @@ export const useSession = create<SessionState>((set) => ({
   setEmbeddingsStoragePath: (embeddingsStoragePath) =>
     set({ embeddingsStoragePath }),
   setNpzPreloaded: (npzPreloaded) => set({ npzPreloaded }),
+  setLastEmbedErrors: (lastEmbedErrors) => set({ lastEmbedErrors }),
   setClusterParams: (params) =>
     set((s) => ({ clusterParams: { ...s.clusterParams, ...params } })),
   setClusterMetrics: (clusterMetrics) => set({ clusterMetrics }),
@@ -186,6 +190,7 @@ export const useSession = create<SessionState>((set) => ({
       clusters: [],
       embeddingsStoragePath: null,
       npzPreloaded: false,
+      lastEmbedErrors: 0,
       clusterParams: { ...defaultClusterParams },
       clusterMetrics: null,
       clustersConfirmed: false,

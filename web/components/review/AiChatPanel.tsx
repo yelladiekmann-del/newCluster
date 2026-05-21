@@ -5,6 +5,7 @@ import { useSession } from "@/lib/store/session";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Sparkles, Send, Loader2, CheckCircle2, XCircle, AlertTriangle } from "lucide-react";
+import { loadChatHistory } from "@/lib/firebase/hooks";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -60,7 +61,7 @@ function expandPrompt(p: string): string {
 export function AiChatPanel() {
   const {
     uid, clusters, companies,
-    chatMessages, addChatMessage,
+    chatMessages, addChatMessage, setChatMessages,
     chatOnboarded, setChatOnboarded,
     setChatAnalysisContext,
     setChatMarketContextRaw,
@@ -73,10 +74,20 @@ export function AiChatPanel() {
   const [pendingActions, setPendingActions] = useState<ClusterAction[] | null>(null);
   const [applyConfirm, setApplyConfirm] = useState<{ actions: ClusterAction[]; label: string } | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const chatLoadedRef = useRef(false);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [chatMessages]);
+
+  // Lazy-load chat history on mount (lost after page reload due to fast resume)
+  useEffect(() => {
+    if (!uid || chatMessages.length > 0 || chatLoadedRef.current) return;
+    chatLoadedRef.current = true;
+    loadChatHistory(uid)
+      .then((msgs) => { if (msgs.length > 0) setChatMessages(msgs); })
+      .catch(() => {}); // non-fatal
+  }, [uid]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Onboarding ──────────────────────────────────────────────────────────
 

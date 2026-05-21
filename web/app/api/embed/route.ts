@@ -45,6 +45,12 @@ export async function POST(req: NextRequest) {
       ? await downloadExistingMatrix(inputStoragePath)
       : null;
 
+    // Pre-compute skip count so the client can show accurate progress from the start
+    const toSkip = existingMatrix
+      ? existingMatrix.filter((row, i) => i < companies.length && row?.length > 0 && row.some((v) => v !== 0)).length
+      : 0;
+    const toEmbed = companies.length - toSkip;
+
     // Accumulate matrix server-side — never sent to client (saves hundreds of MB of bandwidth)
     const matrix: number[][] = existingMatrix ? [...existingMatrix] : [];
     const storagePath = inputStoragePath ?? STORAGE_PATH(sessionId);
@@ -56,6 +62,7 @@ export async function POST(req: NextRequest) {
           controller.enqueue(enc.encode(`data: ${JSON.stringify(data)}\n\n`));
 
         try {
+          send({ type: "init", total: companies.length, toEmbed, toSkip });
           for await (const event of embedAll(companies, apiKey, weights, existingMatrix)) {
             if (event.type === "progress") {
               // Accumulate row server-side; strip from client-bound event

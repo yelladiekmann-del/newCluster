@@ -41,6 +41,8 @@ export interface SessionDoc {
   // Embed
   embeddingsStoragePath: string | null;
   npzPreloaded: boolean;
+  /** Number of companies that failed to embed in the last embed run. Persisted so the re-embed button survives page reload. */
+  lastEmbedErrors?: number;
 
   // Cluster
   clusterParams: ClusterParams | null;

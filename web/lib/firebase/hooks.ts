@@ -83,6 +83,7 @@ export function attachSessionListener(sessionId: string): () => void {
     setCustomWeights,
     setEmbeddingsStoragePath,
     setNpzPreloaded,
+    setLastEmbedErrors,
     setClusterParams,
     setClusterMetrics,
     setClustersConfirmed,
@@ -104,6 +105,7 @@ export function attachSessionListener(sessionId: string): () => void {
     if (d.customWeights) setCustomWeights(d.customWeights);
     setEmbeddingsStoragePath(d.embeddingsStoragePath ?? null);
     setNpzPreloaded(d.npzPreloaded ?? false);
+    setLastEmbedErrors(d.lastEmbedErrors ?? 0);
     if (d.clusterParams) setClusterParams(d.clusterParams);
     setClusterMetrics(d.clusterMetrics ?? null);
     setClustersConfirmed(d.clustersConfirmed ?? false);
@@ -187,6 +189,14 @@ export async function resumeSessionFast(sessionId: string): Promise<number> {
   if (d.customWeights) store.setCustomWeights(d.customWeights);
   store.setEmbeddingsStoragePath(d.embeddingsStoragePath ?? null);
   store.setNpzPreloaded(d.npzPreloaded ?? false);
+  store.setLastEmbedErrors(d.lastEmbedErrors ?? 0);
+
+  // Self-heal: sessions that ran embedding before the server-side matrix refactor
+  // have the file in Storage but null in the session doc. Detect and repair silently.
+  if (!d.embeddingsStoragePath) {
+    repairEmbeddingsPath(sessionId).catch(() => {});
+  }
+
   if (d.clusterParams) store.setClusterParams(d.clusterParams);
   store.setClusterMetrics(d.clusterMetrics ?? null);
   store.setClustersConfirmed(d.clustersConfirmed ?? false);
@@ -199,49 +209,6 @@ export async function resumeSessionFast(sessionId: string): Promise<number> {
   store.setSpreadsheetId(d.spreadsheetId ?? null);
   store.setSpreadsheetUrl(d.spreadsheetUrl ?? null);
   store.setSessionName(d.name ?? null);
-
-  attachSessionListener(sessionId);
-  return d.pipelineStep ?? 0;
-}
-
-/** Loads an existing session from Firestore and hydrates the Zustand store. */
-export async function resumeSession(sessionId: string): Promise<number> {
-  const db = getFirebaseDb();
-  const snap = await getDoc(doc(db, "sessions", sessionId));
-  if (!snap.exists()) throw new Error("Session not found");
-  const d = snap.data() as SessionDoc;
-
-  const store = useSession.getState();
-  clearActiveSessionState();
-  store.setUid(sessionId);
-  store.setSessionId(sessionId);
-  store.setPipelineStep(d.pipelineStep ?? 0);
-  store.setCompanyCol(d.companyCol ?? "name");
-  store.setDescCol(d.descCol ?? null);
-  if (d.customWeights) store.setCustomWeights(d.customWeights);
-  store.setEmbeddingsStoragePath(d.embeddingsStoragePath ?? null);
-  store.setNpzPreloaded(d.npzPreloaded ?? false);
-  if (d.clusterParams) store.setClusterParams(d.clusterParams);
-  store.setClusterMetrics(d.clusterMetrics ?? null);
-  store.setClustersConfirmed(d.clustersConfirmed ?? false);
-  store.setChatOnboarded(d.chatOnboarded ?? false);
-  store.setChatAnalysisContext(d.chatAnalysisContext ?? "");
-  store.setChatMarketContextRaw(d.chatMarketContextRaw ?? "");
-  store.setDealsStoragePath(d.dealsStoragePath ?? null);
-  store.setAnalyticsColMap(d.analyticsColMap ?? {});
-  store.setScoringConfig((d.scoringConfig as Parameters<typeof store.setScoringConfig>[0]) ?? null);
-  store.setSpreadsheetId(d.spreadsheetId ?? null);
-  store.setSpreadsheetUrl(d.spreadsheetUrl ?? null);
-  store.setSessionName(d.name ?? null);
-
-  const [companies, clusters, msgs] = await Promise.all([
-    loadCompanies(sessionId, d.companyCol ?? "name"),
-    loadClusters(sessionId),
-    loadChatHistory(sessionId),
-  ]);
-  store.setCompanies(companies);
-  store.setClusters(clusters);
-  store.setChatMessages(msgs);
 
   attachSessionListener(sessionId);
   return d.pipelineStep ?? 0;
@@ -349,4 +316,25 @@ export async function persistSession(
   const db = getFirebaseDb();
   const { updateDoc } = await import("firebase/firestore");
   await updateDoc(doc(db, "sessions", uid), { ...patch, updatedAt: Date.now() });
+}
+
+/**
+ * Self-healing: if embeddingsStoragePath is null but the file exists in Storage
+ * (sessions from before the server-side matrix refactor), repair the session doc.
+ * Fire-and-forget — non-fatal if it fails.
+ */
+async function repairEmbeddingsPath(sessionId: string): Promise<void> {
+  try {
+    const { ref, getDownloadURL } = await import("firebase/storage");
+    const { getFirebaseStorage } = await import("./client");
+    const storage = getFirebaseStorage();
+    const path = `sessions/${sessionId}/embeddings.json`;
+    await getDownloadURL(ref(storage, path)); // throws if not found
+    // File found — update session doc + store
+    await persistSession(sessionId, { embeddingsStoragePath: path });
+    useSession.getState().setEmbeddingsStoragePath(path);
+    console.log("[repairEmbeddingsPath] repaired:", sessionId);
+  } catch {
+    // File doesn't exist — no-op
+  }
 }

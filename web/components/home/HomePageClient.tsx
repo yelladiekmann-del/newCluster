@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { collection, query, where, orderBy, getDocs } from "firebase/firestore";
 import { getFirebaseDb, signInWithGoogle, signOutUser } from "@/lib/firebase/client";
-import { createNewSession, resumeSession, resumeSessionFast, deleteSession, clearSignedOutClientState } from "@/lib/firebase/hooks";
+import { createNewSession, resumeSessionFast, deleteSession, clearSignedOutClientState } from "@/lib/firebase/hooks";
 import { useSession } from "@/lib/store/session";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";

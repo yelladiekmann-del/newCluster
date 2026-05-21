@@ -30,6 +30,7 @@ export function EmbedPageClient() {
     setClusterMetrics, setClustersConfirmed, clustersConfirmed,
     embeddingsStoragePath, setEmbeddingsStoragePath, npzPreloaded,
     setPipelineStep, pipelineStep,
+    lastEmbedErrors, setLastEmbedErrors,
   } = useSession();
 
   // Lazy-load companies after optimistic resume navigation
@@ -51,8 +52,7 @@ export function EmbedPageClient() {
 
   // Local state — not persisted until confirmed
   const [embedProgress, setEmbedProgress] = useState<{ done: number; total: number; errors: number; skipped: number } | null>(null);
-  /** Final error count from the last completed embed run — used to show re-embed prompt. */
-  const [lastEmbedErrors, setLastEmbedErrors] = useState(0);
+  const [embedToEmbed, setEmbedToEmbed] = useState<number | null>(null);
   const [embedding, setEmbedding] = useState(false);
   const [clustering, setClustering] = useState(false);
   const [clusterProgress, setClusterProgress] = useState(0);
@@ -77,6 +77,7 @@ export function EmbedPageClient() {
     if (!uid || companies.length === 0) return;
     setEmbedding(true);
     setEmbedProgress({ done: 0, total: companies.length, errors: 0, skipped: 0 });
+    setEmbedToEmbed(null);
     setLastEmbedErrors(0);
     setClusterResult(null);
 
@@ -106,10 +107,15 @@ export function EmbedPageClient() {
       const parser = createParser({
         onEvent: (event) => {
           const data = JSON.parse(event.data);
-          if (data.type === "progress") {
+          if (data.type === "init") {
+            setEmbedToEmbed(data.toEmbed);
+            setEmbedProgress({ done: 0, total: data.toEmbed, errors: 0, skipped: 0 });
+          } else if (data.type === "progress") {
+            const adjustedTotal = embedToEmbed ?? data.total;
+            const adjustedDone = Math.max(0, data.done - (data.skipped ?? 0));
             setEmbedProgress({
-              done: data.done,
-              total: data.total,
+              done: adjustedDone,
+              total: adjustedTotal,
               errors: data.errors,
               skipped: data.skipped ?? 0,
             });
@@ -141,6 +147,9 @@ export function EmbedPageClient() {
       }
 
       setLastEmbedErrors(finalErrors);
+      persistSession(uid, { lastEmbedErrors: finalErrors }).catch(
+        (err) => console.error("[embed] failed to persist lastEmbedErrors:", err)
+      );
       const newlyEmbedded = finalTotal - finalSkipped;
 
       if (finalErrors === 0) {
@@ -430,7 +439,7 @@ export function EmbedPageClient() {
               <span>
                 Embedding {embedProgress.done}/{embedProgress.total} companies…
                 {embedProgress.skipped > 0 && (
-                  <span className="ml-1 text-muted-foreground">({embedProgress.skipped} skipped)</span>
+                  <span className="ml-1 text-muted-foreground/60">({embedProgress.skipped} already done)</span>
                 )}
               </span>
               {embedProgress.errors > 0 && (
