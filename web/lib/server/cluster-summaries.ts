@@ -1,6 +1,8 @@
 import type { ClusterSummary, OverlapCandidate } from "@/types/ai";
-import type { ClusterDoc, CompanyDoc } from "@/types";
+import type { ClusterDoc, CompanyDoc, Dimension } from "@/types";
 import { DIMENSIONS } from "@/types";
+
+const HIGH_SIGNAL_DIMS: Dimension[] = ["Problem Solved", "Customer Segment", "Core Mechanism", "Value Shift"];
 
 function normalizeText(value: unknown): string {
   return String(value ?? "").replace(/\s+/g, " ").trim();
@@ -12,13 +14,16 @@ function unique<T>(items: T[]): T[] {
 
 function getCompanySnippet(company: CompanyDoc, descCol: string | null): string {
   const explicit = descCol ? normalizeText(company.originalData?.[descCol]) : "";
-  if (explicit) return explicit.slice(0, 180);
+  // Longer snippets give Gemini more signal for naming — 250 chars is the sweet spot
+  // between context richness and prompt size.
+  if (explicit) return explicit.slice(0, 250);
 
-  const dimText = Object.entries(company.dimensions)
-    .filter(([, value]) => !!value)
-    .map(([key, value]) => `${key}: ${value}`)
+  // Fallback: reconstruct from the most signal-rich dimensions
+  const dimText = HIGH_SIGNAL_DIMS
+    .filter((d) => company.dimensions[d])
+    .map((d) => `${d}: ${company.dimensions[d]}`)
     .join("; ");
-  return dimText.slice(0, 180);
+  return dimText.slice(0, 250);
 }
 
 function topValues(companies: CompanyDoc[], dimension: string): string[] {
@@ -36,23 +41,32 @@ function topValues(companies: CompanyDoc[], dimension: string): string[] {
 
 function representativeCompanies(companies: CompanyDoc[], descCol: string | null): CompanyDoc[] {
   const seen = new Set<string>();
+
+  // Score: prioritise companies with rich high-signal dimensions AND a real description.
+  // Diversity tie-break: skip companies whose dimension fingerprint was already seen
+  // (avoids 8 identical "B2B SaaS / AI-ML / logistics" companies swamping the context).
   const ranked = [...companies].sort((a, b) => {
-    const scoreA = Object.keys(a.dimensions).length + (getCompanySnippet(a, descCol) ? 1 : 0);
-    const scoreB = Object.keys(b.dimensions).length + (getCompanySnippet(b, descCol) ? 1 : 0);
+    const scoreA =
+      HIGH_SIGNAL_DIMS.filter((d) => a.dimensions[d]).length * 2 +
+      Object.keys(a.dimensions).length +
+      (getCompanySnippet(a, descCol).length > 30 ? 1 : 0);
+    const scoreB =
+      HIGH_SIGNAL_DIMS.filter((d) => b.dimensions[d]).length * 2 +
+      Object.keys(b.dimensions).length +
+      (getCompanySnippet(b, descCol).length > 30 ? 1 : 0);
     return scoreB - scoreA || a.name.localeCompare(b.name);
   });
 
   const picks: CompanyDoc[] = [];
   for (const company of ranked) {
-    const signature = JSON.stringify(
-      Object.entries(company.dimensions)
-        .filter(([, value]) => !!value)
-        .sort()
-    );
-    if (signature && seen.has(signature) && picks.length >= 4) continue;
-    seen.add(signature);
+    // Diversity fingerprint: top values of the 4 most signal-rich dimensions
+    const fingerprint = HIGH_SIGNAL_DIMS
+      .map((d) => company.dimensions[d] ?? "")
+      .join("|");
+    if (fingerprint && seen.has(fingerprint) && picks.length >= 5) continue;
+    seen.add(fingerprint);
     picks.push(company);
-    if (picks.length >= 8) break;
+    if (picks.length >= 10) break; // more companies = richer context for Gemini
   }
   return picks;
 }
@@ -110,8 +124,8 @@ export function buildClusterSummaries(
       representativeSnippets: unique(
         repMembers
           .map((company) => getCompanySnippet(company, descCol))
-          .filter(Boolean)
-      ).slice(0, 3),
+          .filter((s) => s.length > 20) // skip trivially short snippets
+      ).slice(0, 5), // 5 snippets give Gemini enough variety to generalise
       cohesionScore:
         cohesionSignals.length > 0
           ? Number(

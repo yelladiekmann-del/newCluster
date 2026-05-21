@@ -3,18 +3,35 @@ import type { ClusterNamingResult, ClusterSummary } from "@/types/ai";
 import { callGeminiText, extractFirstJsonObject, parseJsonObject } from "./gemini";
 
 function formatSummary(summary: ClusterSummary): string {
-  const dimensionLines = Object.entries(summary.topDimensions)
-    .filter(([, values]) => values.length > 0)
-    .map(([dimension, values]) => `  ${dimension}: ${values.join(" / ")}`)
+  // Signal priority: Problem Solved + Customer Segment carry the most discriminative weight;
+  // Tech Category / Business Model are too generic (fixed vocab like "AI/ML", "B2B SaaS")
+  // and should only appear as secondary context, not as the lead signal.
+  const HIGH_SIGNAL_DIMS = ["Problem Solved", "Customer Segment", "Core Mechanism", "Value Shift"];
+  const LOW_SIGNAL_DIMS  = ["Tech Category", "Business Model", "Ecosystem Role", "Scalability Lever"];
+
+  const highLines = HIGH_SIGNAL_DIMS
+    .map((d) => summary.topDimensions[d]?.filter(Boolean) ?? [])
+    .filter((vals) => vals.length > 0)
+    .map((vals, i) => `  ${HIGH_SIGNAL_DIMS[i]}: ${vals.join(" / ")}`)
     .join("\n");
-  const snippets = summary.representativeSnippets.map((snippet) => `  - ${snippet}`).join("\n");
+
+  const lowLines = LOW_SIGNAL_DIMS
+    .map((d) => summary.topDimensions[d]?.filter(Boolean) ?? [])
+    .filter((vals) => vals.length > 0)
+    .map((vals, i) => `  ${LOW_SIGNAL_DIMS[i]}: ${vals.join(" / ")}`)
+    .join("\n");
+
+  const snippets = summary.representativeSnippets.map((s) => `  - ${s}`).join("\n");
+
   return `CLUSTER ${summary.clusterId} (${summary.companyCount} companies)
-Representative companies: ${summary.representativeCompanies.join(", ") || "—"}
-Nearest clusters: ${summary.nearestClusterNames.join(", ") || "—"}
-Representative snippets:
-${snippets || "  - —"}
-Top dimensions:
-${dimensionLines || "  —"}`;
+Companies: ${summary.representativeCompanies.join(", ") || "—"}
+Nearest clusters (context, avoid similar names): ${summary.nearestClusterNames.join(", ") || "—"}
+Key signals (use these to name):
+${highLines || "  —"}
+Secondary context (do NOT let these drive the name):
+${lowLines || "  —"}
+Sample descriptions:
+${snippets || "  - —"}`;
 }
 
 function hasDuplicateNames(names: Record<string, string>): boolean {
@@ -25,54 +42,62 @@ function hasDuplicateNames(names: Record<string, string>): boolean {
 }
 
 function synthesizeDescription(summary: ClusterSummary, name: string): string {
-  const topThemes = Object.values(summary.topDimensions)
-    .flat()
-    .filter(Boolean)
-    .slice(0, 2);
-  const representativeCompanies = summary.representativeCompanies.slice(0, 3).join(", ");
-  const themeText = topThemes.length > 0 ? topThemes.join(" and ") : "shared operating patterns";
-  if (representativeCompanies) {
-    return `${name} covers companies such as ${representativeCompanies}, focused on ${themeText}. They share a similar value proposition and market position within this segment.`;
-  }
-  return `${name} covers companies focused on ${themeText}. They share a similar value proposition and market position within this segment.`;
+  // Fallback only — used when Gemini returns no description for this cluster.
+  // Prioritises the high-signal dimensions over generic Tech/BM labels.
+  const problemSolved = summary.topDimensions["Problem Solved"]?.[0];
+  const customerSegment = summary.topDimensions["Customer Segment"]?.[0];
+  const mechanism = summary.topDimensions["Core Mechanism"]?.[0];
+  const companies = summary.representativeCompanies.slice(0, 3).join(", ");
+
+  const what = problemSolved ?? mechanism ?? "operational challenges";
+  const who = customerSegment ? ` for ${customerSegment}` : "";
+  const examples = companies ? ` Companies include ${companies}.` : "";
+
+  return `Companies addressing ${what}${who}.${examples} They share a focused value proposition within the ${name} space.`;
 }
 
 /**
  * Single Gemini call that returns both name and description for every cluster.
  * Replaces the previous 2–3 sequential calls (generateNames → normalizeNames → generateDescriptions).
- * thinkingBudget=0 disables gemini-2.5-flash reasoning mode for fast structured output.
+ * thinkingBudget=0 disables gemini-2.5-flash reasoning mode — structured slot-filling,
+ * not reasoning. Brings latency from ~25s to ~3s per call.
  */
 async function generateNamesAndDescriptions(
   apiKey: string,
   summaries: ClusterSummary[],
 ): Promise<{ names: Record<string, string>; descriptions: Record<string, string> }> {
-  const prompt = `You are a market intelligence analyst naming and describing clusters of companies.
+  const prompt = `You are a market intelligence analyst naming clusters of companies for a VC/strategy report.
 
-Below are ${summaries.length} clusters with their dominant characteristics, representative companies, and sample descriptions.
+Below are ${summaries.length} clusters. Each shows the PROBLEM the companies solve, the CUSTOMER they serve, and other signals.
 
 For EACH cluster provide:
-1. A SHORT, DISTINCTIVE market-category name (2–5 words)
-2. Exactly 2 sentences describing what type of companies belong here and what sets them apart
+1. A SHORT, DISTINCTIVE market-segment name (2–5 words)
+2. Exactly 2 sentences: what these companies do, and what sets them apart from the nearest clusters
 
-Name requirements:
-- Captures what makes THIS cluster unique versus the others
-- Same level of abstraction across all clusters
-- Reads like a real market segment (e.g. "Embedded Lending Infrastructure", "SMB Expense Automation")
-- NO duplicates — every name must be unique
+Name rules:
+- Derive the name from "Problem Solved" and "Customer Segment" — NOT from Tech Category or Business Model (those are too generic)
+- Must feel like a real market category an analyst would use (e.g. "Fleet Compliance Automation", "SMB Revenue Recovery", "Embedded Supplier Finance")
+- Same level of specificity across all clusters — no mixing "AI Infrastructure" with "Accounts Payable"
+- Zero duplicates — if two clusters seem similar, make the names capture the key difference
 
-Description requirements:
-- Begin with a phrase like "Companies providing..." or "Platforms enabling..."
-- Specific, concrete, and useful for a business analyst
-- Briefly distinguish from the nearest clusters listed
-- Exactly 2 sentences, no long enumerations
+Description rules:
+- Sentence 1: "Companies providing [what] for [who]." — concrete, no buzzwords
+- Sentence 2: Distinguish from the listed nearest clusters (explain the border)
+- No enumerations, no lists within the description
 
 ${summaries.map(formatSummary).join("\n\n")}
 
 Return ONLY a JSON object like:
-{"0": {"name": "Embedded Lending Infrastructure", "description": "Companies providing... They stand apart from..."}, "1": {"name": "...", "description": "..."}}
+{"0": {"name": "Fleet Compliance Automation", "description": "Companies providing..."}, "1": {...}}
 No explanation, no markdown, just the JSON.`;
 
-  const raw = await callGeminiText({ apiKey, prompt, temperature: 0.25, model: "gemini-2.5-flash" });
+  const raw = await callGeminiText({
+    apiKey,
+    prompt,
+    temperature: 0.25,
+    model: "gemini-2.5-flash",
+    thinkingBudget: 0, // structured slot-filling — thinking adds latency with no quality gain
+  });
 
   const parsed =
     parseJsonObject<Record<string, { name?: string; description?: string }>>(raw) ??
@@ -109,7 +134,9 @@ Revise the names only where needed so the final set:
 
 Return ONLY a JSON object mapping cluster id strings to the final names.`;
 
-  return parseJsonObject<Record<string, string>>(await callGeminiText({ apiKey, prompt, temperature: 0.2, model: "gemini-2.5-flash" })) ?? currentNames;
+  return parseJsonObject<Record<string, string>>(
+    await callGeminiText({ apiKey, prompt, temperature: 0.2, model: "gemini-2.5-flash", thinkingBudget: 0 })
+  ) ?? currentNames;
 }
 
 export async function nameClustersFromSummaries(
