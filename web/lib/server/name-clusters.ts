@@ -79,6 +79,7 @@ Name rules:
 - Must feel like a real market category an analyst would use (e.g. "Fleet Compliance Automation", "SMB Revenue Recovery", "Embedded Supplier Finance")
 - Same level of specificity across all clusters — no mixing "AI Infrastructure" with "Accounts Payable"
 - Zero duplicates — if two clusters seem similar, make the names capture the key difference
+- Format: a single precise noun phrase. No conjunctions — never use "&", "and", or "/" to combine two themes. If a cluster spans two themes, pick the dominant one or coin one phrase that covers both. Bad: "Access Control & Identity Verification". Good: "Physical Access Automation".
 
 Description rules:
 - Sentence 1: "Companies providing [what] for [who]." — concrete, no buzzwords

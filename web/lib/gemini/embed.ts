@@ -7,14 +7,16 @@ import { DIMENSIONS } from "@/types";
 import type { Dimension } from "@/types";
 
 const EMBED_MODEL = "gemini-embedding-001";
-const EMBED_URL = `https://generativelanguage.googleapis.com/v1beta/models/${EMBED_MODEL}:embedContent`;
+const BATCH_EMBED_URL = `https://generativelanguage.googleapis.com/v1beta/models/${EMBED_MODEL}:batchEmbedContents`;
 const DIM_PER_FIELD = 256;
 
-/** How many companies to embed in parallel. 10 companies × 8 dims = 80 concurrent Gemini calls max. */
-const COMPANY_CONCURRENCY = 10;
-
-/** Per-company internal dimension concurrency (unchanged). */
-const DIM_CONCURRENCY = 8;
+/**
+ * How many companies to embed in parallel.
+ * Each company now makes ONE batch API call (all 8 dims at once), so we can
+ * safely run more concurrently than before. 20 parallel batch calls ≈ 160
+ * dimension embeddings in flight — well within rate limits.
+ */
+const COMPANY_CONCURRENCY = 20;
 
 const DEFAULT_WEIGHTS: Record<Dimension, number> = {
   "Problem Solved":    1.4,
@@ -66,63 +68,63 @@ class Semaphore {
   }
 }
 
-// ── Single embedding ──────────────────────────────────────────────────────────
+// ── Batch embedding (all dimensions for one company in one API call) ──────────
 
 /**
- * Embed a single text string.
- * Returns a zero vector ONLY for genuinely empty text (< 3 chars).
- * Throws EmbedError for API failures or quota exhaustion — callers must handle.
+ * Sends all dimension texts for ONE company in a single batchEmbedContents call.
+ * Returns one vector per input text (null if the API returned an empty embedding).
+ *
+ * Using batchEmbedContents instead of per-text embedContent reduces API calls
+ * from (companies × 8) to just (companies × 1) — an 8× reduction that keeps
+ * us well within Gemini's RPM quota even at 10 k companies.
+ *
+ * Throws EmbedError on non-retryable failures or quota exhaustion.
  */
-async function getEmbedding(
-  text: string,
+async function batchEmbedTexts(
+  texts: string[],
   apiKey: string,
   sem: Semaphore,
   dim = DIM_PER_FIELD
-): Promise<number[]> {
-  const clean = String(text ?? "").trim().slice(0, 8000);
-  // Legitimately empty — return zeros (not a failure)
-  if (clean.length < 3) return new Array(dim).fill(0);
-
-  const payload = {
+): Promise<(number[] | null)[]> {
+  const requests = texts.map((text) => ({
     model: `models/${EMBED_MODEL}`,
-    content: { parts: [{ text: clean }] },
+    content: { parts: [{ text }] },
     taskType: "CLUSTERING",
     outputDimensionality: dim,
-  };
+  }));
 
   for (let attempt = 0; attempt < 5; attempt++) {
     await sem.acquire();
     let res: Response;
     try {
-      res = await fetch(`${EMBED_URL}?key=${apiKey}`, {
+      res = await fetch(`${BATCH_EMBED_URL}?key=${apiKey}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({ requests }),
       });
     } finally {
       sem.release();
     }
 
     if (res.status === 429) {
-      // Rate limited — back off and retry
+      // Rate limited — exponential back-off and retry
       await sleep((2 ** attempt) * 1000 + Math.random() * 1000);
       continue;
     }
 
     if (!res.ok) {
-      // Non-retryable API error
       throw new EmbedError(
         "api_error",
-        `Gemini API returned ${res.status} for embedding request`
+        `Gemini batch API returned ${res.status} for embedding request`
       );
     }
 
     const json = await res.json();
-    const values: number[] = json?.embedding?.values ?? [];
-    if (!values.length) {
-      throw new EmbedError("empty_response", "Gemini API returned an empty embedding vector");
-    }
-    return l2Normalize(values);
+    const embeddings: { values?: number[] }[] = json?.embeddings ?? [];
+    return embeddings.map((e) => {
+      const values = e?.values ?? [];
+      return values.length ? l2Normalize(values) : null;
+    });
   }
 
   // All 5 attempts hit 429 → quota exhausted
@@ -135,8 +137,16 @@ async function getEmbedding(
 // ── Per-dimension embedding for one company ───────────────────────────────────
 
 /**
- * Embeds all 8 dimensions for a single company in parallel.
- * Throws EmbedError if any dimension fails (callers track this as a company-level error).
+ * Embeds all 8 dimensions for a single company in ONE batch API call.
+ *
+ * CRITICAL: always allocates ALL 8 dimension slots, initialised to zero vectors.
+ * If a company is missing some dimensions (partial extraction), those slots stay
+ * as zero vectors. This guarantees every company produces exactly
+ * DIMENSIONS.length × DIM_PER_FIELD = 2048 values — a homogeneous matrix.
+ * Without this, companies with 7/8 dims produce 1792-dim rows, causing NumPy's
+ * "inhomogeneous shape" crash in the ML service when building the feature matrix.
+ *
+ * Throws EmbedError if the batch call fails (callers track this as a company-level error).
  */
 async function getPerDimensionEmbedding(
   dimensions: Record<string, string>,
@@ -144,35 +154,42 @@ async function getPerDimensionEmbedding(
   apiKey: string,
   sem: Semaphore
 ): Promise<number[]> {
-  const dims = DIMENSIONS.filter((d) => dimensions[d] !== undefined);
+  // Build text array aligned with DIMENSIONS order.
+  // Empty/trivial texts (< 3 chars) are represented by an empty string sentinel.
+  const texts = DIMENSIONS.map((d) => {
+    const val = String(dimensions[d] ?? "").trim().slice(0, 8000);
+    return val.length >= 3 ? val : "";
+  });
 
-  // CRITICAL: always allocate ALL 8 dimension slots, initialised to zero vectors.
-  // If a company is missing some dimensions (partial extraction), those slots stay
-  // as zero vectors. This guarantees every company produces exactly
-  // DIMENSIONS.length × DIM_PER_FIELD = 2048 values — a homogeneous matrix.
-  // Without this, companies with 7/8 dims produce 1792-dim rows, causing NumPy's
-  // "inhomogeneous shape" crash in the ML service when building the feature matrix.
-  const parts: number[][] = DIMENSIONS.map(() => new Array(DIM_PER_FIELD).fill(0));
-
-  if (!dims.length) {
-    // All dimensions missing — return the pre-allocated zero vector
+  const nonEmptyCount = texts.filter((t) => t.length >= 3).length;
+  if (nonEmptyCount === 0) {
+    // All dimensions missing — return a zero vector (not a failure)
     return new Array(DIM_PER_FIELD * DIMENSIONS.length).fill(0);
   }
 
-  // Embed present dimensions in parallel (batched by DIM_CONCURRENCY)
-  // Write into the slot matching the dimension's canonical position in DIMENSIONS.
-  // Errors propagate — do NOT catch here.
-  for (let i = 0; i < dims.length; i += DIM_CONCURRENCY) {
-    const chunk = dims.slice(i, i + DIM_CONCURRENCY);
-    const vecs = await Promise.all(
-      chunk.map((d) => getEmbedding(dimensions[d] ?? "unknown", apiKey, sem, DIM_PER_FIELD))
-    );
-    chunk.forEach((d, j) => {
+  // Only send non-empty texts to the API; track their canonical dimension indices.
+  const batchIndices: number[] = []; // batchIndex → canonical DIMENSIONS index
+  const batchTexts: string[] = [];
+  texts.forEach((t, i) => {
+    if (t.length >= 3) {
+      batchIndices.push(i);
+      batchTexts.push(t);
+    }
+  });
+
+  // ONE API call for all non-empty dimensions of this company.
+  const batchResults = await batchEmbedTexts(batchTexts, apiKey, sem);
+
+  // Write results into canonical slots; empty/failed slots stay as zero vectors.
+  const parts: number[][] = DIMENSIONS.map(() => new Array(DIM_PER_FIELD).fill(0));
+  batchIndices.forEach((dimIdx, batchIdx) => {
+    const vec = batchResults[batchIdx];
+    if (vec) {
+      const d = DIMENSIONS[dimIdx];
       const w = weights[d] ?? 1.0;
-      const dimIdx = DIMENSIONS.indexOf(d); // canonical slot — never shifts with missing dims
-      parts[dimIdx] = vecs[j].map((v) => v * w);
-    });
-  }
+      parts[dimIdx] = vec.map((v) => v * w);
+    }
+  });
 
   const combined = ([] as number[]).concat(...parts);
   return l2Normalize(combined);
@@ -220,9 +237,10 @@ export async function* embedAll(
   let errors = 0;
   let skipped = 0;
 
-  // Shared semaphore caps total concurrent Gemini API calls
-  // COMPANY_CONCURRENCY companies × DIM_CONCURRENCY dims = max concurrent calls
-  const sem = new Semaphore(COMPANY_CONCURRENCY * DIM_CONCURRENCY);
+  // Shared semaphore caps total concurrent Gemini batch API calls.
+  // With batchEmbedContents each company = 1 call, so the semaphore size
+  // equals COMPANY_CONCURRENCY (20 concurrent batch calls in flight).
+  const sem = new Semaphore(COMPANY_CONCURRENCY);
 
   // Ordered result buffer for in-order SSE streaming despite parallel processing
   const results: (number[] | null)[] = new Array(companies.length).fill(null);
