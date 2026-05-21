@@ -32,22 +32,32 @@ const BATCH_SIZE = 100;
 /** Max batches committed in parallel. Balances Firestore throughput vs. connection pressure. */
 const PARALLEL_COMMITS = 5;
 
-/** Commit an array of CompanyDoc chunks to Firestore in parallel groups. */
+/** Split an array into sub-arrays of at most `size` elements. */
+function chunk<T>(arr: T[], size: number): T[][] {
+  const result: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) result.push(arr.slice(i, i + size));
+  return result;
+}
+
+/**
+ * Commit pre-keyed company entries to Firestore in parallel groups.
+ * Each inner array is one Firestore batch (≤ BATCH_SIZE entries).
+ * Callers are responsible for choosing the document key strategy.
+ */
 async function commitChunks(
   uid: string,
-  chunks: { startIdx: number; docs: CompanyDoc[] }[]
+  batches: { key: string; doc: CompanyDoc }[][]
 ): Promise<void> {
   const db = getFirebaseDb();
-  for (let g = 0; g < chunks.length; g += PARALLEL_COMMITS) {
-    const group = chunks.slice(g, g + PARALLEL_COMMITS);
+  for (let g = 0; g < batches.length; g += PARALLEL_COMMITS) {
     await Promise.all(
-      group.map(async ({ startIdx, docs: chunkDocs }) => {
-        const batch = writeBatch(db);
-        chunkDocs.forEach((c, offset) => {
+      batches.slice(g, g + PARALLEL_COMMITS).map(async (batch) => {
+        const fb = writeBatch(db);
+        batch.forEach(({ key, doc: c }) => {
           const safe = JSON.parse(JSON.stringify(c)) as CompanyDoc;
-          batch.set(doc(db, "sessions", uid, "companies", `r${startIdx + offset}`), safe);
+          fb.set(doc(db, "sessions", uid, "companies", key), safe);
         });
-        await batch.commit();
+        await fb.commit();
       })
     );
   }
@@ -60,12 +70,10 @@ export async function saveCompaniesToFirestore(
 ): Promise<void> {
   console.log("[saveCompanies] Firestore — writing", companies.length, "docs to sessions/", uid, "/companies");
 
-  const chunks: { startIdx: number; docs: CompanyDoc[] }[] = [];
-  for (let start = 0; start < companies.length; start += BATCH_SIZE) {
-    chunks.push({ startIdx: start, docs: companies.slice(start, start + BATCH_SIZE) });
-  }
+  // Key by global position: r0, r1, r2, …
+  const entries = companies.map((c, i) => ({ key: `r${i}`, doc: c }));
+  await commitChunks(uid, chunk(entries, BATCH_SIZE));
 
-  await commitChunks(uid, chunks);
   console.log("[saveCompanies] Firestore — all", companies.length, "docs written ✓");
 }
 
@@ -86,28 +94,10 @@ export async function saveChangedCompaniesToFirestore(
   const changed = companies.filter((c) => changedIds.has(c.id));
   console.log("[saveChangedCompanies] Firestore — writing", changed.length, "changed docs");
 
-  const chunks: { startIdx: number; docs: CompanyDoc[] }[] = [];
-  for (let i = 0; i < changed.length; i += BATCH_SIZE) {
-    const slice = changed.slice(i, i + BATCH_SIZE);
-    // Use rowIndex as the Firestore doc key (matches what saveCompaniesToFirestore writes)
-    chunks.push({ startIdx: -1, docs: slice }); // startIdx unused — we use rowIndex directly
-  }
+  // Key by rowIndex so each write targets the same Firestore doc as the original full save
+  const entries = changed.map((c) => ({ key: `r${c.rowIndex}`, doc: c }));
+  await commitChunks(uid, chunk(entries, BATCH_SIZE));
 
-  const db = getFirebaseDb();
-  // For delta saves, write by rowIndex (not positional) to address the correct Firestore doc
-  for (let g = 0; g < chunks.length; g += PARALLEL_COMMITS) {
-    const group = chunks.slice(g, g + PARALLEL_COMMITS);
-    await Promise.all(
-      group.map(async ({ docs: chunkDocs }) => {
-        const batch = writeBatch(db);
-        chunkDocs.forEach((c) => {
-          const safe = JSON.parse(JSON.stringify(c)) as CompanyDoc;
-          batch.set(doc(db, "sessions", uid, "companies", `r${c.rowIndex}`), safe);
-        });
-        await batch.commit();
-      })
-    );
-  }
   console.log("[saveChangedCompanies] ✓ wrote", changedIds.size, "changed companies");
 }
 
