@@ -15,7 +15,7 @@ import requests
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
-from firebase_admin import credentials, firestore
+from firebase_admin import credentials, firestore, storage
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -24,10 +24,11 @@ from ml_pipeline import embed_all, run_clustering
 
 # ── Firebase Admin init ───────────────────────────────────────────────────────
 
+STORAGE_BUCKET = os.environ.get("FIREBASE_STORAGE_BUCKET", "hy-clustering-2.firebasestorage.app")
+
 if not firebase_admin._apps:
     # In Cloud Run, Application Default Credentials are injected automatically.
-    # The service account needs Firestore write access.
-    firebase_admin.initialize_app()
+    firebase_admin.initialize_app(options={"storageBucket": STORAGE_BUCKET})
 
 db = firestore.client()
 
@@ -149,20 +150,34 @@ async def cluster_endpoint(request: Request):
     session_id: str = body.get("sessionId", "")
     company_ids: list[str] = body.get("companyIds", [])
     feature_matrix: list = body.get("featureMatrix", [])
-    embeddings_url: str = body.get("embeddingsUrl", "")
+    embeddings_storage_path: str = body.get("embeddingsStoragePath", "")
+    embeddings_url: str = body.get("embeddingsUrl", "")  # legacy fallback
     min_cluster_size: int = body.get("minClusterSize", 5)
     min_samples: int = body.get("minSamples", 3)
     cluster_epsilon: float = body.get("clusterEpsilon", 0.0)
     umap_cluster_dims: int = body.get("umapClusterDims", 15)
 
-    # If the matrix was not inlined (large datasets), download from signed URL
-    if not feature_matrix and embeddings_url:
-        logger.info("/cluster: downloading matrix from signed URL (%d chars)", len(embeddings_url))
+    # Preferred path: download from Firebase Storage using our own ADC credentials.
+    # This avoids signed URLs (which require iam.serviceAccounts.signBlob on the caller).
+    if not feature_matrix and embeddings_storage_path:
+        logger.info("/cluster: downloading matrix from Storage path: %s", embeddings_storage_path)
+        try:
+            bucket = storage.bucket()
+            blob = bucket.blob(embeddings_storage_path)
+            data = blob.download_as_bytes(timeout=120)
+            feature_matrix = json.loads(data)
+            logger.info("/cluster: matrix loaded from Storage — %d rows", len(feature_matrix))
+        except Exception as e:
+            raise HTTPException(status_code=502, detail=f"Failed to download from Storage: {e}")
+
+    # Legacy fallback: public/signed URL
+    elif not feature_matrix and embeddings_url:
+        logger.info("/cluster: downloading matrix from URL (%d chars)", len(embeddings_url))
         try:
             resp = requests.get(embeddings_url, timeout=120)
             resp.raise_for_status()
             feature_matrix = resp.json()
-            logger.info("/cluster: matrix downloaded — %d rows", len(feature_matrix))
+            logger.info("/cluster: matrix downloaded from URL — %d rows", len(feature_matrix))
         except Exception as e:
             raise HTTPException(status_code=502, detail=f"Failed to download embeddingsUrl: {e}")
 

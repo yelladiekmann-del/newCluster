@@ -48,16 +48,10 @@ export async function POST(req: NextRequest) {
         send({ type: "progress", stage: "fetching_embeddings" });
 
         if (embeddingsStoragePath) {
-          // Generate a short-lived signed URL so the ML service can download
-          // the matrix directly — avoids forwarding 90+ MB through this route.
-          console.log("[api/cluster] Generating signed URL for:", embeddingsStoragePath);
-          const bucket = adminStorage().bucket();
-          const [signedUrl] = await bucket.file(embeddingsStoragePath).getSignedUrl({
-            action: "read",
-            expires: Date.now() + 15 * 60 * 1000, // 15 minutes
-          });
-          console.log("[api/cluster] Signed URL generated, passing to ML service");
-          mlBody = { ...rest, embeddingsUrl: signedUrl };
+          // Pass the Storage path directly — the ML service downloads it using its
+          // own Cloud Run ADC credentials (no signBlob permission required).
+          console.log("[api/cluster] Passing Storage path to ML service:", embeddingsStoragePath);
+          mlBody = { ...rest, embeddingsStoragePath };
         } else {
           // Legacy: public download URL — pass directly to ML service
           console.log("[api/cluster] Using legacy embeddingsUrl:", embeddingsUrl);
