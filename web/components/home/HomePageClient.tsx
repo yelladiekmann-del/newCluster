@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { collection, query, where, orderBy, getDocs } from "firebase/firestore";
-import { getFirebaseDb, signInWithGoogle, signOutUser } from "@/lib/firebase/client";
+import { getFirebaseDb, signInWithGoogle, signOutUser, persistGoogleToken } from "@/lib/firebase/client";
 import { createNewSession, resumeSessionFast, deleteSession, clearSignedOutClientState } from "@/lib/firebase/hooks";
 import { useSession } from "@/lib/store/session";
 import { Button } from "@/components/ui/button";
@@ -170,7 +170,7 @@ function SignInView() {
     try {
       const { accessToken } = await signInWithGoogle();
       if (accessToken) {
-        sessionStorage.setItem("hy_google_token", accessToken);
+        persistGoogleToken(accessToken);
         useSession.getState().setGoogleAccessToken(accessToken);
       }
     } catch (e) {

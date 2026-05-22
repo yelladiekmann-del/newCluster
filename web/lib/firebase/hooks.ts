@@ -11,7 +11,7 @@ import {
   getDocs,
   writeBatch,
 } from "firebase/firestore";
-import { getFirebaseDb, onAuthChange } from "./client";
+import { getFirebaseDb, onAuthChange, retrieveGoogleToken, clearGoogleToken } from "./client";
 import { useSession } from "@/lib/store/session";
 import type { CompanyDoc, ClusterDoc, ChatMessage, SessionDoc } from "@/types";
 import { toast } from "sonner";
@@ -30,6 +30,13 @@ export function useFirebaseSession() {
           displayName: user.displayName,
           photoURL: user.photoURL,
         });
+        // When Firebase auto-restores a session (new tab, browser restart), the
+        // Google OAuth token isn't re-issued by Firebase — it's only available at
+        // sign-in time. Restore it from localStorage if it's still valid.
+        const stored = retrieveGoogleToken();
+        if (stored && !useSession.getState().googleAccessToken) {
+          useSession.getState().setGoogleAccessToken(stored);
+        }
       } else {
         clearSignedOutClientState();
       }
@@ -58,7 +65,7 @@ export function clearActiveSessionState() {
 
 export function clearSignedOutClientState() {
   detachSessionListener();
-  sessionStorage.removeItem("hy_google_token");
+  clearGoogleToken();
 
   const store = useSession.getState();
   store.reset();

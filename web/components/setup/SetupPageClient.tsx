@@ -10,6 +10,7 @@ import { ArrowRight, ChevronDown, ChevronUp } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { persistSession } from "@/lib/firebase/hooks";
 import { syncSetupToSheet } from "@/lib/sheets/sync";
+import { signInWithGoogle, persistGoogleToken } from "@/lib/firebase/client";
 
 export function SetupPageClient() {
   const router = useRouter();
@@ -39,8 +40,22 @@ export function SetupPageClient() {
     setPipelineStep(nextStep);
     await persistSession(uid, { pipelineStep: nextStep });
 
-    // Background Sheets sync — non-blocking
-    const { googleAccessToken, sessionName } = useSession.getState();
+    // Background Sheets sync — non-blocking.
+    // If the token is missing (e.g. new tab, expired), silently re-authenticate.
+    // This is called from a button click, so signInWithPopup is allowed here.
+    let { googleAccessToken, sessionName } = useSession.getState();
+    if (!googleAccessToken) {
+      try {
+        const result = await signInWithGoogle();
+        if (result.accessToken) {
+          googleAccessToken = result.accessToken;
+          persistGoogleToken(result.accessToken);
+          useSession.getState().setGoogleAccessToken(result.accessToken);
+        }
+      } catch {
+        // User cancelled or popup blocked — skip Sheets sync silently
+      }
+    }
     if (googleAccessToken) {
       syncSetupToSheet(googleAccessToken, companies, sessionName)
         .then(({ spreadsheetId, spreadsheetUrl }) => {
@@ -57,8 +72,6 @@ export function SetupPageClient() {
           );
         })
         .catch((err) => toast.error(`Sheets sync failed: ${err instanceof Error ? err.message : String(err)}`));
-    } else {
-      toast.warning("No Google token — sign out and sign back in to enable Sheets sync");
     }
 
     router.push("/embed");

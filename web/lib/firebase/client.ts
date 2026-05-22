@@ -78,3 +78,50 @@ export async function signOutUser(): Promise<void> {
 export function onAuthChange(callback: (user: User | null) => void): () => void {
   return onAuthStateChanged(getFirebaseAuth(), callback);
 }
+
+// ── Google OAuth token persistence ───────────────────────────────────────────
+//
+// The Google access token (needed for Sheets API) is separate from the Firebase
+// auth session. Firebase persists its own session in IndexedDB and auto-restores
+// it across tabs/restarts — but the Google OAuth token was previously stored only
+// in sessionStorage, which is per-tab. Opening a new tab would lose the token
+// even though the user was still "signed in".
+//
+// We now use localStorage so the token survives across tabs and browser restarts.
+// We also track expiry (Google access tokens last 60 min; we use 55 min to be safe)
+// so stale tokens are never silently served to the Sheets API.
+
+const GOOGLE_TOKEN_KEY = "hy_google_token";
+const GOOGLE_TOKEN_EXP_KEY = "hy_google_token_exp";
+/** 55 minutes — 5-minute safety margin before Google's 60-minute expiry. */
+const TOKEN_LIFETIME_MS = 55 * 60 * 1000;
+
+/** Store a fresh Google OAuth access token (localStorage + expiry). */
+export function persistGoogleToken(token: string): void {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(GOOGLE_TOKEN_KEY, token);
+  localStorage.setItem(GOOGLE_TOKEN_EXP_KEY, String(Date.now() + TOKEN_LIFETIME_MS));
+}
+
+/**
+ * Retrieve the stored Google OAuth token.
+ * Returns null if the token is missing or expired (and clears the stale entry).
+ */
+export function retrieveGoogleToken(): string | null {
+  if (typeof window === "undefined") return null;
+  const token = localStorage.getItem(GOOGLE_TOKEN_KEY);
+  if (!token) return null;
+  const exp = Number(localStorage.getItem(GOOGLE_TOKEN_EXP_KEY) ?? "0");
+  if (exp && Date.now() > exp) {
+    clearGoogleToken();
+    return null;
+  }
+  return token;
+}
+
+/** Remove the stored token (called on sign-out or detected expiry). */
+export function clearGoogleToken(): void {
+  if (typeof window === "undefined") return;
+  localStorage.removeItem(GOOGLE_TOKEN_KEY);
+  localStorage.removeItem(GOOGLE_TOKEN_EXP_KEY);
+}
