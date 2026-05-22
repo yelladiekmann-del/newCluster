@@ -9,6 +9,10 @@ import {
   onSnapshot,
   collection,
   getDocs,
+  query,
+  where,
+  orderBy,
+  limit,
   writeBatch,
 } from "firebase/firestore";
 import { getFirebaseDb, onAuthChange, retrieveGoogleToken, clearGoogleToken } from "./client";
@@ -36,6 +40,14 @@ export function useFirebaseSession() {
         const stored = retrieveGoogleToken();
         if (stored && !useSession.getState().googleAccessToken) {
           useSession.getState().setGoogleAccessToken(stored);
+        }
+
+        // Auto-resume the user's most recent session if none is active yet.
+        // This covers the case where Firebase restores auth in a new tab/browser
+        // restart but the Zustand store has no session selected yet.
+        const store = useSession.getState();
+        if (!store.sessionId) {
+          autoResumeLastSession(user.uid).catch(() => {});
         }
       } else {
         clearSignedOutClientState();
@@ -127,6 +139,32 @@ export function attachSessionListener(sessionId: string): () => void {
 
   activeSessionUnsub = unsub;
   return unsub;
+}
+
+// ── Auto-resume ───────────────────────────────────────────────────────────────
+
+/**
+ * On Firebase auth restore (new tab / browser restart), automatically resume
+ * the user's most recently updated session. Silent no-op if no sessions exist.
+ * Must only be called when no session is already active in the store.
+ */
+async function autoResumeLastSession(authUid: string): Promise<void> {
+  try {
+    const db = getFirebaseDb();
+    const snap = await getDocs(
+      query(
+        collection(db, "sessions"),
+        where("userId", "==", authUid),
+        orderBy("updatedAt", "desc"),
+        limit(1),
+      ),
+    );
+    if (snap.empty) return;
+    const sessionId = snap.docs[0].id;
+    await resumeSessionFast(sessionId);
+  } catch {
+    // Non-fatal — user can manually select a session from the dashboard.
+  }
 }
 
 // ── Session creation / resume ─────────────────────────────────────────────────

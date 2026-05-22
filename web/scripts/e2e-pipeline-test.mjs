@@ -422,6 +422,9 @@ if (embeddable.length === 0) {
 head("STAGE 4 — Cluster (ML service)");
 t = Date.now();
 
+// Declared at outer scope so Stage 5 can read it
+let clusterResult = null;
+
 const embedResult = results["embed"];
 if (!embedResult?.storage_path) {
   warn("Skipping cluster — no storage path from embed stage");
@@ -430,7 +433,7 @@ if (!embedResult?.storage_path) {
   info(`Storage path: ${embedResult.storage_path}`);
   info(`Company IDs: ${embeddable.length.toLocaleString()}`);
 
-  let clusterResult = null, clusterError = null;
+  let clusterError = null;
   try {
     const res = await fetch(`${BASE}/api/cluster`, {
       method:  "POST",
@@ -489,6 +492,90 @@ if (!embedResult?.storage_path) {
   }
 }
 
+// ── 5. Name Clusters ──────────────────────────────────────────────────────────
+head("STAGE 5 — Name Clusters (Gemini)");
+t = Date.now();
+
+const clusterStageResult = results["cluster"];
+if (!clusterStageResult?.passed || !results["cluster"]) {
+  warn("Skipping naming — cluster stage did not succeed");
+  stageResult("naming", false, { error: "cluster stage failed" });
+} else {
+  // Write clusterId back to company docs in Firestore so name-clusters can read them
+  const clusterLabels = clusterResult?.labels ?? [];
+  if (clusterLabels.length > 0 && embeddable.length > 0) {
+    info(`Writing ${clusterLabels.length} cluster labels to Firestore…`);
+    const labelChunks = chunk(embeddable, 400);
+    let labelOffset = 0;
+    for (const ch of labelChunks) {
+      const b = db.batch();
+      ch.forEach((c, i) => {
+        const label = clusterLabels[labelOffset + i];
+        const clusterId = label === -1 ? "outliers" : String(label);
+        b.update(db.collection("sessions").doc(TEST_SESSION).collection("companies").doc(c.id), { clusterId });
+      });
+      await b.commit();
+      labelOffset += ch.length;
+    }
+    ok(`Cluster labels written (${clusterLabels.length} companies)`);
+  }
+
+  try {
+    info(`Calling /api/name-clusters for ${clusterStageResult.nClusters} clusters…`);
+    const namingRes = await fetch(`${BASE}/api/name-clusters`, {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body:    JSON.stringify({ uid: TEST_SESSION }),
+    });
+
+    const elapsed = Date.now() - t;
+
+    if (!namingRes.ok) {
+      const txt = await namingRes.text().catch(() => namingRes.statusText);
+      fail(`name-clusters returned ${namingRes.status}: ${txt.slice(0, 300)}`);
+      stageResult("naming", false, { error: txt.slice(0, 300) });
+    } else {
+      const { results: namings } = await namingRes.json();
+      ok(`Naming complete in ${ms(elapsed)}`);
+      ok(`${namings.length} clusters named`);
+
+      // Print each cluster name + description for quality review
+      console.log();
+      namings.forEach((n, i) => {
+        console.log(`  ${C.bold}[${i+1}] ${n.name}${C.reset}`);
+        console.log(`  ${C.dim}${n.description}${C.reset}`);
+        console.log();
+      });
+
+      // Quality checks
+      const uniqueNames = new Set(namings.map(n => n.name.toLowerCase().trim()));
+      const hasDuplicates = uniqueNames.size < namings.length;
+      const genericTerms = ["platform", "solution", "tool", "system", "software", "saas", "ai-powered", "ai powered"];
+      const genericCount = namings.filter(n =>
+        genericTerms.some(t => n.name.toLowerCase().includes(t))
+      ).length;
+      const shortDescriptions = namings.filter(n => (n.description ?? "").length < 40).length;
+
+      if (!hasDuplicates) ok("All names unique ✓");
+      else fail(`${namings.length - uniqueNames.size} duplicate names`);
+      if (genericCount === 0) ok("No generic names (Platform/Solution/SaaS) ✓");
+      else warn(`${genericCount}/${namings.length} names contain generic terms`);
+      if (shortDescriptions === 0) ok("All descriptions substantive (>40 chars) ✓");
+      else warn(`${shortDescriptions} descriptions too short`);
+
+      stageResult("naming", !hasDuplicates, {
+        nClusters:      namings.length,
+        duplicates:     hasDuplicates ? "YES" : "none",
+        generic_names:  genericCount,
+        elapsed:        ms(elapsed),
+      });
+    }
+  } catch (err) {
+    fail(`Naming request failed: ${err.message}`);
+    stageResult("naming", false, { error: err.message });
+  }
+}
+
 // ── Cleanup test session ───────────────────────────────────────────────────────
 head("CLEANUP");
 info(`Deleting test session ${TEST_SESSION} from Firestore…`);
@@ -512,7 +599,7 @@ try {
 
 // ── Summary ───────────────────────────────────────────────────────────────────
 head("SUMMARY");
-const order = ["parse","upload","extract","embed","cluster"];
+const order = ["parse","upload","extract","embed","cluster","naming"];
 let allPassed = true;
 for (const s of order) {
   const r = results[s];
