@@ -31,10 +31,12 @@ export function DimensionExtractionStep() {
     null
   );
   const [running, setRunning] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   const run = useCallback(async () => {
     if (!uid || !descCol) return;
     setRunning(true);
+    setSaving(false);
     setProgress({ done: 0, total: companies.length, errors: 0 });
 
     const rows = companies.map((c) => ({
@@ -51,22 +53,32 @@ export function DimensionExtractionStep() {
 
       if (!res.ok || !res.body) {
         toast.error("Extraction request failed");
-        setRunning(false);
         return;
       }
 
-      let results: Array<Record<string, string>> = [];
+      // Results are accumulated incrementally from progress.entries — each SSE
+      // progress event carries the batch results it just finished. This means we
+      // never depend on a single large `done` payload that could be lost if the
+      // stream is truncated (was the root cause of Regenerate appearing to hang).
+      const receivedDims = new Map<number, Record<string, string>>();
+      let finalDone = 0;
 
       const parser = createParser({
         onEvent: (event) => {
           const data = JSON.parse(event.data);
           if (data.type === "progress") {
+            finalDone = data.done;
             setProgress({ done: data.done, total: data.total, errors: data.errors });
-          } else if (data.type === "done") {
-            results = data.results;
+            // Accumulate batch results as they arrive
+            if (Array.isArray(data.entries)) {
+              for (const { index, dims } of data.entries) {
+                receivedDims.set(index, dims ?? {});
+              }
+            }
           } else if (data.type === "error") {
             toast.error(`Extraction error: ${data.message}`);
           }
+          // `done` event is now a bare completion signal — no payload needed
         },
       });
 
@@ -78,30 +90,47 @@ export function DimensionExtractionStep() {
         parser.feed(decoder.decode(value, { stream: true }));
       }
 
-      // Write dimensions back to companies
-      if (results.length === companies.length) {
-        const updatedCompanies = companies.map((c, i) => ({
-          ...c,
-          dimensions: results[i] ?? {},
-        }));
-
-        // Delta save — all companies changed, safe 100-doc batches with parallel commits
-        await saveChangedCompaniesToFirestore(
-          uid,
-          updatedCompanies,
-          new Set(updatedCompanies.map((c) => c.id))
-        );
-
-        setCompanies(updatedCompanies);
-        const nextStep = Math.max(pipelineStep, 1) as 1;
-        setPipelineStep(nextStep);
-        await persistSession(uid, { pipelineStep: nextStep });
-        toast.success("Dimensions extracted");
+      // Validate we received results for all companies
+      const receivedCount = receivedDims.size;
+      if (receivedCount === 0) {
+        toast.error("No results received — extraction may have timed out. Please try again.");
+        return;
       }
+      if (receivedCount < companies.length) {
+        toast.warning(
+          `Partial extraction: received ${receivedCount}/${companies.length} companies. Results saved for completed rows.`
+        );
+      }
+
+      // Save — show a separate "Saving…" status so users don't think the spinner
+      // is frozen during the Firestore batch write (can be 5–10 s for large datasets)
+      setSaving(true);
+      const updatedCompanies = companies.map((c, i) => ({
+        ...c,
+        dimensions: receivedDims.get(i) ?? c.dimensions,
+      }));
+
+      await saveChangedCompaniesToFirestore(
+        uid,
+        updatedCompanies,
+        // Only write companies that actually got new results
+        new Set([...receivedDims.keys()].map((i) => updatedCompanies[i]?.id).filter(Boolean) as string[])
+      );
+
+      setCompanies(updatedCompanies);
+      const nextStep = Math.max(pipelineStep, 1) as 1;
+      setPipelineStep(nextStep);
+      await persistSession(uid, { pipelineStep: nextStep });
+      toast.success(
+        receivedCount === companies.length
+          ? "Dimensions extracted"
+          : `Dimensions extracted for ${receivedCount} companies`
+      );
     } catch (err) {
       toast.error(String(err));
     } finally {
       setRunning(false);
+      setSaving(false);
     }
   }, [uid, descCol, companies, setCompanies, pipelineStep, setPipelineStep]);
 
@@ -143,15 +172,21 @@ export function DimensionExtractionStep() {
         </div>
 
         {/* Progress */}
-        {running && progress && (
+        {running && (
           <div className="flex flex-col gap-1">
             <div className="flex justify-between text-xs text-muted-foreground">
-              <span>Extracting… {progress.done}/{progress.total}</span>
-              {progress.errors > 0 && (
+              {saving ? (
+                <span className="text-primary">Saving to database…</span>
+              ) : progress ? (
+                <span>Extracting… {progress.done}/{progress.total}</span>
+              ) : (
+                <span>Starting…</span>
+              )}
+              {progress && progress.errors > 0 && (
                 <span className="text-destructive">{progress.errors} errors</span>
               )}
             </div>
-            <Progress value={pct} className="h-1.5" />
+            <Progress value={saving ? 100 : pct} className="h-1.5" />
           </div>
         )}
 

@@ -23,10 +23,13 @@ export async function POST(req: NextRequest) {
       };
 
       try {
-        const results = await extractAllDimensions(apiKey, rows, (p) => {
+        // Results are streamed incrementally via progress.entries — the done event
+        // is just a completion signal (no payload). This avoids a ~3 MB final burst
+        // that could be lost if the stream is truncated before the client reads it.
+        await extractAllDimensions(apiKey, rows, (p) => {
           send({ type: "progress", ...p });
         });
-        send({ type: "done", results });
+        send({ type: "done" });
       } catch (err) {
         send({ type: "error", message: String(err) });
       } finally {

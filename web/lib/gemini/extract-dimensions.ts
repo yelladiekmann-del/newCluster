@@ -175,6 +175,12 @@ export interface ExtractionProgress {
   done: number;
   total: number;
   errors: number;
+  /**
+   * Results for the batch that just completed — streamed incrementally so the
+   * client can accumulate them without waiting for the final `done` event.
+   * Index values map directly into the original `rows` array.
+   */
+  entries: { index: number; dims: DimensionResult }[];
 }
 
 const MAX_CONCURRENT_BATCHES = 20;
@@ -205,12 +211,14 @@ export async function extractAllDimensions(
     await Promise.all(
       chunk.map(async ({ startIndex, rows: batchRows }) => {
         const batchResults = await extractBatch(apiKey, batchRows);
+        const entries: { index: number; dims: DimensionResult }[] = [];
         for (let j = 0; j < batchRows.length; j++) {
           results[startIndex + j] = batchResults[j];
           if (Object.keys(batchResults[j]).length === 0) errors++;
           done++;
+          entries.push({ index: startIndex + j, dims: batchResults[j] });
         }
-        onProgress?.({ done, total: rows.length, errors });
+        onProgress?.({ done, total: rows.length, errors, entries });
       })
     );
   }
