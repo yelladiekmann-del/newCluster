@@ -91,7 +91,8 @@ console.log(`${C.dim}Session: ${TEST_SESSION}  |  Target: ${BASE}${C.reset}\n`);
 
 initAdmin();
 const db      = getFirestore();
-const storage = getStorage().bucket();
+const storageBucketName = process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET;
+const storage = getStorage().bucket(storageBucketName);
 
 // ── 0. Parse ──────────────────────────────────────────────────────────────────
 head("STAGE 0 — Parse XLSX");
@@ -222,7 +223,9 @@ if (needsExtraction.length === 0) {
   info(`Body size: ~${(JSON.stringify(extractPayload).length / 1024 / 1024).toFixed(1)} MB`);
 
   let extractDone = 0, extractErrors = 0, extractTotal = needsExtraction.length;
-  let extractResults = null;
+  // Results are now streamed incrementally via progress.entries (not in the done event)
+  const extractMap = new Map(); // index → dims
+  let extractStreamDone = false;
   let lastProgressAt = Date.now();
 
   let extractOk = false;
@@ -243,6 +246,12 @@ if (needsExtraction.length === 0) {
           extractDone   = evt.done   ?? extractDone;
           extractTotal  = evt.total  ?? extractTotal;
           extractErrors = evt.errors ?? extractErrors;
+          // Accumulate incremental results
+          if (Array.isArray(evt.entries)) {
+            for (const { index, dims } of evt.entries) {
+              extractMap.set(index, dims ?? {});
+            }
+          }
           const now = Date.now();
           if (now - lastProgressAt > 3000 || extractDone === extractTotal) {
             const elapsed = now - t;
@@ -252,13 +261,23 @@ if (needsExtraction.length === 0) {
             lastProgressAt = now;
           }
         } else if (evt.type === "done") {
-          extractResults = evt.results;
+          extractStreamDone = true;
           process.stdout.write("\r");
+          // Sanity check: done event must NOT carry a results payload.
+          // If it does, the component's old `data.results` path would silently
+          // work even with the wrong format — masking the bug in production.
+          if (evt.results !== undefined) {
+            fail("REGRESSION: done event carries 'results' payload — component will break (expects incremental progress.entries)");
+          }
         } else if (evt.type === "error") {
           process.stdout.write("\r");
           fail(`Extraction error: ${evt.message}`);
         }
       });
+
+      const extractResults = extractMap.size > 0
+        ? needsExtraction.map((_, idx) => extractMap.get(idx) ?? {})
+        : null;
 
       if (extractResults) {
         // Merge back into companies

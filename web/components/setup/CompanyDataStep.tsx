@@ -80,17 +80,23 @@ export function CompanyDataStep() {
         return;
       }
 
-      let results: Array<Record<string, string>> = [];
+      // Results are streamed incrementally via progress.entries — the done event
+      // is just a bare completion signal (no payload). Accumulate with a Map.
+      const receivedDims = new Map<number, Record<string, string>>();
       const parser = createParser({
         onEvent: (event) => {
           const data = JSON.parse(event.data);
           if (data.type === "progress") {
             setExtractProgress({ done: data.done, total: data.total, errors: data.errors });
-          } else if (data.type === "done") {
-            results = data.results;
+            if (Array.isArray(data.entries)) {
+              for (const { index, dims } of data.entries) {
+                receivedDims.set(index, dims ?? {});
+              }
+            }
           } else if (data.type === "error") {
             toast.error(`Extraction error: ${data.message}`);
           }
+          // done event has no payload — results already accumulated above
         },
       });
 
@@ -102,8 +108,11 @@ export function CompanyDataStep() {
         parser.feed(decoder.decode(value, { stream: true }));
       }
 
-      if (results.length === companiesSnap.length) {
-        const updatedCompanies = companiesSnap.map((c, i) => ({ ...c, dimensions: results[i] ?? {} }));
+      if (receivedDims.size > 0) {
+        const updatedCompanies = companiesSnap.map((c, i) => ({
+          ...c,
+          dimensions: receivedDims.get(i) ?? c.dimensions,
+        }));
 
         setCompanies(updatedCompanies);
         await saveCompaniesToStorage(currentUid, updatedCompanies);
@@ -111,7 +120,13 @@ export function CompanyDataStep() {
         const nextStep = Math.max(pipelineStep, 1) as 1;
         setPipelineStep(nextStep);
         await persistSession(currentUid, { pipelineStep: nextStep });
-        toast.success("AI dimensions extracted");
+        toast.success(
+          receivedDims.size === companiesSnap.length
+            ? "AI dimensions extracted"
+            : `AI dimensions extracted for ${receivedDims.size} companies`
+        );
+      } else {
+        toast.error("No extraction results received — please try again.");
       }
     } catch (err) {
       toast.error(String(err));
