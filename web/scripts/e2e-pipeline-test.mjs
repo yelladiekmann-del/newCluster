@@ -596,6 +596,63 @@ if (!embedResult?.storage_path) {
   }
 }
 
+// ── 4b. Confirm clusters (server-side save) ───────────────────────────────────
+head("STAGE 4b — Confirm Clusters (server-side Firestore save)");
+t = Date.now();
+
+const clusterStageResultForSave = results["cluster"];
+if (!clusterStageResultForSave?.passed || !clusterResult) {
+  warn("Skipping confirm-clusters — cluster stage did not succeed");
+  stageResult("confirm_clusters", false, { error: "cluster stage failed" });
+} else {
+  const clusterLabels = clusterResult?.labels ?? [];
+  const embedded2d    = clusterResult?.embedded2d ?? [];
+
+  // Build the same payload the browser sends to /api/confirm-clusters
+  const updates = embeddable.map((c, i) => ({
+    id:        c.id,
+    clusterId: clusterLabels[i] === -1 ? "outliers" : String(clusterLabels[i] ?? "outliers"),
+    umapX:     embedded2d[i]?.[0] ?? null,
+    umapY:     embedded2d[i]?.[1] ?? null,
+  }));
+
+  info(`Calling /api/confirm-clusters with ${updates.length.toLocaleString()} company updates…`);
+
+  try {
+    const confirmRes = await fetch(`${BASE}/api/confirm-clusters`, {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body:    JSON.stringify({ uid: TEST_SESSION, updates }),
+    });
+
+    const elapsed = Date.now() - t;
+
+    if (!confirmRes.ok) {
+      const txt = await confirmRes.text().catch(() => confirmRes.statusText);
+      fail(`confirm-clusters returned ${confirmRes.status}: ${txt.slice(0, 300)}`);
+      stageResult("confirm_clusters", false, { error: txt.slice(0, 300) });
+    } else {
+      const { updated } = await confirmRes.json();
+      ok(`Cluster results saved in ${ms(elapsed)}`);
+      ok(`Docs updated: ${updated.toLocaleString()}  ·  Rate: ${Math.round(updated / (elapsed / 1000)).toLocaleString()} docs/sec`);
+      stageResult("confirm_clusters", true, {
+        docs:         updated,
+        elapsed:      ms(elapsed),
+        rate_per_sec: Math.round(updated / (elapsed / 1000)),
+      });
+
+      // Merge cluster data back into local companies array so Stage 5 reads correct labels
+      updates.forEach(({ id, clusterId, umapX, umapY }) => {
+        const c = embeddable.find(x => x.id === id);
+        if (c) { c.clusterId = clusterId; c.umapX = umapX; c.umapY = umapY; }
+      });
+    }
+  } catch (err) {
+    fail(`confirm-clusters request failed: ${err.message}`);
+    stageResult("confirm_clusters", false, { error: err.message });
+  }
+}
+
 // ── 5. Name Clusters ──────────────────────────────────────────────────────────
 head("STAGE 5 — Name Clusters (Gemini)");
 t = Date.now();
@@ -605,24 +662,6 @@ if (!clusterStageResult?.passed || !results["cluster"]) {
   warn("Skipping naming — cluster stage did not succeed");
   stageResult("naming", false, { error: "cluster stage failed" });
 } else {
-  // Write clusterId back to company docs in Firestore so name-clusters can read them
-  const clusterLabels = clusterResult?.labels ?? [];
-  if (clusterLabels.length > 0 && embeddable.length > 0) {
-    info(`Writing ${clusterLabels.length} cluster labels to Firestore…`);
-    const labelChunks = chunk(embeddable, 400);
-    let labelOffset = 0;
-    for (const ch of labelChunks) {
-      const b = db.batch();
-      ch.forEach((c, i) => {
-        const label = clusterLabels[labelOffset + i];
-        const clusterId = label === -1 ? "outliers" : String(label);
-        b.update(db.collection("sessions").doc(TEST_SESSION).collection("companies").doc(c.id), { clusterId });
-      });
-      await b.commit();
-      labelOffset += ch.length;
-    }
-    ok(`Cluster labels written (${clusterLabels.length} companies)`);
-  }
 
   try {
     info(`Calling /api/name-clusters for ${clusterStageResult.nClusters} clusters…`);
@@ -703,7 +742,7 @@ try {
 
 // ── Summary ───────────────────────────────────────────────────────────────────
 head("SUMMARY");
-const order = ["parse","upload","extract","save_dims","embed","cluster","naming"];
+const order = ["parse","upload","extract","save_dims","embed","cluster","confirm_clusters","naming"];
 let allPassed = true;
 for (const s of order) {
   const r = results[s];

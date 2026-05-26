@@ -303,8 +303,25 @@ export function EmbedPageClient() {
     setConfirming(true);
 
     try {
-      const { saveCompaniesToStorage } = await import("@/lib/firebase/companies-storage");
-      await saveCompaniesToStorage(uid, companies);
+      // Save cluster results (clusterId + umapX/Y) server-side via Admin SDK.
+      // This replaces the old browser-side saveCompaniesToStorage call which
+      // took 2–5 min for large datasets due to client SDK round-trip latency.
+      const confirmRes = await fetch("/api/confirm-clusters", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          uid,
+          updates: companies.map((c) => ({
+            id: c.id,
+            clusterId: c.clusterId,
+            umapX: c.umapX,
+            umapY: c.umapY,
+          })),
+        }),
+      });
+      if (!confirmRes.ok) {
+        throw new Error(`Failed to save cluster results: ${await confirmRes.text()}`);
+      }
 
       // Group companies by cluster index
       const groups: Record<string, typeof companies> = {};
@@ -362,7 +379,7 @@ export function EmbedPageClient() {
       setClustersConfirmed(true);
 
       // No second save needed — companies (with clusterId/umapX/Y) were already
-      // written to Firestore + Storage in the first saveCompaniesToStorage call above.
+      // written to Firestore via /api/confirm-clusters above.
 
       const nextStep = Math.max(pipelineStep, 3) as 3;
       setPipelineStep(nextStep);
