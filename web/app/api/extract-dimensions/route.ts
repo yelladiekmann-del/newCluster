@@ -35,7 +35,8 @@ async function saveDimsToFirestore(
       chunks.slice(g, g + ADMIN_PARALLEL_COMMITS).map(async (batch) => {
         const fb = db.batch();
         for (const { key, dims } of batch) {
-          fb.update(db.doc(`sessions/${uid}/companies/${key}`), { dimensions: dims });
+          // set+merge instead of update: creates the doc if missing (update throws NOT_FOUND)
+          fb.set(db.doc(`sessions/${uid}/companies/${key}`), { dimensions: dims }, { merge: true });
         }
         await fb.commit();
       })

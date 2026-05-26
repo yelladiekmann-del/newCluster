@@ -219,6 +219,30 @@ if (needsExtraction.length === 0) {
     })),
   };
 
+  // Regression test: verify that extract-dimensions handles missing Firestore docs (set+merge, not update).
+  info(`Regression check: extract-dimensions with uid + non-existent doc key…`);
+  try {
+    const phantomExtractRes = await fetch(`${BASE}/api/extract-dimensions`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        rows: [{ name: "PhantomCo", description: "A test company that does not exist in Firestore." }],
+        uid: TEST_SESSION,
+        originalIndices: [99999], // doc r99999 does not exist
+      }),
+    });
+    if (phantomExtractRes.ok || phantomExtractRes.body) {
+      // Drain the stream and check for errors
+      let sawError = false;
+      await readSSE(phantomExtractRes, evt => { if (evt.type === "error") sawError = true; });
+      if (!sawError) ok("set+merge handles missing doc in extract-dimensions ✓");
+      else fail("REGRESSION: extract-dimensions SSE error for missing doc — update() used instead of set+merge");
+    } else {
+      fail(`REGRESSION: extract-dimensions returned ${phantomExtractRes.status} for missing doc`);
+    }
+  } catch (e) {
+    fail(`REGRESSION: extract-dimensions threw for missing doc: ${e.message}`);
+  }
+
   info(`Sending ${needsExtraction.length.toLocaleString()} rows to /api/extract-dimensions…`);
   info(`Body size: ~${(JSON.stringify(extractPayload).length / 1024 / 1024).toFixed(1)} MB`);
 
@@ -615,6 +639,21 @@ if (!clusterStageResultForSave?.passed || !clusterResult) {
     umapX:     embedded2d[i]?.[0] ?? null,
     umapY:     embedded2d[i]?.[1] ?? null,
   }));
+
+  // Regression test: verify that confirm-clusters handles missing docs (set+merge, not update).
+  // Simulate a doc that was never written to Firestore by injecting a phantom ID.
+  const phantomUpdate = { id: "r_PHANTOM_NONEXISTENT", clusterId: "0", umapX: 0, umapY: 0 };
+  info(`Regression check: confirm-clusters with 1 non-existent doc (should not throw NOT_FOUND)…`);
+  try {
+    const phantomRes = await fetch(`${BASE}/api/confirm-clusters`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ uid: TEST_SESSION, updates: [phantomUpdate] }),
+    });
+    if (phantomRes.ok) ok("set+merge handles missing doc ✓ (no NOT_FOUND error)");
+    else fail(`REGRESSION: confirm-clusters returned ${phantomRes.status} for missing doc — update() used instead of set+merge`);
+  } catch (e) {
+    fail(`REGRESSION: confirm-clusters threw for missing doc: ${e.message}`);
+  }
 
   info(`Calling /api/confirm-clusters with ${updates.length.toLocaleString()} company updates…`);
 

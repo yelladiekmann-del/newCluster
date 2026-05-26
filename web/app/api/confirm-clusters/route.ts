@@ -37,7 +37,8 @@ export async function POST(req: NextRequest) {
         chunks.slice(g, g + PARALLEL_COMMITS).map(async (batch) => {
           const fb = db.batch();
           for (const { id, ...fields } of batch) {
-            fb.update(db.doc(`sessions/${uid}/companies/${id}`), fields);
+            // set+merge instead of update: creates the doc if missing (update throws NOT_FOUND)
+            fb.set(db.doc(`sessions/${uid}/companies/${id}`), fields, { merge: true });
           }
           await fb.commit();
         })
