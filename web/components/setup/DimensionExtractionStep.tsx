@@ -10,7 +10,6 @@ import { Progress } from "@/components/ui/progress";
 import { useSession } from "@/lib/store/session";
 import { persistSession } from "@/lib/firebase/hooks";
 import { DIMENSIONS } from "@/types";
-import { saveChangedCompaniesToFirestore } from "@/lib/firebase/companies-storage";
 import { toast } from "sonner";
 import { saveAs } from "file-saver";
 import Papa from "papaparse";
@@ -67,10 +66,12 @@ export function DimensionExtractionStep() {
     }));
 
     try {
+      const originalIndices = toExtract.map(({ originalIndex }) => originalIndex);
+
       const res = await fetch("/api/extract-dimensions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ rows }),
+        body: JSON.stringify({ rows, uid, originalIndices }),
       });
 
       if (!res.ok || !res.body) {
@@ -95,6 +96,8 @@ export function DimensionExtractionStep() {
                 }
               }
             }
+          } else if (data.type === "saving") {
+            setSaving(true);
           } else if (data.type === "error") {
             toast.error(`Extraction error: ${data.message}`);
           }
@@ -114,17 +117,12 @@ export function DimensionExtractionStep() {
         return;
       }
 
-      setSaving(true);
+      // Firestore was already saved server-side (see API route).
+      // Just update local React state.
       const updatedCompanies = companies.map((c, i) => ({
         ...c,
         dimensions: receivedDims.has(i) ? receivedDims.get(i)! : c.dimensions,
       }));
-
-      await saveChangedCompaniesToFirestore(
-        uid,
-        updatedCompanies,
-        new Set([...receivedDims.keys()].map((i) => updatedCompanies[i]?.id).filter(Boolean) as string[])
-      );
 
       setCompanies(updatedCompanies);
       const nextStep = Math.max(pipelineStep, 1) as 1;
