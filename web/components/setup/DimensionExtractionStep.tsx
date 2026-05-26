@@ -33,13 +33,36 @@ export function DimensionExtractionStep() {
   const [running, setRunning] = useState(false);
   const [saving, setSaving] = useState(false);
 
+  // Companies that have zero extracted dimensions — either first run or prior failures.
+  // On Regenerate we only retry these, not the whole dataset.
+  const failedCompanies = companies.filter(
+    (c) => Object.keys(c.dimensions ?? {}).length === 0
+  );
+  const isRegenerate = hasDimensions;
+
   const run = useCallback(async () => {
     if (!uid || !descCol) return;
     setRunning(true);
     setSaving(false);
-    setProgress({ done: 0, total: companies.length, errors: 0 });
 
-    const rows = companies.map((c) => ({
+    // On Regenerate: only re-extract companies that got 0 dimensions last time.
+    // This turns a full 5k-company re-run into a targeted retry of the N failures,
+    // which completes in seconds rather than minutes.
+    const toExtract = isRegenerate
+      ? companies
+          .map((c, originalIndex) => ({ c, originalIndex }))
+          .filter(({ c }) => Object.keys(c.dimensions ?? {}).length === 0)
+      : companies.map((c, originalIndex) => ({ c, originalIndex }));
+
+    if (toExtract.length === 0) {
+      toast.success("All companies already have dimensions — nothing to retry.");
+      setRunning(false);
+      return;
+    }
+
+    setProgress({ done: 0, total: toExtract.length, errors: 0 });
+
+    const rows = toExtract.map(({ c }) => ({
       name: c.name,
       description: String(c.originalData[descCol] ?? ""),
     }));
@@ -56,29 +79,27 @@ export function DimensionExtractionStep() {
         return;
       }
 
-      // Results are accumulated incrementally from progress.entries — each SSE
-      // progress event carries the batch results it just finished. This means we
-      // never depend on a single large `done` payload that could be lost if the
-      // stream is truncated (was the root cause of Regenerate appearing to hang).
+      // Results arrive incrementally via progress.entries.
+      // Key: ORIGINAL company index (remapped from API's 0-based index).
       const receivedDims = new Map<number, Record<string, string>>();
-      let finalDone = 0;
 
       const parser = createParser({
         onEvent: (event) => {
           const data = JSON.parse(event.data);
           if (data.type === "progress") {
-            finalDone = data.done;
             setProgress({ done: data.done, total: data.total, errors: data.errors });
-            // Accumulate batch results as they arrive
             if (Array.isArray(data.entries)) {
               for (const { index, dims } of data.entries) {
-                receivedDims.set(index, dims ?? {});
+                // Remap API index → original company index
+                const originalIndex = toExtract[index]?.originalIndex;
+                if (originalIndex !== undefined) {
+                  receivedDims.set(originalIndex, dims ?? {});
+                }
               }
             }
           } else if (data.type === "error") {
             toast.error(`Extraction error: ${data.message}`);
           }
-          // `done` event is now a bare completion signal — no payload needed
         },
       });
 
@@ -90,30 +111,25 @@ export function DimensionExtractionStep() {
         parser.feed(decoder.decode(value, { stream: true }));
       }
 
-      // Validate we received results for all companies
-      const receivedCount = receivedDims.size;
-      if (receivedCount === 0) {
+      if (receivedDims.size === 0) {
         toast.error("No results received — extraction may have timed out. Please try again.");
         return;
       }
-      if (receivedCount < companies.length) {
-        toast.warning(
-          `Partial extraction: received ${receivedCount}/${companies.length} companies. Results saved for completed rows.`
-        );
-      }
 
-      // Save — show a separate "Saving…" status so users don't think the spinner
-      // is frozen during the Firestore batch write (can be 5–10 s for large datasets)
       setSaving(true);
       const updatedCompanies = companies.map((c, i) => ({
         ...c,
-        dimensions: receivedDims.get(i) ?? c.dimensions,
+        dimensions: receivedDims.has(i) ? receivedDims.get(i)! : c.dimensions,
       }));
+
+      // Identify which companies still have 0 dims after this run
+      const stillFailed = updatedCompanies.filter(
+        (c) => Object.keys(c.dimensions ?? {}).length === 0
+      );
 
       await saveChangedCompaniesToFirestore(
         uid,
         updatedCompanies,
-        // Only write companies that actually got new results
         new Set([...receivedDims.keys()].map((i) => updatedCompanies[i]?.id).filter(Boolean) as string[])
       );
 
@@ -121,18 +137,28 @@ export function DimensionExtractionStep() {
       const nextStep = Math.max(pipelineStep, 1) as 1;
       setPipelineStep(nextStep);
       await persistSession(uid, { pipelineStep: nextStep });
-      toast.success(
-        receivedCount === companies.length
-          ? "Dimensions extracted"
-          : `Dimensions extracted for ${receivedCount} companies`
-      );
+
+      if (stillFailed.length > 0) {
+        // Show which companies failed — likely empty/unrecognisable descriptions
+        const names = stillFailed.slice(0, 5).map((c) => c.name).join(", ");
+        const more = stillFailed.length > 5 ? ` +${stillFailed.length - 5} more` : "";
+        toast.warning(
+          `${stillFailed.length} companies could not be extracted (empty or unrecognisable description): ${names}${more}`
+        );
+      } else {
+        toast.success(
+          isRegenerate
+            ? `Retry complete — all previously failed companies extracted`
+            : "Dimensions extracted"
+        );
+      }
     } catch (err) {
       toast.error(String(err));
     } finally {
       setRunning(false);
       setSaving(false);
     }
-  }, [uid, descCol, companies, setCompanies, pipelineStep, setPipelineStep]);
+  }, [uid, descCol, companies, isRegenerate, setCompanies, pipelineStep, setPipelineStep]);
 
   const downloadEnriched = useCallback(() => {
     const rows = companies.map((c) => ({
@@ -183,7 +209,7 @@ export function DimensionExtractionStep() {
                 <span>Starting…</span>
               )}
               {progress && progress.errors > 0 && (
-                <span className="text-destructive">{progress.errors} errors</span>
+                <span className="text-amber-500">{progress.errors} skipped (no description)</span>
               )}
             </div>
             <Progress value={saving ? 100 : pct} className="h-1.5" />
@@ -203,7 +229,11 @@ export function DimensionExtractionStep() {
             ) : (
               <Sparkles className="h-3.5 w-3.5" />
             )}
-            {hasDimensions ? "Regenerate" : "Generate dimensions"}
+            {isRegenerate
+              ? failedCompanies.length > 0
+                ? `Retry failed (${failedCompanies.length})`
+                : "Regenerate all"
+              : "Generate dimensions"}
           </Button>
 
           {hasDimensions && (
