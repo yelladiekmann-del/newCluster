@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback } from "react";
-import { Sparkles, CheckCircle2, Loader2, Download } from "lucide-react";
+import { Sparkles, CheckCircle2, Loader2, Download, ChevronDown, ChevronUp, AlertTriangle, RefreshCw } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
@@ -27,28 +27,27 @@ export function DimensionExtractionStep() {
     companies[0]?.dimensions &&
     Object.keys(companies[0].dimensions).length > 0;
 
-  const [progress, setProgress] = useState<{ done: number; total: number; errors: number } | null>(
-    null
-  );
+  const [progress, setProgress] = useState<{ done: number; total: number; errors: number } | null>(null);
   const [running, setRunning] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [failedListOpen, setFailedListOpen] = useState(false);
 
-  // Companies that have zero extracted dimensions — either first run or prior failures.
-  // On Regenerate we only retry these, not the whole dataset.
+  // Companies that still have zero dimensions — shown after a run so the user
+  // can review them before deciding to retry.
   const failedCompanies = companies.filter(
     (c) => Object.keys(c.dimensions ?? {}).length === 0
   );
-  const isRegenerate = hasDimensions;
 
-  const run = useCallback(async () => {
+  // ── Core extraction function ────────────────────────────────────────────────
+  // `retryFailedOnly`: if true, only sends companies with 0 dims (targeted retry).
+  //                    if false, sends all companies (first run or full regenerate).
+  const runExtraction = useCallback(async (retryFailedOnly: boolean) => {
     if (!uid || !descCol) return;
     setRunning(true);
     setSaving(false);
+    setFailedListOpen(false);
 
-    // On Regenerate: only re-extract companies that got 0 dimensions last time.
-    // This turns a full 5k-company re-run into a targeted retry of the N failures,
-    // which completes in seconds rather than minutes.
-    const toExtract = isRegenerate
+    const toExtract = retryFailedOnly
       ? companies
           .map((c, originalIndex) => ({ c, originalIndex }))
           .filter(({ c }) => Object.keys(c.dimensions ?? {}).length === 0)
@@ -90,7 +89,6 @@ export function DimensionExtractionStep() {
             setProgress({ done: data.done, total: data.total, errors: data.errors });
             if (Array.isArray(data.entries)) {
               for (const { index, dims } of data.entries) {
-                // Remap API index → original company index
                 const originalIndex = toExtract[index]?.originalIndex;
                 if (originalIndex !== undefined) {
                   receivedDims.set(originalIndex, dims ?? {});
@@ -122,11 +120,6 @@ export function DimensionExtractionStep() {
         dimensions: receivedDims.has(i) ? receivedDims.get(i)! : c.dimensions,
       }));
 
-      // Identify which companies still have 0 dims after this run
-      const stillFailed = updatedCompanies.filter(
-        (c) => Object.keys(c.dimensions ?? {}).length === 0
-      );
-
       await saveChangedCompaniesToFirestore(
         uid,
         updatedCompanies,
@@ -138,19 +131,15 @@ export function DimensionExtractionStep() {
       setPipelineStep(nextStep);
       await persistSession(uid, { pipelineStep: nextStep });
 
+      const stillFailed = updatedCompanies.filter(
+        (c) => Object.keys(c.dimensions ?? {}).length === 0
+      );
+
       if (stillFailed.length > 0) {
-        // Show which companies failed — likely empty/unrecognisable descriptions
-        const names = stillFailed.slice(0, 5).map((c) => c.name).join(", ");
-        const more = stillFailed.length > 5 ? ` +${stillFailed.length - 5} more` : "";
-        toast.warning(
-          `${stillFailed.length} companies could not be extracted (empty or unrecognisable description): ${names}${more}`
-        );
+        setFailedListOpen(true); // auto-open the failed list after a run
+        toast.warning(`${stillFailed.length} companies could not be extracted — see list below.`);
       } else {
-        toast.success(
-          isRegenerate
-            ? `Retry complete — all previously failed companies extracted`
-            : "Dimensions extracted"
-        );
+        toast.success(retryFailedOnly ? "All failed companies extracted successfully." : "Dimensions extracted.");
       }
     } catch (err) {
       toast.error(String(err));
@@ -158,7 +147,10 @@ export function DimensionExtractionStep() {
       setRunning(false);
       setSaving(false);
     }
-  }, [uid, descCol, companies, isRegenerate, setCompanies, pipelineStep, setPipelineStep]);
+  }, [uid, descCol, companies, setCompanies, pipelineStep, setPipelineStep]);
+
+  const handleGenerate  = useCallback(() => runExtraction(false), [runExtraction]);
+  const handleRetryFailed = useCallback(() => runExtraction(true),  [runExtraction]);
 
   const downloadEnriched = useCallback(() => {
     const rows = companies.map((c) => ({
@@ -175,6 +167,7 @@ export function DimensionExtractionStep() {
   return (
     <Card>
       <CardContent className="pt-4 flex flex-col gap-3">
+        {/* Header */}
         <div className="flex items-center justify-between">
           <Label className="text-sm font-semibold">3. AI Dimensions</Label>
           {hasDimensions && !running && (
@@ -204,24 +197,64 @@ export function DimensionExtractionStep() {
               {saving ? (
                 <span className="text-primary">Saving to database…</span>
               ) : progress ? (
-                <span>Extracting… {progress.done}/{progress.total}</span>
+                <span>Extracting… {progress.done.toLocaleString()}/{progress.total.toLocaleString()}</span>
               ) : (
                 <span>Starting…</span>
               )}
               {progress && progress.errors > 0 && (
-                <span className="text-amber-500">{progress.errors} skipped (no description)</span>
+                <span className="text-amber-500">{progress.errors} skipped</span>
               )}
             </div>
             <Progress value={saving ? 100 : pct} className="h-1.5" />
           </div>
         )}
 
-        {/* Actions */}
+        {/* Failed companies panel — shown after a run if some companies got 0 dims */}
+        {!running && failedCompanies.length > 0 && hasDimensions && (
+          <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 text-sm">
+            <button
+              type="button"
+              onClick={() => setFailedListOpen((v) => !v)}
+              className="w-full flex items-center justify-between px-3 py-2 text-amber-600 hover:text-amber-700 transition-colors"
+            >
+              <span className="flex items-center gap-1.5 font-medium">
+                <AlertTriangle className="h-3.5 w-3.5" />
+                {failedCompanies.length} companies could not be extracted
+              </span>
+              {failedListOpen ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+            </button>
+
+            {failedListOpen && (
+              <div className="px-3 pb-3 flex flex-col gap-2">
+                <p className="text-xs text-muted-foreground">
+                  These companies have no extractable description. Retrying will attempt them again — if they keep failing, the description column may be empty or unrecognisable.
+                </p>
+                <ul className="text-xs text-muted-foreground space-y-0.5 max-h-32 overflow-y-auto">
+                  {failedCompanies.map((c) => (
+                    <li key={c.id} className="truncate">· {c.name}</li>
+                  ))}
+                </ul>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleRetryFailed}
+                  disabled={running}
+                  className="mt-1 gap-1.5 self-start border-amber-500/50 text-amber-600 hover:bg-amber-500/10"
+                >
+                  <RefreshCw className="h-3.5 w-3.5" />
+                  Retry failed ({failedCompanies.length})
+                </Button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Main actions */}
         <div className="flex gap-2 flex-wrap">
           <Button
             size="sm"
             disabled={running || companies.length === 0}
-            onClick={run}
+            onClick={handleGenerate}
             className="gap-1.5"
           >
             {running ? (
@@ -229,14 +262,10 @@ export function DimensionExtractionStep() {
             ) : (
               <Sparkles className="h-3.5 w-3.5" />
             )}
-            {isRegenerate
-              ? failedCompanies.length > 0
-                ? `Retry failed (${failedCompanies.length})`
-                : "Regenerate all"
-              : "Generate dimensions"}
+            {hasDimensions ? "Regenerate all" : "Generate dimensions"}
           </Button>
 
-          {hasDimensions && (
+          {hasDimensions && !running && (
             <Button
               variant="outline"
               size="sm"
@@ -248,7 +277,6 @@ export function DimensionExtractionStep() {
             </Button>
           )}
         </div>
-
       </CardContent>
     </Card>
   );
