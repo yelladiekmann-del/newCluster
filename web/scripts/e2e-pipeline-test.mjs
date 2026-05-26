@@ -241,17 +241,33 @@ if (needsExtraction.length === 0) {
       fail(`Extract returned ${res.status}: ${txt.slice(0, 300)}`);
       stageResult("extract", false, { error: txt.slice(0,300) });
     } else {
+      // ── SSE contract checks ─────────────────────────────────────────────
+      // These mirror the EXACT parsing logic in CompanyDataStep.tsx and
+      // DimensionExtractionStep.tsx. A failure here means the component would
+      // crash or silently produce empty results for the user.
+      let progressEventsWithEntries = 0;
+      let progressEventsWithoutEntries = 0;
+      let doneEventSeen = false;
+
       await readSSE(res, evt => {
         if (evt.type === "progress") {
           extractDone   = evt.done   ?? extractDone;
           extractTotal  = evt.total  ?? extractTotal;
           extractErrors = evt.errors ?? extractErrors;
-          // Accumulate incremental results
-          if (Array.isArray(evt.entries)) {
+
+          // Contract: every progress event must have `entries` array
+          if (!Array.isArray(evt.entries)) {
+            progressEventsWithoutEntries++;
+          } else {
+            progressEventsWithEntries++;
             for (const { index, dims } of evt.entries) {
+              // Contract: index must be a number, dims must be an object
+              if (typeof index !== "number") fail(`REGRESSION: progress.entries[].index is not a number (got ${typeof index})`);
+              if (typeof dims !== "object" || dims === null) fail(`REGRESSION: progress.entries[].dims is not an object`);
               extractMap.set(index, dims ?? {});
             }
           }
+
           const now = Date.now();
           if (now - lastProgressAt > 3000 || extractDone === extractTotal) {
             const elapsed = now - t;
@@ -261,19 +277,39 @@ if (needsExtraction.length === 0) {
             lastProgressAt = now;
           }
         } else if (evt.type === "done") {
+          doneEventSeen = true;
           extractStreamDone = true;
           process.stdout.write("\r");
-          // Sanity check: done event must NOT carry a results payload.
-          // If it does, the component's old `data.results` path would silently
-          // work even with the wrong format — masking the bug in production.
+
+          // Contract: done event must NOT carry `results` payload.
+          // If it does, the old component path (data.results) would silently
+          // work, masking a regression when we remove it again.
           if (evt.results !== undefined) {
-            fail("REGRESSION: done event carries 'results' payload — component will break (expects incremental progress.entries)");
+            fail("REGRESSION: done event carries 'results' payload — component uses incremental progress.entries, not done.results");
+          }
+          // Contract: done event must not carry unexpected keys
+          const allowedDoneKeys = new Set(["type"]);
+          const extraKeys = Object.keys(evt).filter(k => !allowedDoneKeys.has(k));
+          if (extraKeys.length > 0) {
+            warn(`done event has unexpected keys: ${extraKeys.join(", ")} — component may ignore them`);
           }
         } else if (evt.type === "error") {
           process.stdout.write("\r");
           fail(`Extraction error: ${evt.message}`);
         }
       });
+
+      // ── Post-stream contract checks ──────────────────────────────────────
+      process.stdout.write("\r");
+      if (!doneEventSeen)    fail("REGRESSION: SSE stream ended without a done event — component spinner would hang forever");
+      if (progressEventsWithoutEntries > 0) fail(`REGRESSION: ${progressEventsWithoutEntries} progress events missing 'entries' array — component Map would stay empty`);
+      if (progressEventsWithEntries === 0)  fail("REGRESSION: no progress events with entries received — component would save 0 results");
+      // Simulate the component's guard: receivedDims.size > 0
+      if (extractMap.size === 0)            fail("REGRESSION: extractMap empty after stream — component would show 'No results received' toast");
+      // Simulate: companies.map((c, i) => ({ ...c, dimensions: receivedDims.get(i) ?? c.dimensions }))
+      // If any index is out of range, dims would fall back to existing — not a crash but worth flagging
+      const outOfRange = [...extractMap.keys()].filter(i => i >= needsExtraction.length);
+      if (outOfRange.length > 0) fail(`REGRESSION: ${outOfRange.length} entries have index >= companies.length — component would silently drop them`);
 
       const extractResults = extractMap.size > 0
         ? needsExtraction.map((_, idx) => extractMap.get(idx) ?? {})
