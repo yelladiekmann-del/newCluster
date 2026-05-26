@@ -15,14 +15,22 @@ const ADMIN_PARALLEL_COMMITS = 10;
 async function saveDimsToFirestore(
   uid: string,
   collectedDims: Map<number, Record<string, string>>,
+  rows: CompanyRow[],
   originalIndices?: number[]
 ): Promise<void> {
   const db = adminDb();
 
-  const entries: { key: string; dims: Record<string, string> }[] = [];
+  const entries: { key: string; name: string; rowIndex: number; dims: Record<string, string> }[] = [];
   for (const [apiIndex, dims] of collectedDims) {
     const originalIndex = originalIndices?.[apiIndex] ?? apiIndex;
-    entries.push({ key: `r${originalIndex}`, dims });
+    entries.push({
+      key: `r${originalIndex}`,
+      // Save name + rowIndex so loadCompanies works correctly after a page reload.
+      // originalData is not available server-side (only name+description are sent).
+      name: rows[apiIndex]?.name ?? "",
+      rowIndex: originalIndex,
+      dims,
+    });
   }
 
   const chunks: (typeof entries)[] = [];
@@ -34,9 +42,14 @@ async function saveDimsToFirestore(
     await Promise.all(
       chunks.slice(g, g + ADMIN_PARALLEL_COMMITS).map(async (batch) => {
         const fb = db.batch();
-        for (const { key, dims } of batch) {
-          // set+merge instead of update: creates the doc if missing (update throws NOT_FOUND)
-          fb.set(db.doc(`sessions/${uid}/companies/${key}`), { dimensions: dims }, { merge: true });
+        for (const { key, name, rowIndex, dims } of batch) {
+          // set+merge: creates the doc if missing (update throws NOT_FOUND).
+          // Saves name + rowIndex so reloaded sessions can sort + display companies.
+          fb.set(
+            db.doc(`sessions/${uid}/companies/${key}`),
+            { name, rowIndex, dimensions: dims, clusterId: null, umapX: null, umapY: null },
+            { merge: true }
+          );
         }
         await fb.commit();
       })
@@ -84,7 +97,7 @@ export async function POST(req: NextRequest) {
         if (uid && collectedDims.size > 0) {
           send({ type: "saving" });
           try {
-            await saveDimsToFirestore(uid, collectedDims, originalIndices);
+            await saveDimsToFirestore(uid, collectedDims, rows, originalIndices);
           } catch (err) {
             console.error("[extract-dimensions] Firestore save failed:", err);
             // Non-fatal: client can still update local state from progress.entries

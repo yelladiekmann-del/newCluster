@@ -271,8 +271,35 @@ export async function loadCompanies(uid: string, companyCol = "name"): Promise<C
 
     if (!snap.empty) {
       const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() } as CompanyDoc));
-      docs.sort((a, b) => a.rowIndex - b.rowIndex);
-      console.log("[loadCompanies] 3. Firestore OK — returning", docs.length, "docs ✓");
+
+      // Detect incomplete docs: server-side saves (extract-dimensions, confirm-clusters)
+      // write only partial fields. originalData is missing → merge with Storage CSV.
+      const missingOriginalData = docs.some((d) => !d.originalData);
+      if (!missingOriginalData) {
+        docs.sort((a, b) => (a.rowIndex ?? 0) - (b.rowIndex ?? 0));
+        console.log("[loadCompanies] 3. Firestore OK — returning", docs.length, "docs ✓");
+        return docs;
+      }
+
+      console.warn("[loadCompanies] 3b. Firestore docs missing originalData — merging with Storage CSV…");
+      try {
+        const { loadCompaniesFromStorage } = await import("./companies-storage");
+        const storageDocs = await loadCompaniesFromStorage(uid, companyCol);
+        if (storageDocs.length > 0) {
+          // Build a lookup: rowIndex → Firestore fields (dims, clusterId, umapX/Y)
+          const fsMap = new Map(docs.map((d) => [d.rowIndex ?? Number(d.id?.replace("r", "")), d]));
+          const merged = storageDocs.map((s) => {
+            const fs = fsMap.get(s.rowIndex);
+            return fs ? { ...s, dimensions: fs.dimensions ?? s.dimensions, clusterId: fs.clusterId ?? s.clusterId, umapX: fs.umapX ?? s.umapX, umapY: fs.umapY ?? s.umapY } : s;
+          });
+          console.log("[loadCompanies] 3b. Merge OK — returning", merged.length, "docs ✓");
+          return merged;
+        }
+      } catch (mergeErr) {
+        console.warn("[loadCompanies] 3b. Storage merge failed, returning Firestore-only docs:", mergeErr);
+      }
+      // Fallback: return Firestore docs as-is (better than nothing)
+      docs.sort((a, b) => (a.rowIndex ?? 0) - (b.rowIndex ?? 0));
       return docs;
     }
     console.warn("[loadCompanies] 2b. Firestore subcollection empty — trying Storage fallback...");

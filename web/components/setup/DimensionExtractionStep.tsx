@@ -62,7 +62,7 @@ export function DimensionExtractionStep() {
 
     const rows = toExtract.map(({ c }) => ({
       name: c.name,
-      description: String(c.originalData[descCol] ?? ""),
+      description: String(c.originalData?.[descCol] ?? ""),
     }));
 
     try {
