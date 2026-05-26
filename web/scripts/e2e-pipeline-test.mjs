@@ -347,6 +347,55 @@ if (needsExtraction.length === 0) {
           rate_per_sec: Math.round((extractResults.length/(elapsed/1000))),
         });
         extractOk = withSomeDims > 0;
+
+        // ── Measure Firestore save (mirrors component's saveChangedCompaniesToFirestore) ──
+        // The component writes only the changed docs (those that got new dims).
+        // Here we simulate that by writing all companies that received dims.
+        head("STAGE 2b — Save dims to Firestore (component: saveChangedCompaniesToFirestore)");
+        const tSave = Date.now();
+        const SAVE_BATCH = 100;
+        const SAVE_PARALLEL = 5;
+        const changedDocs = needsExtraction.filter(c => Object.keys(c.dimensions).length > 0);
+        info(`Writing ${changedDocs.length.toLocaleString()} company docs with dimensions…`);
+        info(`Batch size: ${SAVE_BATCH} · parallel commits: ${SAVE_PARALLEL}`);
+
+        try {
+          // Chunk into batches of 100, commit 5 in parallel — same as companies-storage.ts
+          const saveChunks = chunk(changedDocs, SAVE_BATCH);
+          let committed = 0;
+          for (let g = 0; g < saveChunks.length; g += SAVE_PARALLEL) {
+            await Promise.all(
+              saveChunks.slice(g, g + SAVE_PARALLEL).map(async (batch) => {
+                const b = db.batch();
+                batch.forEach(c => {
+                  b.set(
+                    db.collection("sessions").doc(TEST_SESSION).collection("companies").doc(c.id),
+                    { ...c, dimensions: c.dimensions }
+                  );
+                });
+                await b.commit();
+                committed += batch.length;
+              })
+            );
+            tick(`saved ${committed.toLocaleString()}/${changedDocs.length.toLocaleString()} (${Math.round(committed/changedDocs.length*100)}%)…`);
+          }
+          process.stdout.write("\r");
+          const saveElapsed = Date.now() - tSave;
+          ok(`Firestore save complete in ${ms(saveElapsed)}`);
+          ok(`Docs written: ${changedDocs.length.toLocaleString()}  ·  Rate: ${Math.round(changedDocs.length / (saveElapsed / 1000)).toLocaleString()} docs/sec`);
+          ok(`Batches: ${saveChunks.length}  ·  Avg ${ms(Math.round(saveElapsed / saveChunks.length))} per batch`);
+          stageResult("save_dims", true, {
+            docs:          changedDocs.length,
+            batches:       saveChunks.length,
+            elapsed:       ms(saveElapsed),
+            rate_per_sec:  Math.round(changedDocs.length / (saveElapsed / 1000)),
+            ms_per_batch:  Math.round(saveElapsed / saveChunks.length),
+          });
+        } catch (err) {
+          process.stdout.write("\r");
+          fail(`Firestore save failed: ${err.message}`);
+          stageResult("save_dims", false, { error: err.message });
+        }
       } else {
         fail("No extraction results received (timeout or empty response)");
         stageResult("extract", false, { error: "no results" });
@@ -654,7 +703,7 @@ try {
 
 // ── Summary ───────────────────────────────────────────────────────────────────
 head("SUMMARY");
-const order = ["parse","upload","extract","embed","cluster","naming"];
+const order = ["parse","upload","extract","save_dims","embed","cluster","naming"];
 let allPassed = true;
 for (const s of order) {
   const r = results[s];
