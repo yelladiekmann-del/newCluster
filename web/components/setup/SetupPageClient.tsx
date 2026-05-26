@@ -4,6 +4,7 @@ import { useState, useCallback } from "react";
 import { toast } from "sonner";
 import { useSession } from "@/lib/store/session";
 import { CompanyDataStep } from "./CompanyDataStep";
+import { DimensionExtractionStep } from "./DimensionExtractionStep";
 import { EmbeddingsUploadStep } from "./EmbeddingsUploadStep";
 import { Button } from "@/components/ui/button";
 import { ArrowRight, ChevronDown, ChevronUp } from "lucide-react";
@@ -87,8 +88,11 @@ export function SetupPageClient() {
         </p>
       </div>
 
-      {/* Company Data + inline dimension extraction */}
+      {/* Company Data */}
       <CompanyDataStep />
+
+      {/* Dimension extraction */}
+      <DimensionExtractionStep />
 
       {/* Advanced Options — collapsible */}
       <div className="flex flex-col gap-0">

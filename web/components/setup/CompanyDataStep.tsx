@@ -1,140 +1,37 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { CheckCircle2, Sparkles, Loader2, Download } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { CheckCircle2 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { FileUploadZone } from "@/components/ui/file-upload-zone";
 import { useSession } from "@/lib/store/session";
 import { persistSession } from "@/lib/firebase/hooks";
-import { saveCompaniesToStorage } from "@/lib/firebase/companies-storage";
 import { toast } from "sonner";
 import type { CompanyDoc } from "@/types";
 import { DIMENSIONS } from "@/types";
 import { ref, uploadBytesResumable } from "firebase/storage";
 import { getFirebaseStorage } from "@/lib/firebase/client";
 import { parseTabularFile, rowsToCsv } from "@/lib/tabular-upload";
-import { saveAs } from "file-saver";
-import Papa from "papaparse";
-import { createParser } from "eventsource-parser";
 
 export function CompanyDataStep() {
   const {
     authUser,
     uid,
     companies,
-    companyCol,
-    descCol,
     setCompanies,
     setCompanyCol,
     setDescCol,
-    pipelineStep,
-    setPipelineStep,
   } = useSession();
 
   const [uploadPct, setUploadPct] = useState<number | null>(null);
-
-  // Dimension extraction state
-  const [extractProgress, setExtractProgress] = useState<{ done: number; total: number; errors: number } | null>(null);
-  const [extracting, setExtracting] = useState(false);
-  const autoExtractTriggered = useRef(false);
   const hasActiveSession = !!uid;
-
-  const hasDimensions =
-    companies.length > 0 &&
-    !!companies[0]?.dimensions &&
-    Object.keys(companies[0].dimensions).length > 0;
 
   useEffect(() => {
     setUploadPct(null);
-    setExtractProgress(null);
-    setExtracting(false);
-    autoExtractTriggered.current = false;
   }, [uid]);
-
-  const runExtraction = useCallback(async (companiesSnap = companies) => {
-    const currentDescCol = useSession.getState().descCol;
-    const currentUid = useSession.getState().uid;
-    if (!currentUid || !currentDescCol || companiesSnap.length === 0) return;
-
-    setExtracting(true);
-    setExtractProgress({ done: 0, total: companiesSnap.length, errors: 0 });
-
-    const rows = companiesSnap.map((c) => ({
-      name: c.name,
-      description: String(c.originalData[currentDescCol] ?? ""),
-    }));
-
-    try {
-      const res = await fetch("/api/extract-dimensions", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ rows }),
-      });
-
-      if (!res.ok || !res.body) {
-        toast.error("Dimension extraction failed");
-        return;
-      }
-
-      // Results are streamed incrementally via progress.entries — the done event
-      // is just a bare completion signal (no payload). Accumulate with a Map.
-      const receivedDims = new Map<number, Record<string, string>>();
-      const parser = createParser({
-        onEvent: (event) => {
-          const data = JSON.parse(event.data);
-          if (data.type === "progress") {
-            setExtractProgress({ done: data.done, total: data.total, errors: data.errors });
-            if (Array.isArray(data.entries)) {
-              for (const { index, dims } of data.entries) {
-                receivedDims.set(index, dims ?? {});
-              }
-            }
-          } else if (data.type === "error") {
-            toast.error(`Extraction error: ${data.message}`);
-          }
-          // done event has no payload — results already accumulated above
-        },
-      });
-
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        parser.feed(decoder.decode(value, { stream: true }));
-      }
-
-      if (receivedDims.size > 0) {
-        const updatedCompanies = companiesSnap.map((c, i) => ({
-          ...c,
-          dimensions: receivedDims.get(i) ?? c.dimensions,
-        }));
-
-        setCompanies(updatedCompanies);
-        await saveCompaniesToStorage(currentUid, updatedCompanies);
-
-        const nextStep = Math.max(pipelineStep, 1) as 1;
-        setPipelineStep(nextStep);
-        await persistSession(currentUid, { pipelineStep: nextStep });
-        toast.success(
-          receivedDims.size === companiesSnap.length
-            ? "AI dimensions extracted"
-            : `AI dimensions extracted for ${receivedDims.size} companies`
-        );
-      } else {
-        toast.error("No extraction results received — please try again.");
-      }
-    } catch (err) {
-      toast.error(String(err));
-    } finally {
-      setExtracting(false);
-      setExtractProgress(null);
-    }
-  }, [companies, pipelineStep, setPipelineStep, setCompanies]);
 
   const handleFile = useCallback(
     async (file: File) => {
@@ -192,7 +89,6 @@ export function CompanyDataStep() {
 
         setCompanyCol(nameCol);
         setDescCol(dCol);
-        autoExtractTriggered.current = false;
         setCompanies(companyDocs);
         setUploadPct(0);
 
@@ -219,11 +115,6 @@ export function CompanyDataStep() {
             rowCount: rows.length,
           });
           toast.success(`${rows.length.toLocaleString()} companies loaded`);
-
-          if (!dimsAlreadyPresent && dCol && !autoExtractTriggered.current) {
-            autoExtractTriggered.current = true;
-            runExtraction(companyDocs);
-          }
         } catch (err) {
           console.error("[CompanyDataStep] upload_failed", {
             uid,
@@ -242,22 +133,8 @@ export function CompanyDataStep() {
         toast.error(`Parse error: ${err instanceof Error ? err.message : String(err)}`);
       }
     },
-    [uid, setCompanies, setCompanyCol, setDescCol, runExtraction]
+    [uid, setCompanies, setCompanyCol, setDescCol]
   );
-
-  const downloadEnriched = useCallback(() => {
-    const rows = companies.map((c) => ({
-      [companyCol]: c.name,
-      ...c.originalData,
-      ...c.dimensions,
-    }));
-    const csv = Papa.unparse(rows);
-    saveAs(new Blob([csv], { type: "text/csv" }), "companies_enriched.csv");
-  }, [companies, companyCol]);
-
-  const extractPct = extractProgress
-    ? Math.round((extractProgress.done / extractProgress.total) * 100)
-    : 0;
 
   return (
     <>
@@ -306,70 +183,6 @@ export function CompanyDataStep() {
                 <span>{uploadPct}%</span>
               </div>
               <Progress value={uploadPct} className="h-1.5" />
-            </div>
-          )}
-
-          {/* Dimension extraction — inline */}
-          {companies.length > 0 && (
-            <div className="border-t border-border pt-3 flex flex-col gap-2">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-1.5">
-                  <Sparkles className="h-3.5 w-3.5 text-primary" />
-                  <span className="text-xs font-medium">AI Dimensions</span>
-                  {hasDimensions && !extracting && (
-                    <Badge variant="secondary" className="text-xs text-primary gap-1 ml-1">
-                      <CheckCircle2 className="h-3 w-3" />
-                      {DIMENSIONS.length} extracted
-                    </Badge>
-                  )}
-                </div>
-                <div className="flex gap-2">
-                  {hasDimensions && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={downloadEnriched}
-                      className="gap-1 text-xs h-7"
-                    >
-                      <Download className="h-3 w-3" />
-                      Export CSV
-                    </Button>
-                  )}
-                  <Button
-                    size="sm"
-                    disabled={extracting || companies.length === 0}
-                    onClick={() => runExtraction()}
-                    className="gap-1.5 h-7 text-xs"
-                  >
-                    {extracting ? (
-                      <Loader2 className="h-3 w-3 animate-spin" />
-                    ) : (
-                      <Sparkles className="h-3 w-3" />
-                    )}
-                    {hasDimensions ? "Regenerate" : "Extract now"}
-                  </Button>
-                </div>
-              </div>
-
-              {extracting && extractProgress && (
-                <div className="flex flex-col gap-1">
-                  <div className="flex justify-between text-xs text-muted-foreground">
-                    <span>Extracting AI dimensions… {extractProgress.done}/{extractProgress.total}</span>
-                    {extractProgress.errors > 0 && (
-                      <span className="text-destructive">{extractProgress.errors} errors</span>
-                    )}
-                  </div>
-                  <Progress value={extractPct} className="h-1.5" />
-                </div>
-              )}
-
-              {!extracting && !hasDimensions && (
-                <p className="text-xs text-muted-foreground">
-                  {!descCol
-                    ? "No description column detected — extraction requires a description."
-                    : "Extraction will start automatically after upload."}
-                </p>
-              )}
             </div>
           )}
         </CardContent>
