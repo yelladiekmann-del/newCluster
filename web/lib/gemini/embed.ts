@@ -210,12 +210,16 @@ export interface EmbedProgress {
   skipped: number;
   // Each row is streamed inline to avoid a large final payload
   row: number[];
+  // IDs of companies that failed in this batch (empty most of the time)
+  errorIds: string[];
 }
 
 export interface EmbedDone {
   type: "done";
   errors: number;
   skipped: number;
+  // Full list of company IDs that failed across the entire run
+  errorIds: string[];
 }
 
 export type EmbedEvent = EmbedProgress | EmbedDone;
@@ -236,6 +240,7 @@ export async function* embedAll(
   const w = weights ?? DEFAULT_WEIGHTS;
   let errors = 0;
   let skipped = 0;
+  const errorIds: string[] = [];
 
   // Shared semaphore caps total concurrent Gemini batch API calls.
   // With batchEmbedContents each company = 1 call, so the semaphore size
@@ -244,6 +249,8 @@ export async function* embedAll(
 
   // Ordered result buffer for in-order SSE streaming despite parallel processing
   const results: (number[] | null)[] = new Array(companies.length).fill(null);
+  // Track which companies failed in the current batch window for progress events
+  const batchErrorIds: string[] = [];
   let nextToYield = 0;
 
   // Process companies in parallel batches
@@ -252,6 +259,7 @@ export async function* embedAll(
     const batchIndices = Array.from({ length: batchEnd - batchStart }, (_, i) => batchStart + i);
 
     // Run this batch in parallel
+    batchErrorIds.length = 0; // reset per-batch tracker
     await Promise.all(
       batchIndices.map(async (i) => {
         const existing = existingMatrix?.[i];
@@ -273,6 +281,8 @@ export async function* embedAll(
           }
           results[i] = new Array(DIM_PER_FIELD * DIMENSIONS.length).fill(0);
           errors++;
+          errorIds.push(companies[i].id);
+          batchErrorIds.push(companies[i].id);
         }
       })
     );
@@ -287,12 +297,13 @@ export async function* embedAll(
         errors,
         skipped,
         row: row.map((v) => Math.round(v * 1e5) / 1e5),
+        errorIds: [...batchErrorIds],
       };
       nextToYield++;
     }
   }
 
-  yield { type: "done", errors, skipped };
+  yield { type: "done", errors, skipped, errorIds };
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

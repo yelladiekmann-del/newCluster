@@ -3,12 +3,9 @@ import { adminDb } from "@/lib/firebase/admin";
 
 export const maxDuration = 60;
 
-type CompanyClusterUpdate = {
-  id: string;
-  clusterId: string | null;
-  umapX: number | null;
-  umapY: number | null;
-};
+// Flexible: only the fields provided will be written (Firestore `update` semantics).
+// `id` is the document key; all other fields are passed through as-is.
+type CompanyClusterUpdate = { id: string } & Record<string, unknown>;
 
 // Admin SDK is co-located with Firestore — ~10–30× faster than browser writes.
 // 500 docs/batch, 10 parallel commits → 5 000 docs in ~2–4 s.
@@ -39,8 +36,8 @@ export async function POST(req: NextRequest) {
       await Promise.all(
         chunks.slice(g, g + PARALLEL_COMMITS).map(async (batch) => {
           const fb = db.batch();
-          for (const { id, clusterId, umapX, umapY } of batch) {
-            fb.update(db.doc(`sessions/${uid}/companies/${id}`), { clusterId, umapX, umapY });
+          for (const { id, ...fields } of batch) {
+            fb.update(db.doc(`sessions/${uid}/companies/${id}`), fields);
           }
           await fb.commit();
         })

@@ -12,7 +12,7 @@ import { UmapScatter } from "./UmapScatter";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
-import { ArrowLeft, ArrowRight, Cpu, GitBranch, Loader2, Sparkles } from "lucide-react";
+import { AlertTriangle, ArrowLeft, ArrowRight, ChevronDown, ChevronUp, Cpu, GitBranch, Loader2, Sparkles } from "lucide-react";
 import { createParser } from "eventsource-parser";
 import { doc, writeBatch } from "firebase/firestore";
 import { getFirebaseDb } from "@/lib/firebase/client";
@@ -54,6 +54,8 @@ export function EmbedPageClient() {
   const [embedProgress, setEmbedProgress] = useState<{ done: number; total: number; errors: number; skipped: number } | null>(null);
   const [embedToEmbed, setEmbedToEmbed] = useState<number | null>(null);
   const [embedding, setEmbedding] = useState(false);
+  const [failedEmbedIds, setFailedEmbedIds] = useState<string[]>([]);
+  const [failedEmbedOpen, setFailedEmbedOpen] = useState(false);
   const [clustering, setClustering] = useState(false);
   const [clusterProgress, setClusterProgress] = useState(0);
   const clusterTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -103,6 +105,9 @@ export function EmbedPageClient() {
       let finalErrors = 0;
       let finalSkipped = 0;
       let finalTotal = companies.length;
+      const accumulatedErrorIds: string[] = [];
+      setFailedEmbedIds([]);
+      setFailedEmbedOpen(false);
 
       const parser = createParser({
         onEvent: (event) => {
@@ -122,9 +127,19 @@ export function EmbedPageClient() {
             finalErrors = data.errors;
             finalSkipped = data.skipped ?? 0;
             finalTotal = data.total;
+            if (Array.isArray(data.errorIds) && data.errorIds.length > 0) {
+              accumulatedErrorIds.push(...data.errorIds);
+            }
           } else if (data.type === "done") {
             finalErrors = data.errors ?? finalErrors;
             finalSkipped = data.skipped ?? finalSkipped;
+            const ids: string[] = Array.isArray(data.errorIds) && data.errorIds.length > 0
+              ? data.errorIds
+              : accumulatedErrorIds;
+            if (ids.length > 0) {
+              setFailedEmbedIds(ids);
+              setFailedEmbedOpen(true);
+            }
             // Server uploads matrix to Storage and returns the path
             if (data.embeddingsStoragePath) {
               setEmbeddingsStoragePath(data.embeddingsStoragePath);
@@ -159,20 +174,8 @@ export function EmbedPageClient() {
           toast.success(`${finalTotal.toLocaleString()} companies embedded`);
         }
       } else {
-        const errorPct = Math.round((finalErrors / finalTotal) * 100);
-        if (errorPct >= 10) {
-          toast.error(
-            `${finalErrors.toLocaleString()} companies failed to embed (${errorPct}%). ` +
-            `Your Gemini quota may be exhausted. Click Re-embed to retry failures.`,
-            { duration: 8000 }
-          );
-        } else {
-          toast.warning(
-            `${finalErrors.toLocaleString()} companies failed to embed and were skipped. ` +
-            `Click Re-embed to retry.`,
-            { duration: 6000 }
-          );
-        }
+        // Failed companies are shown in the collapsible panel below — no separate toast needed
+        toast.warning(`${finalErrors.toLocaleString()} companies failed to embed — see list below.`, { duration: 4000 });
       }
     } catch (err) {
       toast.error(String(err));
@@ -469,14 +472,39 @@ export function EmbedPageClient() {
           </div>
         )}
 
-        {/* Post-run error warning */}
+        {/* Failed embed panel — collapsible, shows company names */}
         {!embedding && lastEmbedErrors > 0 && embeddingsStoragePath && (
-          <div className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
-            <span className="mt-0.5 shrink-0">⚠</span>
-            <span>
-              <strong>{lastEmbedErrors.toLocaleString()} companies</strong> failed to embed (stored as zero vectors).
-              Clustering may be lower quality. Click <strong>Re-embed failed</strong> to retry only those companies.
-            </span>
+          <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 text-sm">
+            <button
+              type="button"
+              onClick={() => setFailedEmbedOpen((v) => !v)}
+              className="w-full flex items-center justify-between px-3 py-2 text-amber-600 hover:text-amber-700 transition-colors"
+            >
+              <span className="flex items-center gap-1.5 font-medium text-xs">
+                <AlertTriangle className="h-3.5 w-3.5" />
+                {lastEmbedErrors.toLocaleString()} companies failed to embed (stored as zero vectors) — clustering may be lower quality
+              </span>
+              {failedEmbedOpen ? <ChevronUp className="h-3.5 w-3.5 shrink-0" /> : <ChevronDown className="h-3.5 w-3.5 shrink-0" />}
+            </button>
+            {failedEmbedOpen && (
+              <div className="px-3 pb-3 flex flex-col gap-2">
+                <p className="text-xs text-muted-foreground">
+                  These companies had no embeddable dimensions or hit a quota error. Use <strong>Re-embed failed</strong> to retry them.
+                </p>
+                {failedEmbedIds.length > 0 ? (
+                  <ul className="text-xs text-muted-foreground space-y-0.5 max-h-36 overflow-y-auto">
+                    {failedEmbedIds.map((id) => {
+                      const name = companies.find((c) => c.id === id)?.name ?? id;
+                      return <li key={id} className="truncate">· {name}</li>;
+                    })}
+                  </ul>
+                ) : (
+                  <p className="text-xs text-muted-foreground italic">
+                    Company names unavailable — re-embed to see updated list.
+                  </p>
+                )}
+              </div>
+            )}
           </div>
         )}
 

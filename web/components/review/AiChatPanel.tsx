@@ -194,22 +194,20 @@ export function AiChatPanel() {
     const db = getFirebaseDb();
     const batch = writeBatch(db);
     const { clusters: currentClusters, companies: currentCompanies, setClusters, setCompanies } = useSession.getState();
-    const { saveChangedCompaniesToFirestore } = await import("@/lib/firebase/companies-storage");
 
     if (action.type === "delete") {
       const target = currentClusters.find(c => c.name === action.clusterName);
       if (!target) { toast.error(`Cluster "${action.clusterName}" not found`); return; }
       batch.delete(doc(db, "sessions", uid, "clusters", target.id));
       await batch.commit();
-      // Only companies that were IN the deleted cluster need to be written
-      const changedIds = new Set(
-        currentCompanies.filter(c => c.clusterId === target.id).map(c => c.id)
-      );
-      const affected = changedIds.size;
+      const affected = currentCompanies.filter(c => c.clusterId === target.id);
       const updatedCompanies = currentCompanies.map(c => c.clusterId === target.id ? { ...c, clusterId: "outliers" } : c);
       setCompanies(updatedCompanies);
-      setClusters(currentClusters.filter(c => c.id !== target.id).map(c => c.id === "outliers" ? { ...c, companyCount: c.companyCount + affected } : c));
-      await saveChangedCompaniesToFirestore(uid, updatedCompanies, changedIds);
+      setClusters(currentClusters.filter(c => c.id !== target.id).map(c => c.id === "outliers" ? { ...c, companyCount: c.companyCount + affected.length } : c));
+      if (affected.length > 0) {
+        await fetch("/api/confirm-clusters", { method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ uid, updates: affected.map(c => ({ id: c.id, clusterId: "outliers" })) }) });
+      }
       toast.success(`Deleted "${action.clusterName}"`);
     }
 
@@ -218,51 +216,52 @@ export function AiChatPanel() {
       if (sources.length < 2) { toast.error("Could not find source clusters to merge"); return; }
       const newId = `merged_${crypto.randomUUID()}`;
       const sourceIds = new Set(sources.map(s => s?.id));
-      const count = currentCompanies.filter(c => sourceIds.has(c.clusterId ?? "")).length;
+      const affected = currentCompanies.filter(c => sourceIds.has(c.clusterId ?? ""));
       const newCluster = {
         id: newId,
         name: action.newName,
         description: action.description ?? `Merged cluster combining ${sources.map(s => s?.name).join(" & ")}.`,
         color: getNextClusterColor(currentClusters),
         isOutliers: false,
-        companyCount: count,
+        companyCount: affected.length,
       };
       batch.set(doc(db, "sessions", uid, "clusters", newId), newCluster);
       for (const src of sources) {
         if (src) batch.delete(doc(db, "sessions", uid, "clusters", src.id));
       }
       await batch.commit();
-      // Only companies that were in source clusters need updating
-      const changedIds = new Set(
-        currentCompanies.filter(c => sourceIds.has(c.clusterId ?? "")).map(c => c.id)
-      );
       const updatedCompanies = currentCompanies.map(c => sourceIds.has(c.clusterId ?? "") ? { ...c, clusterId: newId } : c);
       setCompanies(updatedCompanies);
       setClusters([...currentClusters.filter(c => !sourceIds.has(c.id)), newCluster]);
-      await saveChangedCompaniesToFirestore(uid, updatedCompanies, changedIds);
+      if (affected.length > 0) {
+        await fetch("/api/confirm-clusters", { method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ uid, updates: affected.map(c => ({ id: c.id, clusterId: newId })) }) });
+      }
       toast.success(`Merged into "${action.newName}"`);
     }
 
     if (action.type === "add") {
       const newId = `added_${crypto.randomUUID()}`;
-      const matchedCompanies = currentCompanies.filter(c => action.companies.some(name => c.name.toLowerCase() === name.toLowerCase()));
+      const matched = currentCompanies.filter(c => action.companies.some(name => c.name.toLowerCase() === name.toLowerCase()));
       const newCluster = {
         id: newId,
         name: action.name,
         description: action.description,
         color: getNextClusterColor(currentClusters),
         isOutliers: false,
-        companyCount: matchedCompanies.length,
+        companyCount: matched.length,
       };
       batch.set(doc(db, "sessions", uid, "clusters", newId), newCluster);
       await batch.commit();
-      const matchedIds = new Set(matchedCompanies.map(c => c.id));
+      const matchedIds = new Set(matched.map(c => c.id));
       const updatedCompanies = currentCompanies.map(c => matchedIds.has(c.id) ? { ...c, clusterId: newId } : c);
       setCompanies(updatedCompanies);
       setClusters([...currentClusters, newCluster]);
-      // Only write the matched companies (those reassigned to the new cluster)
-      await saveChangedCompaniesToFirestore(uid, updatedCompanies, matchedIds);
-      toast.success(`Added cluster "${action.name}" with ${matchedCompanies.length} companies`);
+      if (matched.length > 0) {
+        await fetch("/api/confirm-clusters", { method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ uid, updates: matched.map(c => ({ id: c.id, clusterId: newId })) }) });
+      }
+      toast.success(`Added cluster "${action.name}" with ${matched.length} companies`);
     }
   }, [uid]);
 
@@ -274,7 +273,6 @@ export function AiChatPanel() {
     if (!uid || actions.length === 0) return;
     const db = getFirebaseDb();
     const batch = writeBatch(db);
-    const { saveChangedCompaniesToFirestore } = await import("@/lib/firebase/companies-storage");
 
     // Thread running state through all actions so each one sees the result of the previous
     let clusters = useSession.getState().clusters;
@@ -335,12 +333,19 @@ export function AiChatPanel() {
       }
     }
 
-    // Single round-trip: one Firestore commit, one state update, delta save for changed companies only
+    // Cluster doc writes (set/delete) in one batch, then company clusterId updates server-side
     await batch.commit();
     const { setClusters, setCompanies } = useSession.getState();
     setCompanies(companies);
     setClusters(clusters);
-    await saveChangedCompaniesToFirestore(uid, companies, allChangedIds);
+    if (allChangedIds.size > 0) {
+      const changedCompanies = companies.filter(c => allChangedIds.has(c.id));
+      await fetch("/api/confirm-clusters", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uid, updates: changedCompanies.map(c => ({ id: c.id, clusterId: c.clusterId })) }),
+      });
+    }
     toast.success(`Applied ${actions.length} action${actions.length !== 1 ? "s" : ""}`);
   }, [uid]);
 
