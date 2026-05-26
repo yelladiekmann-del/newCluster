@@ -169,7 +169,7 @@ export function DimensionExtractionStep() {
       <CardContent className="pt-4 flex flex-col gap-3">
         {/* Header */}
         <div className="flex items-center justify-between">
-          <Label className="text-sm font-semibold">3. AI Dimensions</Label>
+          <Label className="text-sm font-semibold">AI Dimensions</Label>
           {hasDimensions && !running && (
             <Badge variant="secondary" className="text-xs text-primary gap-1">
               <CheckCircle2 className="h-3 w-3" />
