@@ -194,7 +194,10 @@ export function GenerateSlidesPanel({
   // ── Render ───────────────────────────────────────────────────────────────────
   return (
     <Dialog open={open} onOpenChange={(isOpen) => { if (!isOpen) onClose(); }}>
-      <DialogContent className="max-h-[92vh] w-[95vw] max-w-5xl overflow-y-auto p-0">
+      <DialogContent
+          className="max-h-[92vh] overflow-y-auto p-0"
+          style={{ width: "min(95vw, 64rem)" }}
+        >
 
         {/* ── Header ── */}
         <DialogHeader className="border-b border-border/60 px-8 py-5">
