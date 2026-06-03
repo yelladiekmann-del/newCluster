@@ -130,7 +130,7 @@ export function GenerateSlidesPanel({
       const res = await fetch("/api/generate-ableitungen", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ uid }),
+        body: JSON.stringify({ uid, analyticsRows }),
       });
       const json = await res.json() as { ableitungen?: GeneratedAbleitungen; error?: string };
       if (!res.ok || json.error) throw new Error(json.error ?? "Unknown error");

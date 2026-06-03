@@ -55,6 +55,23 @@ export async function createChartDataSheet(
   await checkOk(createRes, "Sheets create");
   const { spreadsheetId } = await createRes.json() as { spreadsheetId: string };
 
+  // Move the new sheet into the user's own My Drive root (Sheets API creates in root
+  // by default, but if the request context inherits a shared drive this makes it explicit).
+  // We read the current parents first so we can remove them when re-parenting.
+  const metaRes = await fetch(
+    `${DRIVE_BASE}/${spreadsheetId}?fields=parents`,
+    { headers: { Authorization: `Bearer ${token}` } }
+  );
+  if (metaRes.ok) {
+    const { parents } = await metaRes.json() as { parents?: string[] };
+    const removeParents = parents?.join(",") ?? "";
+    await fetch(
+      `${DRIVE_BASE}/${spreadsheetId}?addParents=root&removeParents=${removeParents}&fields=id`,
+      { method: "PATCH", headers: authHeaders(token), body: JSON.stringify({}) }
+    );
+    // Non-fatal: if this fails the sheet was already in the user's Drive
+  }
+
   // ── Write deal rows into Import tab ─────────────────────────────────────────
   const header = ["Deal ID", "Companies", "Company ID", "Deal Date", "Deal Size", "Deal Year"];
   const rows = deals
@@ -118,6 +135,33 @@ export async function createChartDataSheet(
     }
   ).then((r) => checkOk(r, "Sheets write Results"));
 
+  // ── Format year columns as plain integers (prevent date auto-formatting in chart) ──
+  const formatRes = await fetch(`${SHEETS_BASE}/${spreadsheetId}:batchUpdate`, {
+    method: "POST",
+    headers: authHeaders(token),
+    body: JSON.stringify({
+      requests: [
+        // Import!F2:F — Jahr-Spalte als Plain-Integer formatieren
+        {
+          repeatCell: {
+            range: { sheetId: 0, startRowIndex: 1, startColumnIndex: 5, endColumnIndex: 6 },
+            cell: { userEnteredFormat: { numberFormat: { type: "NUMBER", pattern: "0" } } },
+            fields: "userEnteredFormat.numberFormat",
+          },
+        },
+        // Results!A1:A10 — Domain-Spalte als Plain-Integer formatieren
+        {
+          repeatCell: {
+            range: { sheetId: 2, startRowIndex: 0, endRowIndex: 10, startColumnIndex: 0, endColumnIndex: 1 },
+            cell: { userEnteredFormat: { numberFormat: { type: "NUMBER", pattern: "0" } } },
+            fields: "userEnteredFormat.numberFormat",
+          },
+        },
+      ],
+    }),
+  });
+  await checkOk(formatRes, "Sheets format year columns");
+
   // ── Add combo chart in Results tab (Bars = Volumen, Line = Deals) ───────────
   const chartRes = await fetch(`${SHEETS_BASE}/${spreadsheetId}:batchUpdate`, {
     method: "POST",
@@ -128,7 +172,6 @@ export async function createChartDataSheet(
           addChart: {
             chart: {
               spec: {
-                title: "Investitionsvolumen & Finanzierungsrunden",
                 basicChart: {
                   chartType: "COMBO",
                   legendPosition: "BOTTOM_LEGEND",
@@ -156,6 +199,7 @@ export async function createChartDataSheet(
                       targetAxis: "LEFT_AXIS",
                       type: "COLUMN",
                       color: { red: 0.071, green: 0.157, blue: 0.239 }, // hy dunkelblau
+                      dataLabel: { type: "DATA" },
                     },
                     {
                       series: {
@@ -166,6 +210,8 @@ export async function createChartDataSheet(
                       targetAxis: "RIGHT_AXIS",
                       type: "LINE",
                       color: { red: 0.024, green: 0.651, blue: 0.639 }, // hy teal
+                      dataLabel: { type: "DATA" },
+                      lineStyle: { width: 2, type: "SOLID" },
                     },
                   ],
                 },
@@ -198,10 +244,12 @@ export async function copyTemplate(
   templateId: string,
   name: string
 ): Promise<string> {
+  // parents: ["root"] ensures the copy lands in the user's own My Drive,
+  // not in the shared folder where the template lives.
   const res = await fetch(`${DRIVE_BASE}/${templateId}/copy`, {
     method: "POST",
     headers: authHeaders(token),
-    body: JSON.stringify({ name }),
+    body: JSON.stringify({ name, parents: ["root"] }),
   });
   await checkOk(res, "Drive copy");
   const data = await res.json() as { id: string };
