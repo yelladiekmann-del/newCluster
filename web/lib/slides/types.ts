@@ -46,8 +46,10 @@ export interface DealRow {
   deal_size: number;  // in Mio. €
 }
 
-/** The 10 AI-generated Ableitung fields returned by /api/generate-ableitungen */
+/** The AI-generated content returned by /api/generate-ableitungen */
 export interface GeneratedAbleitungen {
+  /** Action Title for the slide (≈ 15–20 words, opinion-driven, no buzzwords) */
+  actionTitle: string;
   "ableitung1.1": string;
   "ableitung1.2": string;
   "ableitung2.1": string;

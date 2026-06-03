@@ -147,8 +147,25 @@ Text: "Das Segment erschließt ungenutzte Datenpotenziale." → Buzzwords, kein 
 - Keine Buzzwords: "revolutioniert", "nachhaltig", "transformiert", "erschließt", "ermöglicht"
 - Auf Deutsch
 
+## Action Title
+
+Schreibe zusätzlich einen Action Title für die Folie, der alle 5 Ableitungen in eine übergreifende Kernaussage verdichtet.
+
+**Prinzipien:**
+- Ca. 15–20 Wörter, meinungsstark und eloquent, keine Beschreibung sondern klare Positionierung
+- Aktive, handlungsorientierte Verben — keine Hilfsverben, kein Passiv
+- Fachlich präzise, keine Buzzwords
+- Bindestrich-Kombinationen vermeiden; stattdessen qualitativ hochwertige Umschreibungen wählen
+- Implizite Handlungsaufforderung oder klare strategische Implikation
+
+**Gute Beispiele:**
+- "Die Größe und das Momentum des Fundings spiegeln präzise die Dynamik und das Wachstum in einem bestimmten Cluster wider."
+- "Die Dekodierung des erweiterten Marktumfeldes ermöglicht eine präzise Visualisierung aufstrebender Innovationsbereiche und ihrer Dynamiken."
+- "Die Analyse von Investitionsströmen zeigt: konzentriertes Kapital in wenigen Segmenten signalisiert strukturellen Wandel, kein zyklisches Momentum."
+
 Antworte NUR mit diesem JSON-Objekt (kein Markdown, keine Erklärung):
 {
+  "actionTitle": "...",
   "ableitung1.1": "...",
   "ableitung1.2": "...",
   "ableitung2.1": "...",
