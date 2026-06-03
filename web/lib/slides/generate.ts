@@ -238,10 +238,34 @@ export async function replacePlaceholders(
 
 // ─── 4. Embed chart ───────────────────────────────────────────────────────────
 
+// ── EMU helpers ───────────────────────────────────────────────────────────────
+// 1 cm = 360 000 EMU    1 pt = 12 700 EMU
+//
+// Fallback chart position for the hy VC-analysis slide (Folie 2).
+// Tunable via env vars so we never have to redeploy just to nudge the chart.
+// Env vars are in cm; defaults match the standard hy 16:9 template layout.
+function envEmu(key: string, defaultCm: number): number {
+  const raw = process.env[key];
+  const cm = raw ? parseFloat(raw) : defaultCm;
+  return Math.round(cm * 360_000);
+}
+
+const CHART_X      = () => envEmu("SLIDES_CHART_X_CM",  1.0);   // 1.0 cm from left
+const CHART_Y      = () => envEmu("SLIDES_CHART_Y_CM",  4.2);   // 4.2 cm from top
+const CHART_W      = () => envEmu("SLIDES_CHART_W_CM", 15.0);   // 15 cm wide
+const CHART_H      = () => envEmu("SLIDES_CHART_H_CM", 10.0);   // 10 cm tall
+
+type ElemPos = { translateX: number; translateY: number; scaleX: number; scaleY: number };
+type ElemSize = { width: number; height: number };
+
 /**
- * Finds the existing linked chart in the presentation (if any), deletes it,
- * then embeds the newly created Sheets chart at the same position.
- * Falls back to a fixed position if no chart is found in the template.
+ * Scans the copied presentation for a chart placeholder, deletes it, and
+ * embeds the newly created Sheets chart at the same position.
+ *
+ * Detection order (first match wins):
+ *   1. sheetsChart element (live linked chart from original template)
+ *   2. image element on slide 2 with area > 5 cm × 3 cm (rasterised placeholder)
+ *   3. env-var / hardcoded fallback position
  */
 export async function embedChart(
   token: string,
@@ -249,127 +273,122 @@ export async function embedChart(
   spreadsheetId: string,
   chartId: number
 ): Promise<void> {
-  // ── Get current presentation state ──────────────────────────────────────────
-  const getRes = await fetch(`${SLIDES_BASE}/${presentationId}`, {
+  // ── Fetch presentation ───────────────────────────────────────────────────────
+  const presRes = await fetch(`${SLIDES_BASE}/${presentationId}`, {
     headers: { Authorization: `Bearer ${token}` },
   });
-  await checkOk(getRes, "Slides get");
-  const pres = await getRes.json() as {
-    slides: Array<{
-      pageElements?: Array<{
-        objectId: string;
-        transform?: { translateX: number; translateY: number; scaleX: number; scaleY: number; unit: string };
-        size?: { width: { magnitude: number; unit: string }; height: { magnitude: number; unit: string } };
-        sheetsChart?: unknown;
-      }>;
-    }>;
+  await checkOk(presRes, "Slides get");
+  // Use a broad type — we inspect arbitrary keys at runtime
+  const pres = await presRes.json() as {
+    slides: Array<{ objectId: string; pageElements?: Array<Record<string, unknown>> }>;
   };
 
-  const requests: object[] = [];
-
-  // Find existing chart element (on any slide)
-  let chartPosition: { translateX: number; translateY: number; scaleX: number; scaleY: number } | null = null;
-  let chartSize: { width: number; height: number } | null = null;
-  let targetSlideId: string | null = null;
+  // ── Scan all slides for a placeholder to replace ─────────────────────────────
+  let placeholderObjId: string | null = null;
+  let foundPos: ElemPos | null = null;
+  let foundSize: ElemSize | null = null;
 
   for (const slide of pres.slides ?? []) {
     for (const el of slide.pageElements ?? []) {
-      if ("sheetsChart" in el) {
-        // Save position + size so we can place the new chart at the same spot
-        if (el.transform) {
-          chartPosition = {
-            translateX: el.transform.translateX,
-            translateY: el.transform.translateY,
-            scaleX: el.transform.scaleX,
-            scaleY: el.transform.scaleY,
+      const hasSheetsChart = el.sheetsChart != null;
+
+      // Also match large image elements (chart baked into template as image)
+      const imgData = el.image as Record<string, unknown> | null | undefined;
+      const transform = el.transform as { translateX: number; translateY: number; scaleX: number; scaleY: number } | undefined;
+      const size = el.size as { width: { magnitude: number }; height: { magnitude: number } } | undefined;
+
+      const isLargeImage = !!imgData &&
+        (size?.width?.magnitude ?? 0) > 1_800_000 &&   // > 5 cm
+        (size?.height?.magnitude ?? 0) > 1_080_000;    // > 3 cm
+
+      if (hasSheetsChart || isLargeImage) {
+        if (transform) {
+          foundPos = {
+            translateX: transform.translateX,
+            translateY: transform.translateY,
+            scaleX:     transform.scaleX,
+            scaleY:     transform.scaleY,
           };
         }
-        if (el.size) {
-          chartSize = {
-            width: el.size.width.magnitude,
-            height: el.size.height.magnitude,
+        if (size) {
+          foundSize = {
+            width:  size.width.magnitude,
+            height: size.height.magnitude,
           };
         }
-        targetSlideId = slide.pageElements?.[0]?.objectId ?? null;
-        // Find the actual slide objectId
-        requests.push({ deleteObject: { objectId: el.objectId } });
+        placeholderObjId = String(el.objectId);
+        console.log(
+          `[embedChart] Found placeholder on slide type=${hasSheetsChart ? "sheetsChart" : "image"} ` +
+          `objectId=${placeholderObjId} size=${foundSize?.width}×${foundSize?.height} EMU`
+        );
         break;
       }
     }
-    if (requests.length > 0) {
-      // Get the actual slide page objectId
-      const slidePageRes = await fetch(`${SLIDES_BASE}/${presentationId}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const slideData = await slidePageRes.json() as { slides: Array<{ objectId: string; pageElements?: unknown[] }> };
-      // Find the slide that had the chart (index 1 = Folie 2)
-      targetSlideId = slideData.slides?.[1]?.objectId ?? null;
-      break;
-    }
+    if (placeholderObjId) break;
   }
 
-  if (requests.length === 0) {
-    console.warn("[embedChart] No existing chart found in template — inserting at default position");
+  if (!placeholderObjId) {
+    console.warn(
+      "[embedChart] No chart/image placeholder found in template — using fallback position. " +
+      "Tune with SLIDES_CHART_X_CM / _Y_CM / _W_CM / _H_CM env vars."
+    );
   }
 
-  // ── Delete old chart ─────────────────────────────────────────────────────────
-  if (requests.length > 0) {
+  // ── Delete placeholder ───────────────────────────────────────────────────────
+  if (placeholderObjId) {
     await fetch(`${SLIDES_BASE}/${presentationId}:batchUpdate`, {
       method: "POST",
       headers: authHeaders(token),
-      body: JSON.stringify({ requests }),
-    }).then((r) => checkOk(r, "Slides deleteChart"));
+      body: JSON.stringify({ requests: [{ deleteObject: { objectId: placeholderObjId } }] }),
+    }).then((r) => checkOk(r, "Slides deleteObject"));
   }
 
-  // ── Embed new chart ───────────────────────────────────────────────────────────
-  // Re-fetch to get current slide objectId (after deletion)
+  // ── Re-fetch to get current slide objectIds after deletion ───────────────────
   const afterRes = await fetch(`${SLIDES_BASE}/${presentationId}`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   await checkOk(afterRes, "Slides get after delete");
   const afterPres = await afterRes.json() as { slides: Array<{ objectId: string }> };
-  const slideObjectId = afterPres.slides?.[1]?.objectId;
-
+  const slideObjectId = afterPres.slides?.[1]?.objectId;   // Folie 2 (0-indexed)
   if (!slideObjectId) throw new Error("Could not find slide 2 objectId");
 
-  // EMU units: 1 pt = 12700 EMU, 1 cm = 360000 EMU
-  // Chart position from template (approximate): left ~1.7cm, top ~3.3cm
-  // Size: ~13.5cm wide, ~9.3cm tall
-  const translateX = chartPosition?.translateX ?? 612000;   // ~1.7cm in EMU
-  const translateY = chartPosition?.translateY ?? 1188000;  // ~3.3cm in EMU
-  const width      = chartSize?.width           ?? 4860000; // ~13.5cm in EMU
-  const height     = chartSize?.height          ?? 3348000; // ~9.3cm in EMU
+  // ── Embed new Sheets chart ────────────────────────────────────────────────────
+  const translateX = foundPos?.translateX ?? CHART_X();
+  const translateY = foundPos?.translateY ?? CHART_Y();
+  const width      = foundSize?.width     ?? CHART_W();
+  const height     = foundSize?.height    ?? CHART_H();
+
+  console.log(`[embedChart] Inserting chart at (${translateX}, ${translateY}) size ${width}×${height} EMU on slide ${slideObjectId}`);
 
   const embedRes = await fetch(`${SLIDES_BASE}/${presentationId}:batchUpdate`, {
     method: "POST",
     headers: authHeaders(token),
     body: JSON.stringify({
-      requests: [
-        {
-          createSheetsChart: {
-            spreadsheetId,
-            chartId,
-            linkingMode: "LINKED",
-            elementProperties: {
-              pageObjectId: slideObjectId,
-              transform: {
-                scaleX: chartPosition?.scaleX ?? 1,
-                scaleY: chartPosition?.scaleY ?? 1,
-                translateX,
-                translateY,
-                unit: "EMU",
-              },
-              size: {
-                width:  { magnitude: width,  unit: "EMU" },
-                height: { magnitude: height, unit: "EMU" },
-              },
+      requests: [{
+        createSheetsChart: {
+          spreadsheetId,
+          chartId,
+          linkingMode: "LINKED",
+          elementProperties: {
+            pageObjectId: slideObjectId,
+            transform: {
+              scaleX: foundPos?.scaleX ?? 1,
+              scaleY: foundPos?.scaleY ?? 1,
+              translateX,
+              translateY,
+              unit: "EMU",
+            },
+            size: {
+              width:  { magnitude: width,  unit: "EMU" },
+              height: { magnitude: height, unit: "EMU" },
             },
           },
         },
-      ],
+      }],
     }),
   });
   await checkOk(embedRes, "Slides createSheetsChart");
+  console.log("[embedChart] Chart embedded successfully.");
 }
 
 // ─── Main entry point ─────────────────────────────────────────────────────────

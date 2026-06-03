@@ -36,20 +36,32 @@ export async function POST(req: NextRequest) {
 
     const prompt = `Du bist ein erfahrener VC-Marktanalyst bei hy, einer Strategie- und Innovationsberatung.
 
-Auf Basis dieser Marktlandschaft aus ${reviewContext.companyCount} Unternehmen in ${reviewContext.clusterCount} Cluster-Segmenten generierst du 5 prägnante Markt-Ableitungen für einen Investor-Report.
+Auf Basis dieser Marktlandschaft aus ${reviewContext.companyCount} Unternehmen in ${reviewContext.clusterCount} Cluster-Segmenten schreibst du 5 Markt-Ableitungen für einen Investor-Report.
 
 ${reviewContext.marketContext ? `Marktkontext:\n${reviewContext.marketContext}\n\n` : ""}Cluster-Übersicht:
 ${clusterOverview}
 
-Jede Ableitung besteht aus:
-- **Headline (1.1–5.1):** Kurze, prägnante Kernaussage (max. 10 Wörter, aktiv formuliert)
-- **Fließtext (1.2–5.2):** Erklärung in 1–2 Sätzen — konkret, mit Bezug auf spezifische Segmente oder Unternehmen aus dem Datensatz
+## Format jeder Ableitung
 
-Regeln:
-- Inhaltlich, nicht statistisch — keine Erwähnung von Cluster-Anzahlen oder Prozentwerten
+**Headline (x.1):**
+- Max. 8 Wörter, aktiv formuliert, keine Substantivketten
+- Benennt eine Marktbewegung oder Investment-Implikation — kein Produktfeature
+- Beispiel gut: "Konsolidierungsdruck zwingt Service-Plattformen zur Differenzierung"
+- Beispiel schlecht: "Service-Plattformen optimieren die Lieferkette nachhaltig"
+
+**Fließtext (x.2):**
+- Genau 1–2 kurze Sätze, max. 35 Wörter gesamt
+- Investorenperspektive: Was bedeutet dieser Trend? Welche Implikation hat er?
+- Mindestens eine konkrete Zahl, ein Zeitbezug oder ein Segment-Name aus dem Datensatz
+- Kein Buzzword-Stil, keine Beschreibung was Unternehmen tun ("XY revolutioniert Z")
+- Beispiel gut: "Mit >2 Mrd. € Gesamtfunding zeigt das Segment: Kapitaleinsatz verschiebt sich von Hardware zu Betriebssoftware. Wer dort noch nicht positioniert ist, verliert Marktanteile."
+- Beispiel schlecht: "Unternehmen wie X und Y ermöglichen durch Z eine schnellere Markteinführung und minimieren die Entwicklungskosten für industrielle Kunden."
+
+## Regeln
+- Jede Ableitung transportiert eine eigenständige, investitionsrelevante Erkenntnis
+- Keine Wiederholungen zwischen den Ableitungen
+- Kein Buzzword-Stil (keine "revolutioniert", "nachhaltig", "transformiert", "erschließt")
 - Auf Deutsch
-- Jede Ableitung muss eine eigenständige, investitionsrelevante Erkenntnis transportieren
-- Kein Wiederholung zwischen den Ableitungen
 
 Antworte NUR mit diesem JSON-Objekt (kein Markdown, keine Erklärung):
 {
