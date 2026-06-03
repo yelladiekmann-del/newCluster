@@ -44,7 +44,7 @@ export async function createChartDataSheet(
     method: "POST",
     headers: authHeaders(token),
     body: JSON.stringify({
-      properties: { title, locale: "de_DE" },
+      properties: { title },
       sheets: [
         { properties: { sheetId: 0, title: "Import",  index: 0 } },
         { properties: { sheetId: 1, title: "Pivot",   index: 1 } },
