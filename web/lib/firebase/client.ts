@@ -60,6 +60,8 @@ export async function signInWithGoogle(): Promise<{ user: User; accessToken: str
   const provider = new GoogleAuthProvider();
   provider.setCustomParameters({ hd: "hy.co" }); // UX hint — real check is below
   provider.addScope("https://www.googleapis.com/auth/spreadsheets");
+  provider.addScope("https://www.googleapis.com/auth/drive");
+  provider.addScope("https://www.googleapis.com/auth/presentations");
   const cred = await signInWithPopup(getFirebaseAuth(), provider);
   if (!cred.user.email?.endsWith("@hy.co")) {
     await fbSignOut(getFirebaseAuth());

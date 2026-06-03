@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import Papa from "papaparse";
-import { ArrowLeft, BarChart3, CheckCircle2, Download, FileUp, Loader2, Save, Sparkles } from "lucide-react";
+import { ArrowLeft, BarChart3, CheckCircle2, Download, FileUp, Loader2, Presentation, Save, Sparkles } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useSession } from "@/lib/store/session";
 import { loadCompanies, loadClusters, persistSession } from "@/lib/firebase/hooks";
@@ -12,6 +12,7 @@ import { FileUploadZone } from "@/components/ui/file-upload-zone";
 import { AnalyticsTable } from "./AnalyticsTable";
 import { AnalyticsCharts } from "./AnalyticsCharts";
 import { ScoringPanel } from "./ScoringPanel";
+import { GenerateSlidesPanel } from "./GenerateSlidesPanel";
 import { getBytes, ref, uploadBytesResumable } from "firebase/storage";
 import { getFirebaseStorage } from "@/lib/firebase/client";
 import type { AnalyticsColMap } from "@/types";
@@ -79,13 +80,14 @@ function StatTile({
 
 export function AnalyticsPageClient() {
   const router = useRouter();
-  const { uid, companies, clusters, setCompanies, setClusters, dealsStoragePath, setDealsStoragePath, companyCol, setPipelineStep } = useSession();
+  const { uid, companies, clusters, setCompanies, setClusters, dealsStoragePath, setDealsStoragePath, companyCol, setPipelineStep, googleAccessToken } = useSession();
 
   const [dealsData, setDealsData] = useState<Record<string, unknown>[] | null>(null);
   const [dealsColumns, setDealsColumns] = useState<string[]>([]);
   const [dealsAutoLoaded, setDealsAutoLoaded] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [syncedOnce, setSyncedOnce] = useState(false);
+  const [showSlidesPanel, setShowSlidesPanel] = useState(false);
   const lastAnalyticsSyncRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -291,6 +293,10 @@ export function AnalyticsPageClient() {
                     <Download className="h-4 w-4" />
                     Export CSV
                   </Button>
+                  <Button variant="outline" size="sm" onClick={() => setShowSlidesPanel(true)} className="gap-2">
+                    <Presentation className="h-4 w-4" />
+                    Slides generieren
+                  </Button>
                 </>
               )}
               <div className="inline-flex items-center gap-2 text-xs text-muted-foreground">
@@ -399,6 +405,17 @@ export function AnalyticsPageClient() {
           </CardHeader>
         </Card>
       )}
+
+      <GenerateSlidesPanel
+        open={showSlidesPanel}
+        onClose={() => setShowSlidesPanel(false)}
+        uid={uid ?? ""}
+        token={googleAccessToken ?? ""}
+        analyticsRows={analyticsRows}
+        dealsData={dealsData}
+        colMap={colMap}
+        companyCount={companies.length}
+      />
 
       {/* Sticky bottom bar */}
       <div className="sticky bottom-0 z-10 bg-background/95 backdrop-blur-sm border-t border-border px-6 py-3 flex items-center justify-between">
