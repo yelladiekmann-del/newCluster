@@ -73,24 +73,29 @@ export async function createChartDataSheet(
     }
   ).then((r) => checkOk(r, "Sheets write Import"));
 
-  // ── Write Pivot formulas (QUERY aggregation by year) ────────────────────────
-  const pivotHeader = [["Jahr", "Investitionsvolumen (Mio. €)", "Anzahl Deals"]];
+  // ── Write Pivot formula (QUERY aggregation by year) ─────────────────────────
+  // Note: NO LABEL clause — special chars (€, parentheses) in LABEL strings cause
+  // a formula parse error (#ERROR!) that IFERROR cannot catch.
+  // headers=1 tells QUERY that Import row 1 is a header row (not data).
+  // QUERY will output its own auto-header in Pivot!A2; actual year data starts at A3.
   const pivotFormula = [
     [
-      `=IFERROR(QUERY(Import!A:F,"SELECT F, SUM(E), COUNT(A) WHERE F IS NOT NULL GROUP BY F ORDER BY F LABEL F 'Jahr', SUM(E) 'Investitionsvolumen (Mio. €)', COUNT(A) 'Anzahl Deals'",0),"")`,
+      `=IFERROR(QUERY(Import!A:F,"SELECT F, SUM(E), COUNT(A) WHERE F IS NOT NULL GROUP BY F ORDER BY F",1),"")`,
     ],
   ];
 
   await fetch(
-    `${SHEETS_BASE}/${spreadsheetId}/values/Pivot!A1?valueInputOption=USER_ENTERED`,
+    `${SHEETS_BASE}/${spreadsheetId}/values/Pivot!A2?valueInputOption=USER_ENTERED`,
     {
       method: "PUT",
       headers: authHeaders(token),
-      body: JSON.stringify({ values: [...pivotHeader, ...pivotFormula] }),
+      body: JSON.stringify({ values: pivotFormula }),
     }
   ).then((r) => checkOk(r, "Sheets write Pivot"));
 
   // ── Write Results formulas (pass-through from Pivot for chart source) ────────
+  // QUERY auto-header lands in Pivot!A2 — actual data starts at Pivot!A3.
+  // Results row 1 therefore maps to Pivot!A3 (first year value, e.g. 2020).
   await fetch(
     `${SHEETS_BASE}/${spreadsheetId}/values/Results!A1?valueInputOption=USER_ENTERED`,
     {
@@ -98,16 +103,16 @@ export async function createChartDataSheet(
       headers: authHeaders(token),
       body: JSON.stringify({
         values: [
-          ["=Pivot!A2", "=Pivot!B2", "=Pivot!C2"],
-          ["=Pivot!A3", "=Pivot!B3", "=Pivot!C3"],
-          ["=Pivot!A4", "=Pivot!B4", "=Pivot!C4"],
-          ["=Pivot!A5", "=Pivot!B5", "=Pivot!C5"],
-          ["=Pivot!A6", "=Pivot!B6", "=Pivot!C6"],
-          ["=Pivot!A7", "=Pivot!B7", "=Pivot!C7"],
-          ["=Pivot!A8", "=Pivot!B8", "=Pivot!C8"],
-          ["=Pivot!A9", "=Pivot!B9", "=Pivot!C9"],
+          ["=Pivot!A3",  "=Pivot!B3",  "=Pivot!C3"],
+          ["=Pivot!A4",  "=Pivot!B4",  "=Pivot!C4"],
+          ["=Pivot!A5",  "=Pivot!B5",  "=Pivot!C5"],
+          ["=Pivot!A6",  "=Pivot!B6",  "=Pivot!C6"],
+          ["=Pivot!A7",  "=Pivot!B7",  "=Pivot!C7"],
+          ["=Pivot!A8",  "=Pivot!B8",  "=Pivot!C8"],
+          ["=Pivot!A9",  "=Pivot!B9",  "=Pivot!C9"],
           ["=Pivot!A10", "=Pivot!B10", "=Pivot!C10"],
           ["=Pivot!A11", "=Pivot!B11", "=Pivot!C11"],
+          ["=Pivot!A12", "=Pivot!B12", "=Pivot!C12"],
         ],
       }),
     }

@@ -43,24 +43,35 @@ ${clusterOverview}
 
 ## Format jeder Ableitung
 
-**Headline (x.1):**
-- Max. 8 Wörter, aktiv formuliert, keine Substantivketten
-- Benennt eine Marktbewegung oder Investment-Implikation — kein Produktfeature
-- Beispiel gut: "Konsolidierungsdruck zwingt Service-Plattformen zur Differenzierung"
-- Beispiel schlecht: "Service-Plattformen optimieren die Lieferkette nachhaltig"
+**Headline (x.1):** Max. 8 Wörter, aktiv formuliert. Benennt eine Marktbewegung oder Investment-Implikation.
 
-**Fließtext (x.2):**
-- Genau 1–2 kurze Sätze, max. 35 Wörter gesamt
-- Investorenperspektive: Was bedeutet dieser Trend? Welche Implikation hat er?
-- Mindestens eine konkrete Zahl, ein Zeitbezug oder ein Segment-Name aus dem Datensatz
-- Kein Buzzword-Stil, keine Beschreibung was Unternehmen tun ("XY revolutioniert Z")
-- Beispiel gut: "Mit >2 Mrd. € Gesamtfunding zeigt das Segment: Kapitaleinsatz verschiebt sich von Hardware zu Betriebssoftware. Wer dort noch nicht positioniert ist, verliert Marktanteile."
-- Beispiel schlecht: "Unternehmen wie X und Y ermöglichen durch Z eine schnellere Markteinführung und minimieren die Entwicklungskosten für industrielle Kunden."
+**Fließtext (x.2):** 1–2 Sätze, max. 35 Wörter. Primärquellen sind **Finanzkennzahlen**: Investitionsvolumina (Mio./Mrd. €), Funding-Wachstum in %, Deal-Anzahlen, Funding-Momentum. Unternehmensanzahlen NICHT verwenden.
+
+## Beispiele (genau dieser Stil)
+
+✅ RICHTIG:
+Headline: "KI sichert industrielle Prozessqualität"
+Text: "1,8 Mrd. € Investitionen in KI-gestützte Qualitätsprüfung zeigen: Fehler werden direkt im Prozess erkannt und korrigiert, statt im Nachgang geprüft."
+
+Headline: "Service-Plattformen optimieren Betriebskosten"
+Text: "Mit 2,2 Mrd. € Gesamtfunding digitalisieren Service-Operations-Plattformen Planung, Einsatzsteuerung und Rückmeldung von Serviceeinsätzen."
+
+Headline: "Hardware-Innovation gewinnt an Dynamik"
+Text: "Ein Funding-Wachstum von +31 % bei Automatisierungshardware zeigt: Unternehmen investieren wieder stärker in physische Anlagen, Sensorik und Robotik."
+
+Headline: "Vertikale Integration steigert Gesamteffizienz"
+Text: "Das stabile Investitionsniveau bei Manufacturing Execution Systems bestätigt: Produktionsdaten werden systematisch zur Steuerung von Effizienz und Auslastung genutzt."
+
+❌ FALSCH (so NICHT):
+Text: "Mit 448 Unternehmen ist der Markt gesättigt." → Unternehmensanzahl statt €-Betrag
+Text: "Unternehmen wie X revolutionieren Y." → Produktbeschreibung statt Marktdynamik
+Text: "Das Segment erschließt ungenutzte Datenpotenziale." → Buzzwords, kein Geldbetrag
 
 ## Regeln
+- Primärquelle: €-Beträge, %-Wachstum, Deal-Zahlen aus dem Kontext — keine Unternehmensanzahlen
 - Jede Ableitung transportiert eine eigenständige, investitionsrelevante Erkenntnis
 - Keine Wiederholungen zwischen den Ableitungen
-- Kein Buzzword-Stil (keine "revolutioniert", "nachhaltig", "transformiert", "erschließt")
+- Keine Buzzwords: "revolutioniert", "nachhaltig", "transformiert", "erschließt", "ermöglicht"
 - Auf Deutsch
 
 Antworte NUR mit diesem JSON-Objekt (kein Markdown, keine Erklärung):
