@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { collection, query, where, orderBy, getDocs } from "firebase/firestore";
+import { collection, query, where, getDocs } from "firebase/firestore";
 import { getFirebaseDb, signInWithGoogle, signOutUser, persistGoogleToken } from "@/lib/firebase/client";
 import { createNewSession, resumeSessionFast, deleteSession, clearSignedOutClientState } from "@/lib/firebase/hooks";
 import { useSession } from "@/lib/store/session";
@@ -409,13 +409,14 @@ function SessionsView({ authUid }: { authUid: string }) {
     const db = getFirebaseDb();
     const q = query(
       collection(db, "sessions"),
-      where("userId", "==", authUid),
-      orderBy("createdAt", "desc")
+      where("userId", "==", authUid)
     );
     getDocs(q)
-      .then((snap) =>
-        setSessions(snap.docs.map((d) => ({ id: d.id, ...d.data() } as SessionRow)))
-      )
+      .then((snap) => {
+        const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() } as SessionRow));
+        rows.sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
+        setSessions(rows);
+      })
       .finally(() => setLoading(false));
   }, [authUid]);
 
