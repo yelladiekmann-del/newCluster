@@ -1,200 +1,171 @@
 import type { NextRequest } from "next/server";
-import { buildReviewContext } from "@/lib/server/review-context";
-import { loadSessionSnapshot } from "@/lib/server/session-data";
-import { callGeminiText, parseJsonObject } from "@/lib/server/gemini";
-import { getGeminiKey } from "@/lib/server/gemini-key";
 import type { GeneratedAbleitungen } from "@/lib/slides/types";
-import type { ClusterMetricsRow } from "@/types";
 
-export const maxDuration = 60;
+export const maxDuration = 30;
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+// ── Types ─────────────────────────────────────────────────────────────────────
 
-function fmt(value: number | null | undefined, decimals = 1): string {
-  if (value == null) return "—";
-  return value.toFixed(decimals).replace(".", ",");
+export interface YearlyMetric {
+  year: number;
+  volume: number;    // Mio. €
+  dealCount: number;
 }
 
-function fmtPct(value: number | null | undefined): string {
-  if (value == null) return "—";
-  return `${(value * 100).toFixed(1).replace(".", ",")} %`;
+// ── Format helpers ────────────────────────────────────────────────────────────
+
+function fmtVol(v: number): string {
+  if (v >= 1000) return `${(v / 1000).toFixed(1).replace(".", ",")} Mrd.`;
+  return `${Math.round(v)} Mio.`;
 }
 
-function fmtInt(value: number | null | undefined): string {
-  if (value == null) return "—";
-  return Math.round(value).toLocaleString("de-DE");
+function fmtPct(v: number): string {
+  const abs = Math.abs(v * 100).toFixed(0);
+  if (v > 0) return `+${abs}%`;
+  if (v < 0) return `−${abs}%`;
+  return "0%";
 }
 
-function fmtMomentum(value: number | null | undefined): string {
-  if (value == null) return "—";
-  const pct = (value * 100).toFixed(1).replace(".", ",");
-  return value >= 0 ? `+${pct} %` : `${pct} %`;
-}
+// ── Rule engine ───────────────────────────────────────────────────────────────
 
-/**
- * Builds a compact markdown benchmark table from ClusterMetricsRow[].
- * Mirrors the "Detailed benchmark table" shown on the Analytics page.
- */
-function buildBenchmarkTable(rows: ClusterMetricsRow[]): string {
-  if (!rows.length) return "";
-
-  const lines: string[] = [
-    "| Cluster | # Deals | Deal Momentum | Capital 4J (Mio. €) | Funding Momentum | Ø Deal (Mio. €) | Ø Funding (Mio. €) | Total Funding (Mio. €) | Marktreife | Mortalität | VC Grad. | HHI |",
-    "|---|---|---|---|---|---|---|---|---|---|---|---|",
-  ];
-
-  for (const r of rows) {
-    lines.push(
-      `| ${r.clusterName} ` +
-      `| ${fmtInt(r.dealCount)} ` +
-      `| ${fmtMomentum(r.dealMomentum)} ` +
-      `| ${fmt(r.totalInvested4yr != null ? r.totalInvested4yr / 1e3 : null, 1)} ` +
-      `| ${fmtMomentum(r.fundingMomentum)} ` +
-      `| ${fmt(r.capitalMean)} ` +
-      `| ${fmt(r.avgFunding)} ` +
-      `| ${fmt(r.totalFunding != null ? r.totalFunding / 1e3 : null, 1)} ` +
-      `| ${fmtPct(r.marktreife)} ` +
-      `| ${fmtPct(r.mortalityRate)} ` +
-      `| ${fmtPct(r.vcGraduationRate)} ` +
-      `| ${fmt(r.hhi)} |`
-    );
+function applyRules(yearly: YearlyMetric[]): GeneratedAbleitungen {
+  if (yearly.length < 2) {
+    return {
+      actionTitle:     "",
+      "ableitung1.1": "", "ableitung1.2": "",
+      "ableitung2.1": "", "ableitung2.2": "",
+      "ableitung3.1": "", "ableitung3.2": "",
+      "ableitung4.1": "", "ableitung4.2": "",
+      "ableitung5.1": "", "ableitung5.2": "",
+    };
   }
 
-  return lines.join("\n");
+  const last  = yearly[yearly.length - 1];
+  const prev  = yearly[yearly.length - 2];
+  const first = yearly[0];
+
+  const volumeYoY = (last.volume    - prev.volume)    / (prev.volume    || 1);
+  const dealYoY   = (last.dealCount - prev.dealCount) / (prev.dealCount || 1);
+
+  const peakYear = yearly.reduce((p, c) => (c.volume > p.volume ? c : p));
+
+  const spanYears = last.year - first.year;
+  const cagr = spanYears > 0 && first.volume > 0
+    ? Math.pow(last.volume / first.volume, 1 / spanYears) - 1
+    : 0;
+
+  const allVolume  = yearly.reduce((s, y) => s + y.volume,    0);
+  const allDeals   = yearly.reduce((s, y) => s + y.dealCount, 0);
+  const ltAvgDeal  = allDeals   > 0 ? allVolume  / allDeals   : 0;
+  const lastAvgDeal = last.dealCount > 0 ? last.volume / last.dealCount : 0;
+
+  // ── Action Title ─────────────────────────────────────────────────────────────
+
+  let actionTitle: string;
+  if (peakYear.year === last.year && Math.abs(dealYoY) < 0.1) {
+    actionTitle = `Rekordjahr ${last.year}: Das Investitionsvolumen erreicht ein Allzeithoch — bei nahezu konstanter Deal-Anzahl`;
+  } else if (volumeYoY >= 0.2 && dealYoY >= 0.2) {
+    actionTitle = `Breiter Kapitalzufluss ${last.year}: Sowohl Volumen als auch Deal-Frequenz steigen signifikant`;
+  } else if (volumeYoY >= 0.2 && Math.abs(dealYoY) < 0.1) {
+    actionTitle = `Das Investitionsvolumen steigt ${last.year} um ${fmtPct(volumeYoY)} — die Anzahl der Deals bleibt stabil`;
+  } else if (volumeYoY <= -0.2) {
+    actionTitle = `Deutliche Korrektur ${last.year}: Investoren ziehen Kapital ab, der Markt konsolidiert sich`;
+  } else {
+    actionTitle = `Der Markt stabilisiert sich ${last.year} — Volumen und Deal-Aktivität auf konstantem Niveau`;
+  }
+
+  // ── Ableitung 1: Volumen-Trend ────────────────────────────────────────────────
+
+  let a1h: string, a1b: string;
+  if (volumeYoY >= 0.2) {
+    a1h = "Kapitalzufluss beschleunigt sich deutlich";
+    a1b = `Das Investitionsvolumen stieg von €${fmtVol(prev.volume)} (${prev.year}) auf €${fmtVol(last.volume)} (${last.year}) — ein Zuwachs von ${fmtPct(volumeYoY)}. Der Markt zieht signifikant mehr Kapital an, was auf wachsendes institutionelles Vertrauen hindeutet.`;
+  } else if (volumeYoY <= -0.2) {
+    a1h = "Investitionsvolumen unter Korrektur";
+    a1b = `Das Funding fiel von €${fmtVol(prev.volume)} auf €${fmtVol(last.volume)} (${fmtPct(volumeYoY)}). Diese Korrektur signalisiert eine selektivere Kapitalallokation — Investoren priorisieren Profitabilität über Wachstum.`;
+  } else {
+    a1h = "Kapitalflüsse auf stabilem Niveau";
+    a1b = `Mit €${fmtVol(last.volume)} im Jahr ${last.year} bewegt sich das Volumen nahe am Vorjahr (${fmtPct(volumeYoY)}). Der Markt befindet sich in einer Konsolidierungsphase mit gleichbleibender Investorenaktivität.`;
+  }
+
+  // ── Ableitung 2: Deal-Anzahl ──────────────────────────────────────────────────
+
+  let a2h: string, a2b: string;
+  if (dealYoY <= -0.2) {
+    a2h = "Weniger Deals, höhere Selektivität";
+    a2b = `Die Anzahl der Finanzierungsrunden ging von ${prev.dealCount} auf ${last.dealCount} zurück (${fmtPct(dealYoY)}). Investoren konzentrieren Kapital auf weniger, dafür reifere Unternehmen — ein Zeichen zunehmender Marktreife.`;
+  } else if (dealYoY >= 0.2) {
+    a2h = "Dealaktivität nimmt spürbar zu";
+    a2b = `${last.dealCount} Finanzierungsrunden in ${last.year} gegenüber ${prev.dealCount} im Vorjahr (${fmtPct(dealYoY)}). Die breitere Dealbasis deutet auf ein wachsendes Startup-Ökosystem und diversifiziertes Investoreninteresse hin.`;
+  } else {
+    a2h = "Stabile Transaktionsfrequenz";
+    a2b = `Mit ${last.dealCount} Deals in ${last.year} bleibt die Aktivität konstant. Der Markt zeigt keine Überhitzung, aber auch keinen Rückzug — ein Gleichgewicht zwischen Angebot und Nachfrage.`;
+  }
+
+  // ── Ableitung 3: Durchschnittliche Rundengröße ───────────────────────────────
+
+  let a3h: string, a3b: string;
+  const avgDealDiff = ltAvgDeal > 0 ? (lastAvgDeal - ltAvgDeal) / ltAvgDeal : 0;
+  if (lastAvgDeal > ltAvgDeal * 1.1) {
+    a3h = "Durchschnittliche Rundengröße steigt";
+    a3b = `Die mittlere Dealgröße liegt bei €${fmtVol(lastAvgDeal)} — ${fmtPct(avgDealDiff)} gegenüber dem Langzeitschnitt (€${fmtVol(ltAvgDeal)}). Größere Runden deuten auf Later-Stage-Dominanz und wachsende Skalierungsambitionen der Portfoliounternehmen hin.`;
+  } else if (lastAvgDeal < ltAvgDeal * 0.9) {
+    a3h = "Kleinere Runden dominieren";
+    a3b = `Mit €${fmtVol(lastAvgDeal)} pro Deal liegt die durchschnittliche Rundengröße unter dem Langzeitschnitt von €${fmtVol(ltAvgDeal)}. Early-Stage-Investments gewinnen an Gewicht, was auf Pipeline-Aufbau hindeutet.`;
+  } else {
+    a3h = "Dealgrößen im Marktdurchschnitt";
+    a3b = `Die durchschnittliche Rundengröße von €${fmtVol(lastAvgDeal)} entspricht dem Langzeitschnitt (€${fmtVol(ltAvgDeal)}). Die Stage-Verteilung bleibt ausgewogen — kein Shift zu extrem großen oder kleinen Runden erkennbar.`;
+  }
+
+  // ── Ableitung 4: Peak-Analyse ─────────────────────────────────────────────────
+
+  let a4h: string, a4b: string;
+  if (peakYear.year === last.year) {
+    a4h = "Neues Allzeithoch erreicht";
+    a4b = `${last.year} markiert mit €${fmtVol(last.volume)} das höchste jemals gemessene Investitionsvolumen. Der Markt befindet sich in einer Expansionsphase — getrieben durch neue Anwendungsfelder und regulatorische Klarheit.`;
+  } else {
+    const pctBelowPeak = (last.volume - peakYear.volume) / peakYear.volume;
+    const trend = pctBelowPeak > -0.2
+      ? "eine schrittweise Annäherung an historische Höchststände"
+      : "eine deutliche Normalisierung nach dem Boom";
+    a4h = `Peak-Volumen lag in ${peakYear.year}`;
+    a4b = `Das bisherige Hoch von €${fmtVol(peakYear.volume)} wurde ${peakYear.year} erreicht. Aktuell liegt der Markt ${fmtPct(pctBelowPeak)} darunter — ${trend}.`;
+  }
+
+  // ── Ableitung 5: CAGR-Outlook ─────────────────────────────────────────────────
+
+  let a5h: string, a5b: string;
+  if (cagr > 0.15) {
+    a5h = "Langfristiger Wachstumspfad intakt";
+    a5b = `Die durchschnittliche jährliche Wachstumsrate (CAGR) liegt bei ${fmtPct(cagr)} seit ${first.year}. Trotz zyklischer Schwankungen bestätigt der Trendvektor eine strukturell wachsende Kapitalallokation in den Sektor.`;
+  } else if (cagr > 0) {
+    a5h = "Moderates Wachstum als neue Baseline";
+    a5b = `Mit einer CAGR von ${fmtPct(cagr)} seit ${first.year} wächst der Markt solide, aber nicht explosiv. Investoren sollten mit stabilen, aber nicht exponentiellen Returns rechnen — Fokus auf operative Exzellenz statt Hypergrowth.`;
+  } else {
+    a5h = "Strukturelle Neubewertung erkennbar";
+    a5b = `Der negative Langzeittrend (CAGR ${fmtPct(cagr)}) deutet auf eine fundamentale Marktverschiebung hin. Kapital fließt selektiver — nur Unternehmen mit klarer Marktposition und Profitabilitätspfad ziehen weiterhin Funding an.`;
+  }
+
+  return {
+    actionTitle,
+    "ableitung1.1": a1h, "ableitung1.2": a1b,
+    "ableitung2.1": a2h, "ableitung2.2": a2b,
+    "ableitung3.1": a3h, "ableitung3.2": a3b,
+    "ableitung4.1": a4h, "ableitung4.2": a4b,
+    "ableitung5.1": a5h, "ableitung5.2": a5b,
+  };
 }
 
 // ── Route ─────────────────────────────────────────────────────────────────────
 
 export async function POST(req: NextRequest) {
-  const apiKey = getGeminiKey();
-  const { uid, analyticsRows } = (await req.json()) as {
-    uid: string;
-    analyticsRows?: ClusterMetricsRow[];
-  };
+  const { yearlyMetrics } = (await req.json()) as { yearlyMetrics?: YearlyMetric[] };
 
-  if (!uid) {
-    return Response.json({ error: "uid is required" }, { status: 400 });
+  if (!yearlyMetrics || yearlyMetrics.length < 2) {
+    return Response.json(
+      { error: "Keine ausreichenden Deal-Daten — bitte zuerst eine Deals-Datei hochladen." },
+      { status: 400 }
+    );
   }
 
-  try {
-    const { session, companies, clusters } = await loadSessionSnapshot(uid);
-
-    const reviewContext = buildReviewContext({
-      session,
-      companies,
-      clusters,
-      marketContext: session.chatMarketContextRaw ?? "",
-    });
-
-    // Cluster-Übersicht (Beschreibungen + Beispielunternehmen)
-    const clusterOverview = reviewContext.clusterSummaries
-      .map(
-        (s) =>
-          `**${s.clusterName}** (${s.companyCount} Unternehmen): ${s.description || "—"}\n` +
-          `  Beispiele: ${s.representativeCompanies.slice(0, 4).join(", ")}`
-      )
-      .join("\n\n");
-
-    // Benchmark-Tabelle aus Analytics (falls vom Client mitgeschickt)
-    const benchmarkTable =
-      analyticsRows && analyticsRows.length > 0
-        ? buildBenchmarkTable(analyticsRows)
-        : null;
-
-    const prompt = `Du bist ein erfahrener VC-Marktanalyst bei hy, einer Strategie- und Innovationsberatung.
-
-Auf Basis dieser Marktlandschaft aus ${reviewContext.companyCount} Unternehmen in ${reviewContext.clusterCount} Cluster-Segmenten schreibst du 5 Markt-Ableitungen für einen Investor-Report.
-
-${reviewContext.marketContext ? `Marktkontext:\n${reviewContext.marketContext}\n\n` : ""}## Cluster-Übersicht
-${clusterOverview}
-
-${benchmarkTable ? `## Benchmark-Kennzahlen (alle Cluster im Vergleich)
-
-Legende: Capital 4J = investiertes Kapital der letzten 4 Jahre in Mio. €; Marktreife = Capital 4J / Total Funding; Mortalität = Anteil inaktiver Unternehmen; VC Grad. = Anteil erfolgreicher VC-Exits; HHI = Marktkonzentration (0–1).
-
-${benchmarkTable}
-
-` : ""}## Format jeder Ableitung
-
-**Headline (x.1):** Max. 8 Wörter, aktiv formuliert. Benennt eine Marktbewegung oder Investment-Implikation.
-
-**Fließtext (x.2):** 1–2 Sätze, max. 35 Wörter. Primärquellen sind **Finanzkennzahlen aus der Benchmark-Tabelle**: Investitionsvolumina (Mio./Mrd. €), Funding-Momentum (%), Deal-Anzahlen, Marktreife-Werte. Unternehmensanzahlen NICHT verwenden.
-
-## Beispiele (genau dieser Stil)
-
-✅ RICHTIG:
-Headline: "KI sichert industrielle Prozessqualität"
-Text: "1,8 Mrd. € Investitionen in KI-gestützte Qualitätsprüfung zeigen: Fehler werden direkt im Prozess erkannt und korrigiert, statt im Nachgang geprüft."
-
-Headline: "Service-Plattformen optimieren Betriebskosten"
-Text: "Mit 2,2 Mrd. € Gesamtfunding digitalisieren Service-Operations-Plattformen Planung, Einsatzsteuerung und Rückmeldung von Serviceeinsätzen."
-
-Headline: "Hardware-Innovation gewinnt an Dynamik"
-Text: "Ein Funding-Wachstum von +31 % bei Automatisierungshardware zeigt: Unternehmen investieren wieder stärker in physische Anlagen, Sensorik und Robotik."
-
-Headline: "Vertikale Integration steigert Gesamteffizienz"
-Text: "Das stabile Investitionsniveau bei Manufacturing Execution Systems bestätigt: Produktionsdaten werden systematisch zur Steuerung von Effizienz und Auslastung genutzt."
-
-❌ FALSCH (so NICHT):
-Text: "Mit 448 Unternehmen ist der Markt gesättigt." → Unternehmensanzahl statt €-Betrag
-Text: "Unternehmen wie X revolutionieren Y." → Produktbeschreibung statt Marktdynamik
-Text: "Das Segment erschließt ungenutzte Datenpotenziale." → Buzzwords, kein Geldbetrag
-
-## Regeln
-- Primärquelle: Zahlen aus der Benchmark-Tabelle (€-Beträge, %-Wachstum, Deal-Zahlen) — keine Unternehmensanzahlen
-- Jede Ableitung transportiert eine eigenständige, investitionsrelevante Erkenntnis
-- Keine Wiederholungen zwischen den Ableitungen
-- Keine Buzzwords: "revolutioniert", "nachhaltig", "transformiert", "erschließt", "ermöglicht"
-- Auf Deutsch
-
-## Action Title
-
-Schreibe zusätzlich einen Action Title für die Folie, der alle 5 Ableitungen in eine übergreifende Kernaussage verdichtet.
-
-**Prinzipien:**
-- Ca. 15–20 Wörter, meinungsstark und eloquent, keine Beschreibung sondern klare Positionierung
-- Aktive, handlungsorientierte Verben — keine Hilfsverben, kein Passiv
-- Fachlich präzise, keine Buzzwords
-- Bindestrich-Kombinationen vermeiden; stattdessen qualitativ hochwertige Umschreibungen wählen
-- Implizite Handlungsaufforderung oder klare strategische Implikation
-
-**Gute Beispiele:**
-- "Die Größe und das Momentum des Fundings spiegeln präzise die Dynamik und das Wachstum in einem bestimmten Cluster wider."
-- "Die Dekodierung des erweiterten Marktumfeldes ermöglicht eine präzise Visualisierung aufstrebender Innovationsbereiche und ihrer Dynamiken."
-- "Die Analyse von Investitionsströmen zeigt: konzentriertes Kapital in wenigen Segmenten signalisiert strukturellen Wandel, kein zyklisches Momentum."
-
-Antworte NUR mit diesem JSON-Objekt (kein Markdown, keine Erklärung):
-{
-  "actionTitle": "...",
-  "ableitung1.1": "...",
-  "ableitung1.2": "...",
-  "ableitung2.1": "...",
-  "ableitung2.2": "...",
-  "ableitung3.1": "...",
-  "ableitung3.2": "...",
-  "ableitung4.1": "...",
-  "ableitung4.2": "...",
-  "ableitung5.1": "...",
-  "ableitung5.2": "..."
-}`;
-
-    const raw = await callGeminiText({
-      apiKey,
-      prompt,
-      temperature: 0.4,
-      model: "gemini-2.5-flash",
-      thinkingBudget: 0,
-    });
-
-    const parsed = parseJsonObject<GeneratedAbleitungen>(raw);
-    if (!parsed) {
-      return Response.json({ error: "Gemini returned unparseable response" }, { status: 500 });
-    }
-
-    return Response.json({ ableitungen: parsed });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    console.error("[generate-ableitungen]", message);
-    return Response.json({ error: message }, { status: 500 });
-  }
+  return Response.json({ ableitungen: applyRules(yearlyMetrics) });
 }

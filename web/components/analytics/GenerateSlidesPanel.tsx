@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import type { SlidesData, DealRow, GeneratedAbleitungen } from "@/lib/slides/types";
+import type { YearlyMetric } from "@/app/api/generate-ableitungen/route";
 import type { ClusterMetricsRow, AnalyticsColMap } from "@/types";
 
 interface GenerateSlidesPanelProps {
@@ -74,6 +75,30 @@ function mapDealRows(
     .filter((d) => d.deal_date && d.deal_size > 0);
 }
 
+function computeYearlyMetrics(
+  dealsData: Record<string, unknown>[],
+  colMap: AnalyticsColMap
+): YearlyMetric[] {
+  const byYear: Record<number, { volume: number; dealCount: number }> = {};
+
+  for (const row of dealsData) {
+    const dateStr = colMap.deal_date ? String(row[colMap.deal_date] ?? "") : "";
+    const size    = colMap.deal_size ? Number(row[colMap.deal_size]) || 0  : 0;
+    if (!dateStr || size <= 0) continue;
+
+    const year = parseInt(dateStr.slice(0, 4), 10);
+    if (isNaN(year) || year < 2000 || year > 2035) continue;
+
+    byYear[year] ??= { volume: 0, dealCount: 0 };
+    byYear[year].volume    += size;
+    byYear[year].dealCount += 1;
+  }
+
+  return Object.entries(byYear)
+    .map(([y, d]) => ({ year: parseInt(y, 10), volume: d.volume, dealCount: d.dealCount }))
+    .sort((a, b) => a.year - b.year);
+}
+
 const EMPTY_ABLEITUNGEN: GeneratedAbleitungen = {
   actionTitle:   "",
   "ableitung1.1": "", "ableitung1.2": "",
@@ -117,12 +142,17 @@ export function GenerateSlidesPanel({
 
   // ── Generate Ableitungen + Action Title via Gemini ────────────────────────────
   const handleGenerateAbleitungen = useCallback(async () => {
+    if (!dealsData) {
+      toast.error("Keine Deal-Daten geladen — bitte zuerst eine Deals-Datei hochladen.");
+      return;
+    }
     setGeneratingAbleitungen(true);
     try {
+      const yearlyMetrics = computeYearlyMetrics(dealsData, colMap);
       const res = await fetch("/api/generate-ableitungen", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ uid, analyticsRows }),
+        body: JSON.stringify({ yearlyMetrics }),
       });
       const json = await res.json() as { ableitungen?: GeneratedAbleitungen; error?: string };
       if (!res.ok || json.error) throw new Error(json.error ?? "Unknown error");
@@ -133,7 +163,7 @@ export function GenerateSlidesPanel({
     } finally {
       setGeneratingAbleitungen(false);
     }
-  }, [uid, analyticsRows]);
+  }, [dealsData, colMap]);
 
   // ── Generate Slides ──────────────────────────────────────────────────────────
   const handleGenerateSlides = useCallback(async () => {
