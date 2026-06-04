@@ -9,6 +9,7 @@ import { Progress } from "@/components/ui/progress";
 import { FileUploadZone } from "@/components/ui/file-upload-zone";
 import { useSession } from "@/lib/store/session";
 import { persistSession } from "@/lib/firebase/hooks";
+import { saveCompaniesToFirestore } from "@/lib/firebase/companies-storage";
 import { toast } from "sonner";
 import type { CompanyDoc } from "@/types";
 import { DIMENSIONS } from "@/types";
@@ -109,6 +110,17 @@ export function CompanyDataStep() {
           });
           setUploadPct(null);
           await persistSession(uid, { companyCol: nameCol, descCol: dCol, pipelineStep: 0, companyCount: rows.length });
+
+          // Save companies with originalData to Firestore so resume after re-login
+          // uses the fast Firestore path instead of the slow Storage CSV fallback.
+          // Non-fatal: extract-dimensions will write Firestore docs anyway (without originalData).
+          try {
+            await saveCompaniesToFirestore(uid, companyDocs);
+            console.info("[CompanyDataStep] Firestore pre-save done", { rowCount: rows.length });
+          } catch (fsErr) {
+            console.warn("[CompanyDataStep] Firestore pre-save failed (non-fatal):", fsErr);
+          }
+
           console.info("[CompanyDataStep] upload_completed", {
             uid,
             fileName: file.name,
