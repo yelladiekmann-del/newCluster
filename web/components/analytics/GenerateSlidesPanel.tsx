@@ -24,6 +24,7 @@ import {
 import { toast } from "sonner";
 import type { SlidesData, DealRow, GeneratedAbleitungen, ClusterSlideData } from "@/lib/slides/types";
 import type { YearlyMetric } from "@/app/api/generate-ableitungen/route";
+import type { ClusterUspInput, ClusterUspOutput } from "@/app/api/generate-cluster-usps/route";
 import type { ClusterMetricsRow, AnalyticsColMap, CompanyDoc, ClusterDoc } from "@/types";
 import { safeNum, safeDate } from "@/lib/analytics/compute";
 import { getFirebaseStorage } from "@/lib/firebase/client";
@@ -254,7 +255,9 @@ export function GenerateSlidesPanel({
   const [showAdvanced, setShowAdvanced] = useState(false);
 
   // ── Cluster slides state ──────────────────────────────────────────────────────
-  const [sowhat, setSowhat] = useState<[string, string, string]>(["", "", ""]);
+  const [sowhat, setSowhat]         = useState<[string, string, string]>(["", "", ""]);
+  const [usps,   setUsps]           = useState<[string, string, string]>(["", "", ""]);
+  const [generatingUsps, setGeneratingUsps] = useState(false);
 
   // ── Top-3 clusters by hyScore ─────────────────────────────────────────────────
   const top3 = useMemo(() =>
@@ -271,9 +274,7 @@ export function GenerateSlidesPanel({
   const hqCol = useMemo(() => detectHqCol(companyCols), [companyCols]);
 
   const clusterSlideData: ClusterSlideData[] = useMemo(() => {
-    const clusterMap = new Map(clusters.map((c) => [c.id, c]));
     return top3.map((row, i) => {
-      const clDoc = clusterMap.get(row.clusterId);
       const rep = pickRepresentative(row.clusterId, companies, colMap);
       const hq = (hqCol && rep ? String(rep.originalData[hqCol] ?? "") : "") || "—";
       const funding = rep && colMap.total_raised
@@ -284,11 +285,11 @@ export function GenerateSlidesPanel({
         name:        row.clusterName,
         hq,
         funding,
-        description: clDoc?.description ?? "",
+        description: usps[i] || "",   // AI-generated USP fills {{description_n}}
         sowhat:      sowhat[i],
       };
     });
-  }, [top3, clusters, companies, colMap, hqCol, sowhat]);
+  }, [top3, companies, colMap, hqCol, usps, sowhat]);
 
   // ── Loading states ────────────────────────────────────────────────────────────
   const [generatingAbleitungen, setGeneratingAbleitungen] = useState(false);
@@ -319,6 +320,49 @@ export function GenerateSlidesPanel({
       setGeneratingAbleitungen(false);
     }
   }, [dealsData, colMap]);
+
+  // ── Generate Cluster USPs ────────────────────────────────────────────────────
+  const handleGenerateUsps = useCallback(async () => {
+    if (top3.length === 0) return;
+    setGeneratingUsps(true);
+    try {
+      const clusterMap = new Map(clusters.map((c) => [c.id, c]));
+      const payload: ClusterUspInput[] = top3.map((row) => ({
+        clusterId:   row.clusterId,
+        name:        row.clusterName,
+        description: clusterMap.get(row.clusterId)?.description ?? "",
+        metrics: {
+          companyCount:     row.companyCount,
+          hyScore:          row.hyScore,
+          dealMomentum:     row.dealMomentum,
+          fundingMomentum:  row.fundingMomentum,
+          totalFunding:     row.totalFunding,
+          avgFunding:       row.avgFunding,
+          vcGraduationRate: row.vcGraduationRate,
+          mortalityRate:    row.mortalityRate,
+        },
+      }));
+
+      const res = await fetch("/api/generate-cluster-usps", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clusters: payload }),
+      });
+      const json = await res.json() as ClusterUspOutput & { error?: string };
+      if (!res.ok || json.error) throw new Error(json.error ?? "Unknown error");
+
+      const newUsps: [string, string, string] = ["", "", ""];
+      top3.forEach((row, i) => {
+        newUsps[i] = json.usps[row.clusterId] ?? "";
+      });
+      setUsps(newUsps);
+      toast.success("USPs generiert — bitte prüfen.");
+    } catch (err) {
+      toast.error(`Fehler: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setGeneratingUsps(false);
+    }
+  }, [top3, clusters]);
 
   // ── Generate Slides ──────────────────────────────────────────────────────────
   const handleGenerateSlides = useCallback(async () => {
@@ -549,11 +593,25 @@ export function GenerateSlidesPanel({
             {/* ── Representative Clusters ──────────────────────────────────── */}
             {top3.length > 0 && (
               <div className="space-y-3">
-                <div>
-                  <p className="text-sm font-medium">Representative Clusters</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    Top 3 Cluster nach hy Score — je 1 repräsentatives Unternehmen (höchstes Funding).
-                  </p>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium">Representative Clusters</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      Top 3 nach hy Score — USP + So What pro Cluster.
+                    </p>
+                  </div>
+                  <Button
+                    variant={usps[0] ? "outline" : "default"}
+                    size="sm"
+                    onClick={handleGenerateUsps}
+                    disabled={generatingUsps || top3.length === 0}
+                    className="gap-2 shrink-0"
+                  >
+                    {generatingUsps
+                      ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      : <Sparkles className="h-3.5 w-3.5" />}
+                    {generatingUsps ? "Generiere…" : usps[0] ? "Neu generieren" : "USPs generieren"}
+                  </Button>
                 </div>
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                   {clusterSlideData.map((cs, i) => (
@@ -572,6 +630,22 @@ export function GenerateSlidesPanel({
                         <div><span className="text-foreground/50">Funding</span> {cs.funding}</div>
                       </div>
                       <div className="space-y-1">
+                        <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                          USP <span className="normal-case text-muted-foreground/60">→ {"{"}{"{"}{`description_${i + 1}`}{"}"}{"}"}</span>
+                        </Label>
+                        <Textarea
+                          value={usps[i]}
+                          onChange={(e) => {
+                            const updated: [string, string, string] = [...usps] as [string, string, string];
+                            updated[i] = e.target.value;
+                            setUsps(updated);
+                          }}
+                          placeholder="USP generieren oder manuell eingeben…"
+                          rows={3}
+                          className="resize-none text-xs"
+                        />
+                      </div>
+                      <div className="space-y-1">
                         <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">So What</Label>
                         <Textarea
                           value={sowhat[i]}
@@ -580,8 +654,8 @@ export function GenerateSlidesPanel({
                             updated[i] = e.target.value;
                             setSowhat(updated);
                           }}
-                          placeholder="Strategische Empfehlung für diesen Cluster…"
-                          rows={3}
+                          placeholder="Strategische Empfehlung…"
+                          rows={2}
                           className="resize-none text-xs"
                         />
                       </div>
