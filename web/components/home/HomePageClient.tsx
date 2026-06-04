@@ -410,7 +410,7 @@ function SessionsView({ authUid }: { authUid: string }) {
     const q = query(
       collection(db, "sessions"),
       where("userId", "==", authUid),
-      orderBy("updatedAt", "desc")
+      orderBy("createdAt", "desc")
     );
     getDocs(q)
       .then((snap) =>
