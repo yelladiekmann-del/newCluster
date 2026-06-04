@@ -8,7 +8,6 @@ import {
   Sparkles,
   ChevronDown,
   ChevronUp,
-  Image as ImageIcon,
 } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -256,7 +255,6 @@ export function GenerateSlidesPanel({
 
   // ── Cluster slides state ──────────────────────────────────────────────────────
   const [sowhat, setSowhat] = useState<[string, string, string]>(["", "", ""]);
-  const [exportingScatter, setExportingScatter] = useState(false);
 
   // ── Top-3 clusters by hyScore ─────────────────────────────────────────────────
   const top3 = useMemo(() =>
@@ -291,8 +289,6 @@ export function GenerateSlidesPanel({
       };
     });
   }, [top3, clusters, companies, colMap, hqCol, sowhat]);
-
-  const hasUmapData = companies.some((c) => c.umapX != null);
 
   // ── Loading states ────────────────────────────────────────────────────────────
   const [generatingAbleitungen, setGeneratingAbleitungen] = useState(false);
@@ -337,20 +333,6 @@ export function GenerateSlidesPanel({
 
     setGeneratingSlides(true);
     try {
-      // Export UMAP scatter PNG (non-blocking on failure)
-      let umapImageUrl: string | undefined;
-      if (hasUmapData && uid) {
-        setExportingScatter(true);
-        try {
-          umapImageUrl = (await exportScatterPng(companies, clusters, uid)) ?? undefined;
-        } catch (err) {
-          console.warn("[GenerateSlidesPanel] Scatter export failed:", err);
-          toast.warning("UMAP-Scatter konnte nicht exportiert werden — Folie 4 bleibt unverändert.");
-        } finally {
-          setExportingScatter(false);
-        }
-      }
-
       const dealRows = dealsData ? mapDealRows(dealsData, colMap) : [];
       const { actionTitle, ...ableitungenFields } = ableitungen;
 
@@ -370,8 +352,7 @@ export function GenerateSlidesPanel({
         project,
         dealRows,
         ...ableitungenFields,
-        clusterSlides:  clusterSlideData.length > 0 ? clusterSlideData : undefined,
-        umapImageUrl,
+        clusterSlides: clusterSlideData.length > 0 ? clusterSlideData : undefined,
       };
 
       const res = await fetch("/api/generate-slides", {
@@ -388,7 +369,7 @@ export function GenerateSlidesPanel({
     } finally {
       setGeneratingSlides(false);
     }
-  }, [token, uid, clientCompany, title, documentType, chapter, slideTitle1, sectionTitle1, sectionTitle2, project, ableitungen, kpis, dealsData, colMap, clusterSlideData, companies, clusters, hasUmapData]);
+  }, [token, clientCompany, title, documentType, chapter, slideTitle1, sectionTitle1, sectionTitle2, project, ableitungen, kpis, dealsData, colMap, clusterSlideData]);
 
   const updateAbleitung = (key: keyof GeneratedAbleitungen, value: string) => {
     setAbleitungen((prev) => ({ ...prev, [key]: value }));
@@ -610,14 +591,6 @@ export function GenerateSlidesPanel({
               </div>
             )}
 
-            {/* ── UMAP Scatter status ───────────────────────────────────────── */}
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <ImageIcon className="h-3.5 w-3.5 shrink-0" />
-              {hasUmapData
-                ? "UMAP-Scatter wird beim Generieren automatisch als PNG exportiert und in Folie 4 eingebettet."
-                : "Keine UMAP-Koordinaten verfügbar — Folie 4 bleibt unverändert. (Embeddings werden im Embed-Schritt berechnet.)"}
-            </div>
-
             {/* ── Optionale Felder (collapsed) ─────────────────────────────── */}
             <div>
               <button
@@ -672,11 +645,7 @@ export function GenerateSlidesPanel({
               ) : (
                 <Presentation className="h-4 w-4" />
               )}
-              {exportingScatter
-                ? "Exportiere Scatter…"
-                : generatingSlides
-                ? "Wird erstellt…"
-                : "Slides erstellen"}
+              {generatingSlides ? "Wird erstellt…" : "Slides erstellen"}
             </Button>
           </DialogFooter>
         )}

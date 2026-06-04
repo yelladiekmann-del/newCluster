@@ -272,7 +272,11 @@ function expandClusterPlaceholders(
     out[`cluster_name${n}`] = s.name;
     out[`hq_${n}`]          = s.hq;
     out[`funding_${n}`]     = s.funding;
-    out[`description_${n}`] = s.description;
+    // Truncate description to ~160 chars so it fits in the slide text box
+    const desc = s.description.length > 160
+      ? s.description.slice(0, 157).trimEnd() + "…"
+      : s.description;
+    out[`description_${n}`] = desc;
     out[`sowhat_${n}`]      = s.sowhat;
   });
   return out;
