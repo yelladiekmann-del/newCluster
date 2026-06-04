@@ -423,6 +423,8 @@ export function AnalyticsPageClient() {
         dealsData={dealsData}
         colMap={colMap}
         companyCount={companies.length}
+        companies={companies}
+        clusters={clusters}
       />
 
       {/* Sticky bottom bar */}

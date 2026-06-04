@@ -1,3 +1,19 @@
+/** One cluster column on the "Representative Companies" slide (Folie 3). */
+export interface ClusterSlideData {
+  /** Column position: "1", "2", or "3" */
+  num: string;
+  /** Cluster display name */
+  name: string;
+  /** HQ / country of the representative company, e.g. "Germany" or "—" */
+  hq: string;
+  /** Pre-formatted total funding, e.g. "$45.2M" */
+  funding: string;
+  /** Cluster description (from ClusterDoc.description) */
+  description: string;
+  /** Strategic "so what" — user-edited or AI-generated */
+  sowhat: string;
+}
+
 /** All text placeholders for the hy VC analysis slide template. */
 export interface SlidesData {
   // ── Folie 1: Titelfolie ────────────────────────────────────────────────────
@@ -36,6 +52,14 @@ export interface SlidesData {
   // ── Automatisch generiert (nicht im Formular) ──────────────────────────────
   /** Deal rows for the chart — mapped from dealsData via analyticsColMap */
   dealRows: DealRow[];
+
+  // ── Folie 3: Representative Companies ──────────────────────────────────────
+  /** Up to 3 cluster columns for the companies slide. */
+  clusterSlides?: ClusterSlideData[];
+
+  // ── Folie 4: Clustering Visualization ──────────────────────────────────────
+  /** Publicly accessible URL of the UMAP scatter PNG (Firebase Storage download URL). */
+  umapImageUrl?: string;
 }
 
 export interface DealRow {

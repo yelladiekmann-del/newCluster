@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
 import {
   ExternalLink,
   Loader2,
@@ -8,6 +8,7 @@ import {
   Sparkles,
   ChevronDown,
   ChevronUp,
+  Image as ImageIcon,
 } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,10 +23,12 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import type { SlidesData, DealRow, GeneratedAbleitungen } from "@/lib/slides/types";
+import type { SlidesData, DealRow, GeneratedAbleitungen, ClusterSlideData } from "@/lib/slides/types";
 import type { YearlyMetric } from "@/app/api/generate-ableitungen/route";
-import type { ClusterMetricsRow, AnalyticsColMap } from "@/types";
+import type { ClusterMetricsRow, AnalyticsColMap, CompanyDoc, ClusterDoc } from "@/types";
 import { safeNum, safeDate } from "@/lib/analytics/compute";
+import { getFirebaseStorage } from "@/lib/firebase/client";
+import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
 
 interface GenerateSlidesPanelProps {
   open: boolean;
@@ -36,6 +39,8 @@ interface GenerateSlidesPanelProps {
   dealsData: Record<string, unknown>[] | null;
   colMap: AnalyticsColMap;
   companyCount: number;
+  companies: CompanyDoc[];
+  clusters: ClusterDoc[];
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -109,6 +114,108 @@ function computeYearlyMetrics(
     .sort((a, b) => a.year - b.year);
 }
 
+// ── Cluster-Slide helpers ─────────────────────────────────────────────────────
+
+/** Auto-detect an HQ / country column from the company CSV header. */
+function detectHqCol(cols: string[]): string | undefined {
+  return cols.find((c) => /^(country|hq|headquarters|location|domicile|land|headquarter)$/i.test(c));
+}
+
+/** Format a money value the same way AnalyticsTable does. */
+function fmtMoney(n: number | null): string {
+  if (n == null) return "—";
+  if (n >= 1e9) return `$${(n / 1e9).toFixed(1)}B`;
+  if (n >= 1e6) return `$${(n / 1e6).toFixed(1)}M`;
+  if (n >= 1e3) return `$${(n / 1e3).toFixed(1)}K`;
+  return `$${n.toFixed(0)}`;
+}
+
+/** Pick the most representative company for a cluster (highest total_raised). */
+function pickRepresentative(
+  clusterId: string,
+  companies: CompanyDoc[],
+  colMap: AnalyticsColMap
+): CompanyDoc | null {
+  const members = companies.filter((c) => c.clusterId === clusterId);
+  if (!members.length) return null;
+  return [...members].sort((a, b) => {
+    const ra = colMap.total_raised ? (safeNum(a.originalData[colMap.total_raised]) ?? 0) : 0;
+    const rb = colMap.total_raised ? (safeNum(b.originalData[colMap.total_raised]) ?? 0) : 0;
+    return rb - ra;
+  })[0];
+}
+
+/**
+ * Export the UMAP scatter as PNG via Plotly, upload to Firebase Storage,
+ * and return the public download URL.
+ */
+async function exportScatterPng(
+  companies: CompanyDoc[],
+  clusters: ClusterDoc[],
+  uid: string
+): Promise<string | null> {
+  if (!companies.some((c) => c.umapX != null)) return null;
+
+  const Plotly = (await import("plotly.js-dist-min")).default;
+
+  // Build one trace per cluster
+  const clusterMap = new Map(clusters.map((c) => [c.id, c]));
+  const tracesByCluster: Record<string, { x: number[]; y: number[]; name: string; color: string }> = {};
+
+  for (const co of companies) {
+    if (co.umapX == null || co.umapY == null || !co.clusterId || co.clusterId === "outliers") continue;
+    const cl = clusterMap.get(co.clusterId);
+    if (!cl) continue;
+    if (!tracesByCluster[co.clusterId]) {
+      tracesByCluster[co.clusterId] = { x: [], y: [], name: cl.name, color: cl.color };
+    }
+    tracesByCluster[co.clusterId].x.push(co.umapX);
+    tracesByCluster[co.clusterId].y.push(co.umapY);
+  }
+
+  const data = Object.values(tracesByCluster).map((t) => ({
+    type: "scatter" as const,
+    mode: "markers" as const,
+    name: t.name,
+    x: t.x,
+    y: t.y,
+    marker: { size: 7, color: t.color, opacity: 0.75 },
+  }));
+
+  const layout = {
+    paper_bgcolor: "#ffffff",
+    plot_bgcolor: "#ffffff",
+    showlegend: true,
+    legend: { x: 1, xanchor: "right" as const, y: 1, font: { size: 10 } },
+    margin: { l: 30, r: 160, t: 20, b: 30 },
+    xaxis: { showgrid: false, zeroline: false, showticklabels: false },
+    yaxis: { showgrid: false, zeroline: false, showticklabels: false },
+  };
+
+  // Render into a temporary hidden div
+  const div = document.createElement("div");
+  div.style.cssText = "position:absolute;left:-9999px;top:-9999px;width:1px;height:1px;";
+  document.body.appendChild(div);
+
+  try {
+    await Plotly.newPlot(div, data, layout, { staticPlot: true, responsive: false });
+    const dataUrl = await Plotly.toImage(div, { format: "png", width: 1600, height: 900, scale: 2 });
+
+    // Convert data URL to blob
+    const res = await fetch(dataUrl);
+    const blob = await res.blob();
+
+    // Upload to Firebase Storage
+    const path = `sessions/${uid}/scatter-export.png`;
+    const imgRef = storageRef(getFirebaseStorage(), path);
+    await uploadBytes(imgRef, blob, { contentType: "image/png" });
+    return await getDownloadURL(imgRef);
+  } finally {
+    Plotly.purge(div);
+    document.body.removeChild(div);
+  }
+}
+
 const EMPTY_ABLEITUNGEN: GeneratedAbleitungen = {
   actionTitle:   "",
   "ableitung1.1": "", "ableitung1.2": "",
@@ -129,6 +236,8 @@ export function GenerateSlidesPanel({
   dealsData,
   colMap,
   companyCount,
+  companies,
+  clusters,
 }: GenerateSlidesPanelProps) {
   const kpis = computeKpis(analyticsRows, companyCount);
 
@@ -144,6 +253,46 @@ export function GenerateSlidesPanel({
 
   const [ableitungen, setAbleitungen] = useState<GeneratedAbleitungen>(EMPTY_ABLEITUNGEN);
   const [showAdvanced, setShowAdvanced] = useState(false);
+
+  // ── Cluster slides state ──────────────────────────────────────────────────────
+  const [sowhat, setSowhat] = useState<[string, string, string]>(["", "", ""]);
+  const [exportingScatter, setExportingScatter] = useState(false);
+
+  // ── Top-3 clusters by hyScore ─────────────────────────────────────────────────
+  const top3 = useMemo(() =>
+    [...analyticsRows]
+      .filter((r) => !clusters.find((c) => c.id === r.clusterId)?.isOutliers)
+      .sort((a, b) => (b.hyScore ?? 0) - (a.hyScore ?? 0))
+      .slice(0, 3),
+  [analyticsRows, clusters]);
+
+  // ── Representative company + HQ per cluster ──────────────────────────────────
+  const companyCols = useMemo(() =>
+    companies.length > 0 ? Object.keys(companies[0].originalData ?? {}) : [],
+  [companies]);
+  const hqCol = useMemo(() => detectHqCol(companyCols), [companyCols]);
+
+  const clusterSlideData: ClusterSlideData[] = useMemo(() => {
+    const clusterMap = new Map(clusters.map((c) => [c.id, c]));
+    return top3.map((row, i) => {
+      const clDoc = clusterMap.get(row.clusterId);
+      const rep = pickRepresentative(row.clusterId, companies, colMap);
+      const hq = (hqCol && rep ? String(rep.originalData[hqCol] ?? "") : "") || "—";
+      const funding = rep && colMap.total_raised
+        ? fmtMoney(safeNum(rep.originalData[colMap.total_raised]))
+        : "—";
+      return {
+        num:         String(i + 1),
+        name:        row.clusterName,
+        hq,
+        funding,
+        description: clDoc?.description ?? "",
+        sowhat:      sowhat[i],
+      };
+    });
+  }, [top3, clusters, companies, colMap, hqCol, sowhat]);
+
+  const hasUmapData = companies.some((c) => c.umapX != null);
 
   // ── Loading states ────────────────────────────────────────────────────────────
   const [generatingAbleitungen, setGeneratingAbleitungen] = useState(false);
@@ -186,29 +335,45 @@ export function GenerateSlidesPanel({
       return;
     }
 
-    const dealRows = dealsData ? mapDealRows(dealsData, colMap) : [];
-    const { actionTitle, ...ableitungenFields } = ableitungen;
-
-    const data: SlidesData = {
-      title,
-      client_company:    clientCompany,
-      document_type:     documentType,
-      chapter,
-      slide_title1:      slideTitle1,
-      action_title_1:    actionTitle,
-      section_title1_1:  sectionTitle1,
-      section_title1_2:  sectionTitle2,
-      invest_volume:     kpis.invest_volume,
-      deals:             kpis.deals,
-      companies:         kpis.companies,
-      average_funding:   kpis.average_funding,
-      project,
-      dealRows,
-      ...ableitungenFields,
-    };
-
     setGeneratingSlides(true);
     try {
+      // Export UMAP scatter PNG (non-blocking on failure)
+      let umapImageUrl: string | undefined;
+      if (hasUmapData && uid) {
+        setExportingScatter(true);
+        try {
+          umapImageUrl = (await exportScatterPng(companies, clusters, uid)) ?? undefined;
+        } catch (err) {
+          console.warn("[GenerateSlidesPanel] Scatter export failed:", err);
+          toast.warning("UMAP-Scatter konnte nicht exportiert werden — Folie 4 bleibt unverändert.");
+        } finally {
+          setExportingScatter(false);
+        }
+      }
+
+      const dealRows = dealsData ? mapDealRows(dealsData, colMap) : [];
+      const { actionTitle, ...ableitungenFields } = ableitungen;
+
+      const data: SlidesData = {
+        title,
+        client_company:    clientCompany,
+        document_type:     documentType,
+        chapter,
+        slide_title1:      slideTitle1,
+        action_title_1:    actionTitle,
+        section_title1_1:  sectionTitle1,
+        section_title1_2:  sectionTitle2,
+        invest_volume:     kpis.invest_volume,
+        deals:             kpis.deals,
+        companies:         kpis.companies,
+        average_funding:   kpis.average_funding,
+        project,
+        dealRows,
+        ...ableitungenFields,
+        clusterSlides:  clusterSlideData.length > 0 ? clusterSlideData : undefined,
+        umapImageUrl,
+      };
+
       const res = await fetch("/api/generate-slides", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -223,7 +388,7 @@ export function GenerateSlidesPanel({
     } finally {
       setGeneratingSlides(false);
     }
-  }, [token, clientCompany, title, documentType, chapter, slideTitle1, sectionTitle1, sectionTitle2, project, ableitungen, kpis, dealsData, colMap]);
+  }, [token, uid, clientCompany, title, documentType, chapter, slideTitle1, sectionTitle1, sectionTitle2, project, ableitungen, kpis, dealsData, colMap, clusterSlideData, companies, clusters, hasUmapData]);
 
   const updateAbleitung = (key: keyof GeneratedAbleitungen, value: string) => {
     setAbleitungen((prev) => ({ ...prev, [key]: value }));
@@ -400,6 +565,59 @@ export function GenerateSlidesPanel({
               </div>
             </div>
 
+            {/* ── Representative Clusters ──────────────────────────────────── */}
+            {top3.length > 0 && (
+              <div className="space-y-3">
+                <div>
+                  <p className="text-sm font-medium">Representative Clusters</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Top 3 Cluster nach hy Score — je 1 repräsentatives Unternehmen (höchstes Funding).
+                  </p>
+                </div>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                  {clusterSlideData.map((cs, i) => (
+                    <div
+                      key={cs.name}
+                      className="rounded-xl border border-border/60 bg-muted/20 p-3.5 space-y-2"
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-foreground/8 text-[10px] font-semibold text-foreground/60">
+                          {i + 1}
+                        </span>
+                        <span className="text-[11px] font-semibold truncate">{cs.name}</span>
+                      </div>
+                      <div className="text-[11px] text-muted-foreground space-y-0.5">
+                        <div><span className="text-foreground/50">HQ</span> {cs.hq}</div>
+                        <div><span className="text-foreground/50">Funding</span> {cs.funding}</div>
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">So What</Label>
+                        <Textarea
+                          value={sowhat[i]}
+                          onChange={(e) => {
+                            const updated: [string, string, string] = [...sowhat] as [string, string, string];
+                            updated[i] = e.target.value;
+                            setSowhat(updated);
+                          }}
+                          placeholder="Strategische Empfehlung für diesen Cluster…"
+                          rows={3}
+                          className="resize-none text-xs"
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* ── UMAP Scatter status ───────────────────────────────────────── */}
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <ImageIcon className="h-3.5 w-3.5 shrink-0" />
+              {hasUmapData
+                ? "UMAP-Scatter wird beim Generieren automatisch als PNG exportiert und in Folie 4 eingebettet."
+                : "Keine UMAP-Koordinaten verfügbar — Folie 4 bleibt unverändert. (Embeddings werden im Embed-Schritt berechnet.)"}
+            </div>
+
             {/* ── Optionale Felder (collapsed) ─────────────────────────────── */}
             <div>
               <button
@@ -454,7 +672,11 @@ export function GenerateSlidesPanel({
               ) : (
                 <Presentation className="h-4 w-4" />
               )}
-              {generatingSlides ? "Wird erstellt…" : "Slides erstellen"}
+              {exportingScatter
+                ? "Exportiere Scatter…"
+                : generatingSlides
+                ? "Wird erstellt…"
+                : "Slides erstellen"}
             </Button>
           </DialogFooter>
         )}

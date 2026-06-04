@@ -9,7 +9,7 @@
  *  4. embedChart()            → delete old chart, embed the Sheets chart
  */
 
-import type { DealRow, SlidesData } from "./types";
+import type { ClusterSlideData, DealRow, SlidesData } from "./types";
 
 const SHEETS_BASE = "https://sheets.googleapis.com/v4/spreadsheets";
 const SLIDES_BASE = "https://slides.googleapis.com/v1/presentations";
@@ -258,6 +258,26 @@ export async function copyTemplate(
 
 // ─── 3. Replace placeholders ──────────────────────────────────────────────────
 
+/**
+ * Expands `clusterSlides` array into flat `{{cluster_num1}}` … `{{sowhat_3}}` keys.
+ * Called by replacePlaceholders before building the requests array.
+ */
+function expandClusterPlaceholders(
+  slides: ClusterSlideData[]
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  slides.slice(0, 3).forEach((s, i) => {
+    const n = i + 1;
+    out[`cluster_num${n}`]  = s.num;
+    out[`cluster_name${n}`] = s.name;
+    out[`hq_${n}`]          = s.hq;
+    out[`funding_${n}`]     = s.funding;
+    out[`description_${n}`] = s.description;
+    out[`sowhat_${n}`]      = s.sowhat;
+  });
+  return out;
+}
+
 export async function replacePlaceholders(
   token: string,
   presentationId: string,
@@ -269,8 +289,20 @@ export async function replacePlaceholders(
     year: "numeric",
   });
 
+  // Expand cluster slide placeholders and omit non-string / non-text fields
+  const { clusterSlides, umapImageUrl, ...rest } = data as SlidesData & { clusterSlides?: ClusterSlideData[]; umapImageUrl?: string };
+  const clusterFields = clusterSlides?.length ? expandClusterPlaceholders(clusterSlides) : {};
+  void umapImageUrl; // used separately in embedScatterImage
+
+  // Build a flat string map — skip array/object values (dealRows etc.)
+  const flatRest: Record<string, string> = {};
+  for (const [k, v] of Object.entries(rest)) {
+    if (typeof v === "string") flatRest[k] = v;
+  }
+
   const allFields: Record<string, string> = {
-    ...data,
+    ...flatRest,
+    ...clusterFields,
     date: today,
   };
 
@@ -444,14 +476,120 @@ export async function embedChart(
   console.log("[embedChart] Chart embedded successfully.");
 }
 
+// ─── 5. Embed UMAP Scatter Image ─────────────────────────────────────────────
+
+/**
+ * Finds the UMAP scatter placeholder on slides 3+ (i.e., index ≥ 2),
+ * deletes it, and inserts the PNG from `imageUrl` at the same position.
+ *
+ * Detection: first image element with area > 5 cm × 3 cm on a slide
+ * with index ≥ 2 (skip slide 1 = title, slide 2 = Sheets chart).
+ */
+export async function embedScatterImage(
+  token: string,
+  presentationId: string,
+  imageUrl: string
+): Promise<void> {
+  const presRes = await fetch(`${SLIDES_BASE}/${presentationId}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  await checkOk(presRes, "Slides get (scatter)");
+  const pres = await presRes.json() as {
+    slides: Array<{ objectId: string; pageElements?: Array<Record<string, unknown>> }>;
+  };
+
+  let placeholderObjId: string | null = null;
+  let targetSlideObjId: string | null = null;
+  let foundPos: ElemPos | null = null;
+  let foundSize: ElemSize | null = null;
+
+  for (let idx = 2; idx < (pres.slides?.length ?? 0); idx++) {
+    const slide = pres.slides[idx];
+    for (const el of slide.pageElements ?? []) {
+      const imgData = el.image as Record<string, unknown> | null | undefined;
+      const transform = el.transform as { translateX: number; translateY: number; scaleX: number; scaleY: number } | undefined;
+      const size = el.size as { width: { magnitude: number }; height: { magnitude: number } } | undefined;
+
+      const isLargeImage = !!imgData &&
+        (size?.width?.magnitude ?? 0) > 1_800_000 &&
+        (size?.height?.magnitude ?? 0) > 1_080_000;
+
+      // Also match shape/text-box with alt text "cluster_scatter" (cleaner if template is updated)
+      const altText = (el.description as string | undefined) ?? "";
+      const isScatterPlaceholder = altText.toLowerCase().includes("cluster_scatter");
+
+      if (isLargeImage || isScatterPlaceholder) {
+        if (transform) {
+          foundPos = { translateX: transform.translateX, translateY: transform.translateY, scaleX: transform.scaleX, scaleY: transform.scaleY };
+        }
+        if (size) {
+          foundSize = { width: size.width.magnitude, height: size.height.magnitude };
+        }
+        placeholderObjId = String(el.objectId);
+        targetSlideObjId = slide.objectId;
+        console.log(`[embedScatterImage] Found placeholder on slide index ${idx} objectId=${placeholderObjId}`);
+        break;
+      }
+    }
+    if (placeholderObjId) break;
+  }
+
+  if (!placeholderObjId || !targetSlideObjId) {
+    console.warn("[embedScatterImage] No scatter placeholder found — skipping scatter embed.");
+    return;
+  }
+
+  // Delete placeholder
+  await fetch(`${SLIDES_BASE}/${presentationId}:batchUpdate`, {
+    method: "POST",
+    headers: authHeaders(token),
+    body: JSON.stringify({ requests: [{ deleteObject: { objectId: placeholderObjId } }] }),
+  }).then((r) => checkOk(r, "Slides deleteObject (scatter)"));
+
+  // Insert PNG image
+  const translateX = foundPos?.translateX ?? 0;
+  const translateY = foundPos?.translateY ?? 0;
+  const width      = foundSize?.width  ?? envEmu("SLIDES_SCATTER_W_CM", 21.0);
+  const height     = foundSize?.height ?? envEmu("SLIDES_SCATTER_H_CM", 12.0);
+
+  const insertRes = await fetch(`${SLIDES_BASE}/${presentationId}:batchUpdate`, {
+    method: "POST",
+    headers: authHeaders(token),
+    body: JSON.stringify({
+      requests: [{
+        createImage: {
+          url: imageUrl,
+          elementProperties: {
+            pageObjectId: targetSlideObjId,
+            transform: {
+              scaleX: foundPos?.scaleX ?? 1,
+              scaleY: foundPos?.scaleY ?? 1,
+              translateX,
+              translateY,
+              unit: "EMU",
+            },
+            size: {
+              width:  { magnitude: width,  unit: "EMU" },
+              height: { magnitude: height, unit: "EMU" },
+            },
+          },
+        },
+      }],
+    }),
+  });
+  await checkOk(insertRes, "Slides createImage (scatter)");
+  console.log("[embedScatterImage] Scatter PNG embedded successfully.");
+}
+
 // ─── Main entry point ─────────────────────────────────────────────────────────
 
 /**
  * Full generation pipeline:
  * 1. Create Chart Data Sheet with deal data + chart
  * 2. Copy template
- * 3. Replace all text placeholders
- * 4. Embed the new chart
+ * 3. Replace all text placeholders (incl. cluster company placeholders)
+ * 4. Embed the Sheets combo chart
+ * 5. Embed UMAP scatter PNG (if umapImageUrl provided)
  * Returns the URL of the generated presentation.
  */
 export async function generateSlides(
@@ -479,6 +617,11 @@ export async function generateSlides(
 
   // Step 4 — Embed chart
   await embedChart(token, presentationId, spreadsheetId, chartId);
+
+  // Step 5 — Embed UMAP scatter PNG (optional)
+  if (data.umapImageUrl) {
+    await embedScatterImage(token, presentationId, data.umapImageUrl);
+  }
 
   return `https://docs.google.com/presentation/d/${presentationId}`;
 }
