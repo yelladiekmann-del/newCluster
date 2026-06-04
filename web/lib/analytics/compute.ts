@@ -103,7 +103,17 @@ export function computeAnalytics(
   colMap: AnalyticsColMap,
   referenceYear?: number
 ): ClusterMetricsRow[] {
-  const refYear = referenceYear ?? new Date().getFullYear();
+  // Derive refYear from the data: last complete year = max(deal_year) - 1.
+  // This avoids the "current calendar year has no data yet" problem.
+  const dealYearsAll = dealsData
+    ? dealsData
+        .map((d) => (colMap.deal_date ? safeDate(d[colMap.deal_date])?.getFullYear() ?? null : null))
+        .filter((y): y is number => y !== null)
+    : [];
+  const maxDealYear = dealYearsAll.length > 0 ? Math.max(...dealYearsAll) : null;
+  const refYear =
+    referenceYear ??
+    (maxDealYear != null ? maxDealYear - 1 : new Date().getFullYear() - 1);
   const rows: ClusterMetricsRow[] = [];
 
   // Determine the most recent founding year present anywhere in the dataset.
@@ -147,8 +157,9 @@ export function computeAnalytics(
     const avgYearFounded = yearNums.length > 0
       ? Math.round(yearNums.reduce((a, b) => a + b, 0) / yearNums.length)
       : null;
+    // Companies founded within the last 3 years relative to the max founding year in the dataset.
     const pctRecentlyFounded = yearNums.length > 0
-      ? Math.round((yearNums.filter((y) => y === recentYear).length / yearNums.length) * 100)
+      ? Math.round((yearNums.filter((y) => y >= recentYear - 2).length / yearNums.length) * 100)
       : null;
 
     // ── Funding from companies CSV ────────────────────────────────────────
@@ -275,11 +286,12 @@ export function computeAnalytics(
       }
 
       if (colMap.deal_date) {
+        // YoY deal momentum: (Deals_Y − Deals_{Y−1}) / Deals_{Y−1}
         const dealYears = clusterDeals.map((d) => safeDate(d[colMap.deal_date!])?.getFullYear() ?? null);
-        const recN  = dealYears.filter((y) => y != null && y >= refYear - 1 && y <= refYear).length;
-        const prevN = dealYears.filter((y) => y != null && y >= refYear - 3 && y <= refYear - 2).length;
-        dealMomentum = prevN > 0
-          ? Math.round(((recN / prevN) - 1) * 100)
+        const dealsThisYear = dealYears.filter((y) => y === refYear).length;
+        const dealsPrevYear = dealYears.filter((y) => y === refYear - 1).length;
+        dealMomentum = dealsPrevYear > 0
+          ? Math.round(((dealsThisYear - dealsPrevYear) / dealsPrevYear) * 100)
           : null;
       }
     }

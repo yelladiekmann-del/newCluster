@@ -22,106 +22,134 @@ export interface ClusterScore {
   clusterId: string;
   clusterName: string;
   color?: string;
-  score: number; // 0–100
+  score: number;   // legacy alias — same value as hyScore
+  hyScore: number; // 0–100 composite hy Score
   groupBreakdown: Record<string, number>;
 }
 
 /**
- * Compute a composite 0–100 score per cluster from a ScoringConfig.
+ * Compute a composite 0–100 hy Score per cluster from a ScoringConfig.
  *
- * Algorithm:
- * 1. For each non-Neutral metric, rank clusters (rank 1 = best per direction)
- * 2. Normalize rank → 0–1 (1.0 for #1, 0.0 for last)
- * 3. metricContrib = normScore × metricWeight
- * 4. groupContrib  = Σ(metricContribs in group) × groupWeight
- * 5. totalRaw      = Σ(groupContribs)
- * 6. Normalize totals so max = 100
+ * Algorithm (Min-Max normalization, matches Google Sheet formula):
+ * 1. Per metric: compute min/max across clusters that have a non-null value.
+ * 2. Normalize each cluster value to [0, 10]:
+ *      - direction "max":  (v - min) / (max - min) × 10
+ *      - direction "min":  (max - v) / (max - min) × 10
+ *      - single-value or null → 0
+ * 3. Multiply normalized score by metric weight → weighted contribution.
+ * 4. Sum weighted contributions → rawTotal per cluster.
+ * 5. hyScore = round(rawTotal / max(rawTotal across all clusters) × 100)
  */
 export function computeScores(
   rows: ClusterMetricsRow[],
   config: ScoringConfig,
   clusterColors?: Record<string, string>
 ): ClusterScore[] {
-  const n = rows.length;
-  if (n === 0) return [];
+  if (rows.length === 0) return [];
 
-  const groupWeightMap: Record<string, number> = {};
-  for (const g of config.groups) groupWeightMap[g.group] = g.weight;
-
-  // Pre-rank each active metric
-  const metricRanks: Record<string, Record<string, number>> = {}; // key → clusterId → rank (1=best)
+  // --- Step 1: collect min/max per active metric ---
+  const metricStats: Record<string, { min: number; max: number }> = {};
   for (const mc of config.metrics) {
     if (mc.direction === "neutral" || mc.weight === 0) continue;
-    const higherIsBetter = mc.direction === "max";
-    const valid = rows
-      .filter((r) => r[mc.key] != null)
-      .sort((a, b) => {
-        const av = a[mc.key] as number;
-        const bv = b[mc.key] as number;
-        return higherIsBetter ? bv - av : av - bv;
-      });
-    const rankMap: Record<string, number> = {};
-    valid.forEach((r, i) => { rankMap[r.clusterId] = i + 1; });
-    metricRanks[mc.key as string] = rankMap;
+    const vals = rows
+      .map((r) => r[mc.key] as number | null | undefined)
+      .filter((v): v is number => v != null);
+    if (vals.length < 2) {
+      metricStats[mc.key as string] = { min: vals[0] ?? 0, max: vals[0] ?? 0 };
+    } else {
+      metricStats[mc.key as string] = { min: Math.min(...vals), max: Math.max(...vals) };
+    }
   }
 
-  // Group each metric config by group name
-  const metricsByGroup: Record<string, MetricConfig[]> = {};
-  for (const mc of config.metrics) {
-    // find which group this metric belongs to — look up from METRIC_GROUPS map
-    const group = METRIC_GROUP_MAP[mc.key as string] ?? "Other";
-    if (!metricsByGroup[group]) metricsByGroup[group] = [];
-    metricsByGroup[group].push(mc);
-  }
-
-  // Compute raw scores per cluster
-  const rawScores: Record<string, number> = {};
+  // --- Steps 2–4: compute rawTotal per cluster ---
+  const rawTotals: Record<string, number> = {};
   const breakdowns: Record<string, Record<string, number>> = {};
 
   for (const row of rows) {
-    let total = 0;
+    let rawTotal = 0;
     const breakdown: Record<string, number> = {};
 
-    for (const [group, metrics] of Object.entries(metricsByGroup)) {
-      const gw = groupWeightMap[group] ?? 1;
-      let groupSum = 0;
+    for (const mc of config.metrics) {
+      if (mc.direction === "neutral" || mc.weight === 0) continue;
+      const stats = metricStats[mc.key as string];
+      if (!stats) continue;
 
-      for (const mc of metrics) {
-        if (mc.direction === "neutral" || mc.weight === 0) continue;
-        const rankMap = metricRanks[mc.key as string];
-        if (!rankMap) continue;
-        const rank = rankMap[row.clusterId];
-        if (rank == null) continue; // value was null — skip
-        const validCount = Object.keys(rankMap).length;
-        const normScore = validCount > 1 ? (validCount - rank) / (validCount - 1) : 1;
-        groupSum += normScore * mc.weight;
+      const v = row[mc.key] as number | null | undefined;
+      const range = stats.max - stats.min;
+
+      let normScore = 0;
+      if (v != null && range > 0) {
+        normScore =
+          mc.direction === "max"
+            ? (v - stats.min) / range
+            : (stats.max - v) / range;
       }
 
-      const groupContrib = groupSum * gw;
-      breakdown[group] = groupContrib;
-      total += groupContrib;
+      const weighted = normScore * 10 * mc.weight;
+      breakdown[mc.key as string] = weighted;
+      rawTotal += weighted;
     }
 
-    rawScores[row.clusterId] = total;
+    rawTotals[row.clusterId] = rawTotal;
     breakdowns[row.clusterId] = breakdown;
   }
 
-  // Normalize to 0–100
-  const maxRaw = Math.max(...Object.values(rawScores), 0);
+  // --- Step 5: normalize to 0–100 ---
+  const maxRaw = Math.max(...Object.values(rawTotals), 0);
 
   return rows
     .map((row) => {
-      const raw = rawScores[row.clusterId] ?? 0;
-      const score = maxRaw > 0 ? Math.round((raw / maxRaw) * 100) : 0;
+      const raw = rawTotals[row.clusterId] ?? 0;
+      const hyScore = maxRaw > 0 ? Math.round((raw / maxRaw) * 100) : 0;
       return {
         clusterId: row.clusterId,
         clusterName: row.clusterName,
         color: clusterColors?.[row.clusterId],
-        score,
+        score: hyScore,
+        hyScore,
         groupBreakdown: breakdowns[row.clusterId] ?? {},
       };
     })
-    .sort((a, b) => b.score - a.score);
+    .sort((a, b) => b.hyScore - a.hyScore);
+}
+
+/** Default direction map: higher is better unless explicitly overridden. */
+const DEFAULT_DIRECTION: Partial<Record<string, Direction>> = {
+  avgEmployees:    "min",
+  avgFunding:      "min",
+  mortalityRate:   "min",
+  hhi:             "min",
+  avgPatentFamilies: "min",
+  avgYearFounded:  "neutral",
+  uniqueCompanies: "neutral",
+  capitalMean:     "neutral",
+  capitalMedian:   "neutral",
+  avgSeriesScore:  "neutral",
+};
+
+/**
+ * Build a default ScoringConfig.
+ * Pass `hasDeals: false` to mark deal-only metrics as neutral.
+ */
+export function buildDefaultScoringConfig(hasDeals = true): ScoringConfig {
+  const DEAL_ONLY_KEYS = new Set([
+    "dealCount", "dealMomentum", "totalInvested4yr", "fundingMomentum",
+    "capitalMean", "capitalMedian", "meanMedianRatio", "avgSeriesScore", "marktreife",
+  ]);
+  const metrics: MetricConfig[] = Object.keys(METRIC_GROUP_MAP)
+    .filter((k) => k !== "uniqueCompanies")
+    .map((k) => {
+      const isDealsOnly = DEAL_ONLY_KEYS.has(k) && !hasDeals;
+      const dir: Direction = isDealsOnly
+        ? "neutral"
+        : (DEFAULT_DIRECTION[k] ?? "max");
+      return { key: k as keyof ClusterMetricsRow, direction: dir, weight: 1 };
+    });
+  const groups: GroupConfig[] = [...new Set(Object.values(METRIC_GROUP_MAP))].map((g) => ({
+    group: g,
+    weight: 1,
+  }));
+  return { metrics, groups };
 }
 
 /** Maps each metric key to its group name (must match COLS in AnalyticsTable). */

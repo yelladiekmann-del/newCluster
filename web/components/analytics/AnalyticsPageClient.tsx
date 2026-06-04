@@ -7,6 +7,8 @@ import { useRouter } from "next/navigation";
 import { useSession } from "@/lib/store/session";
 import { loadCompanies, loadClusters, persistSession } from "@/lib/firebase/hooks";
 import { computeAnalytics } from "@/lib/analytics/compute";
+import { computeScores, buildDefaultScoringConfig } from "@/lib/analytics/scoring";
+import type { ScoringConfig } from "@/lib/analytics/scoring";
 import { Button } from "@/components/ui/button";
 import { FileUploadZone } from "@/components/ui/file-upload-zone";
 import { AnalyticsTable } from "./AnalyticsTable";
@@ -80,7 +82,7 @@ function StatTile({
 
 export function AnalyticsPageClient() {
   const router = useRouter();
-  const { uid, companies, clusters, setCompanies, setClusters, dealsStoragePath, setDealsStoragePath, companyCol, setPipelineStep, googleAccessToken } = useSession();
+  const { uid, companies, clusters, setCompanies, setClusters, dealsStoragePath, setDealsStoragePath, companyCol, setPipelineStep, googleAccessToken, scoringConfig } = useSession();
 
   const [dealsData, setDealsData] = useState<Record<string, unknown>[] | null>(null);
   const [dealsColumns, setDealsColumns] = useState<string[]>([]);
@@ -148,19 +150,25 @@ export function AnalyticsPageClient() {
   }, [uid, setDealsStoragePath]);
 
   const colMap = useMemo(() => detectColMap(companyColumns, dealsColumns), [companyColumns, dealsColumns]);
-  const currentYear = useMemo(() => new Date().getFullYear(), []);
 
   const analyticsRows = useMemo(() => {
     const rows = computeAnalytics(
       clusters.filter((c) => !c.isOutliers),
       companies,
       dealsData,
-      colMap,
-      currentYear
+      colMap
+      // refYear is derived automatically from the max deal year in the data
     );
     const colorMap = Object.fromEntries(clusters.map((c) => [c.id, c.color]));
-    return rows.map((r) => ({ ...r, color: colorMap[r.clusterId] ?? undefined }));
-  }, [clusters, companies, dealsData, colMap, currentYear]);
+    const rowsWithColor = rows.map((r) => ({ ...r, color: colorMap[r.clusterId] ?? undefined }));
+
+    // Compute hy Scores and merge into rows
+    const activeScoringConfig: ScoringConfig =
+      (scoringConfig as ScoringConfig | null) ?? buildDefaultScoringConfig(!!dealsData);
+    const scores = computeScores(rowsWithColor, activeScoringConfig);
+    const scoreMap = Object.fromEntries(scores.map((s) => [s.clusterId, s.hyScore]));
+    return rowsWithColor.map((r) => ({ ...r, hyScore: scoreMap[r.clusterId] ?? null }));
+  }, [clusters, companies, dealsData, colMap, scoringConfig]);
 
   useEffect(() => {
     const { googleAccessToken, spreadsheetId } = useSession.getState();

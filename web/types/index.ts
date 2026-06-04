@@ -166,6 +166,8 @@ export interface ClusterMetricsRow {
   mortalityRate: number | null;
   hhi: number | null;
   avgPatentFamilies: number | null;
+  /** Weighted hy composite score 0–100 (Min-Max normalization). Added after computeScores(). */
+  hyScore?: number | null;
 }
 
 // ── Progress events (SSE) ───────────────────────────────────────────────────

@@ -64,6 +64,20 @@ interface ColDef {
 // Integer-only columns (counts, years) always use 0 regardless.
 function buildCols(d: number): ColDef[] {
   return [
+    {
+      key: "hyScore",
+      group: "Score",
+      label: "hy Score",
+      tooltip: "Gewichteter Gesamtscore 0–100 (Min-Max-Normalisierung über alle Metriken)",
+      higherIsBetter: true,
+      rankable: true,
+      fmt: (r) =>
+        r.hyScore != null ? (
+          <span className="font-semibold tabular-nums">{r.hyScore}</span>
+        ) : (
+          <span className="text-muted-foreground">—</span>
+        ),
+    },
     { key: "companyCount",       group: "Size",       label: "# Total",            tooltip: "Number of companies assigned to this cluster (including via deals)", fmt: (r) => fmtNum(r.companyCount,       0),    higherIsBetter: true,  rankable: true  },
     { key: "uniqueCompanies",    group: "Size",       label: "# Companies",        tooltip: "Number of distinct companies in the cluster",                        fmt: (r) => fmtNum(r.uniqueCompanies,    0),    higherIsBetter: true,  rankable: false },
     { key: "avgEmployees",       group: "Size",       label: "Avg. Employees",     tooltip: "Average employee count across cluster companies",                    fmt: (r) => fmtNum(r.avgEmployees,       0),    higherIsBetter: true,  rankable: false },
