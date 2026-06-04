@@ -21,7 +21,7 @@ const GRADUATION_OWNERSHIP = new Set(["acquired/merged", "publicly held"]);
 const GRADUATION_FINANCING_SUBS = ["formerly", "private equity-backed"];
 const MORTALITY_STATUSES = new Set(["out of business", "bankruptcy"]);
 
-function safeNum(v: unknown): number | null {
+export function safeNum(v: unknown): number | null {
   if (v == null || v === "" || v === "N/A") return null;
   if (typeof v === "number") return Number.isFinite(v) ? v : null;
   const raw = String(v).trim();
@@ -43,7 +43,7 @@ function safeYear(v: unknown): number | null {
   return n > 1800 && n <= new Date().getFullYear() + 1 ? n : null;
 }
 
-function safeDate(v: unknown): Date | null {
+export function safeDate(v: unknown): Date | null {
   if (!v) return null;
   if (v instanceof Date) return isNaN(v.getTime()) ? null : v;
   // Try numeric year

@@ -25,6 +25,7 @@ import { toast } from "sonner";
 import type { SlidesData, DealRow, GeneratedAbleitungen } from "@/lib/slides/types";
 import type { YearlyMetric } from "@/app/api/generate-ableitungen/route";
 import type { ClusterMetricsRow, AnalyticsColMap } from "@/types";
+import { safeNum, safeDate } from "@/lib/analytics/compute";
 
 interface GenerateSlidesPanelProps {
   open: boolean;
@@ -65,13 +66,19 @@ function mapDealRows(
   colMap: AnalyticsColMap
 ): DealRow[] {
   return dealsData
-    .map((row) => ({
-      deal_id:    colMap.deal_id   ? String(row[colMap.deal_id]   ?? "") : "",
-      company:    colMap.de_co_name ? String(row[colMap.de_co_name] ?? "") : "",
-      company_id: colMap.de_co_id  ? String(row[colMap.de_co_id]  ?? "") : "",
-      deal_date:  colMap.deal_date  ? String(row[colMap.deal_date]  ?? "") : "",
-      deal_size:  colMap.deal_size  ? Number(row[colMap.deal_size])  || 0  : 0,
-    }))
+    .map((row) => {
+      const rawDate  = colMap.deal_date ? row[colMap.deal_date] : undefined;
+      const dateObj  = safeDate(rawDate);
+      const dealDate = dateObj ? dateObj.toISOString().slice(0, 10) : "";
+      const dealSize = colMap.deal_size ? (safeNum(row[colMap.deal_size]) ?? 0) : 0;
+      return {
+        deal_id:    colMap.deal_id    ? String(row[colMap.deal_id]    ?? "") : "",
+        company:    colMap.de_co_name ? String(row[colMap.de_co_name] ?? "") : "",
+        company_id: colMap.de_co_id   ? String(row[colMap.de_co_id]   ?? "") : "",
+        deal_date:  dealDate,
+        deal_size:  dealSize,
+      };
+    })
     .filter((d) => d.deal_date && d.deal_size > 0);
 }
 
@@ -82,12 +89,15 @@ function computeYearlyMetrics(
   const byYear: Record<number, { volume: number; dealCount: number }> = {};
 
   for (const row of dealsData) {
-    const dateStr = colMap.deal_date ? String(row[colMap.deal_date] ?? "") : "";
-    const size    = colMap.deal_size ? Number(row[colMap.deal_size]) || 0  : 0;
-    if (!dateStr || size <= 0) continue;
+    const rawDate = colMap.deal_date ? row[colMap.deal_date] : undefined;
+    const dateObj = safeDate(rawDate);
+    if (!dateObj) continue;
 
-    const year = parseInt(dateStr.slice(0, 4), 10);
-    if (isNaN(year) || year < 2000 || year > 2035) continue;
+    const size = colMap.deal_size ? (safeNum(row[colMap.deal_size]) ?? 0) : 0;
+    if (size <= 0) continue;
+
+    const year = dateObj.getFullYear();
+    if (year < 2000 || year > 2035) continue;
 
     byYear[year] ??= { volume: 0, dealCount: 0 };
     byYear[year].volume    += size;
@@ -225,7 +235,7 @@ export function GenerateSlidesPanel({
   return (
     <Dialog open={open} onOpenChange={(isOpen) => { if (!isOpen) onClose(); }}>
       <DialogContent
-          className="max-h-[92vh] overflow-y-auto p-0"
+          className="max-h-[92vh] overflow-y-auto gap-0 p-0 sm:max-w-none"
           style={{ width: "min(95vw, 64rem)" }}
         >
 
@@ -358,7 +368,7 @@ export function GenerateSlidesPanel({
                 {([1, 2, 3, 4, 5] as const).map((n) => (
                   <div
                     key={n}
-                    className="rounded-xl border border-border/60 bg-muted/20 p-3.5 space-y-2"
+                    className={`rounded-xl border border-border/60 bg-muted/20 p-3.5 space-y-2${n === 5 ? " sm:col-span-2 lg:col-span-1" : ""}`}
                   >
                     <div className="flex items-center gap-2">
                       <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-foreground/8 text-[10px] font-semibold text-foreground/60">
@@ -430,7 +440,7 @@ export function GenerateSlidesPanel({
 
         {/* ── Footer ── */}
         {!resultUrl && (
-          <DialogFooter className="border-t border-border/60 px-8 py-4">
+          <DialogFooter className="!mx-0 !mb-0 border-t border-border/60 px-8 py-4">
             <Button variant="ghost" onClick={onClose} disabled={generatingSlides}>
               Abbrechen
             </Button>
