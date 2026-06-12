@@ -302,7 +302,10 @@ export function GenerateSlidesPanel({
   // ── Loading states ────────────────────────────────────────────────────────────
   const [generatingAbleitungen, setGeneratingAbleitungen] = useState(false);
   const [generatingSlides,      setGeneratingSlides]      = useState(false);
+  const [slidesStep,            setSlidesStep]            = useState<string>("Wird erstellt…");
   const [resultUrl,             setResultUrl]             = useState<string | null>(null);
+
+  const hasUmapData = useMemo(() => companies.some((c) => c.umapX != null), [companies]);
 
   // ── Generate Ableitungen + Action Title via Gemini ────────────────────────────
   const handleGenerateAbleitungen = useCallback(async () => {
@@ -382,9 +385,22 @@ export function GenerateSlidesPanel({
     }
 
     setGeneratingSlides(true);
+    setSlidesStep("Wird erstellt…");
     try {
       const dealRows = dealsData ? mapDealRows(dealsData, colMap) : [];
       const { actionTitle, ...ableitungenFields } = ableitungen;
+
+      // ── Scatter PNG export (non-blocking: failure just skips the extra slide) ──
+      let umapImageUrl: string | undefined;
+      if (hasUmapData) {
+        setSlidesStep("Scatter-Chart exportieren…");
+        try {
+          umapImageUrl = (await exportScatterPng(companies, clusters, uid)) ?? undefined;
+        } catch {
+          // ignore — slide will be created without scatter
+        }
+        setSlidesStep("Präsentation erstellen…");
+      }
 
       const data: SlidesData = {
         title,
@@ -402,7 +418,8 @@ export function GenerateSlidesPanel({
         project,
         dealRows,
         ...ableitungenFields,
-        clusterSlides: clusterSlideData.length > 0 ? clusterSlideData : undefined,
+        clusterSlides:  clusterSlideData.length > 0 ? clusterSlideData : undefined,
+        umapImageUrl,
       };
 
       const res = await fetch("/api/generate-slides", {
@@ -725,7 +742,7 @@ export function GenerateSlidesPanel({
               ) : (
                 <Presentation className="h-4 w-4" />
               )}
-              {generatingSlides ? "Wird erstellt…" : "Slides erstellen"}
+              {generatingSlides ? slidesStep : "Slides erstellen"}
             </Button>
           </DialogFooter>
         )}
