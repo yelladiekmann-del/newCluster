@@ -121,6 +121,13 @@ function detectHqCol(cols: string[]): string | undefined {
   return cols.find((c) => /^(country|hq|headquarters|location|domicile|land|headquarter)$/i.test(c));
 }
 
+/** Auto-detect a free-text description column from the company CSV header. */
+function detectDescriptionCol(cols: string[]): string | undefined {
+  return cols.find((c) =>
+    /description|about|overview|pitch|summary|profile|business.desc|short.desc/i.test(c)
+  );
+}
+
 /** Format a money value the same way AnalyticsTable does. */
 function fmtMoney(n: number | null): string {
   if (n == null) return "—";
@@ -271,7 +278,8 @@ export function GenerateSlidesPanel({
   const companyCols = useMemo(() =>
     companies.length > 0 ? Object.keys(companies[0].originalData ?? {}) : [],
   [companies]);
-  const hqCol = useMemo(() => detectHqCol(companyCols), [companyCols]);
+  const hqCol  = useMemo(() => detectHqCol(companyCols),          [companyCols]);
+  const descCol = useMemo(() => detectDescriptionCol(companyCols), [companyCols]);
 
   const clusterSlideData: ClusterSlideData[] = useMemo(() => {
     return top3.map((row, i) => {
@@ -326,22 +334,20 @@ export function GenerateSlidesPanel({
     if (top3.length === 0) return;
     setGeneratingUsps(true);
     try {
-      const clusterMap = new Map(clusters.map((c) => [c.id, c]));
-      const payload: ClusterUspInput[] = top3.map((row) => ({
-        clusterId:   row.clusterId,
-        name:        row.clusterName,
-        description: clusterMap.get(row.clusterId)?.description ?? "",
-        metrics: {
-          companyCount:     row.companyCount,
-          hyScore:          row.hyScore,
-          dealMomentum:     row.dealMomentum,
-          fundingMomentum:  row.fundingMomentum,
-          totalFunding:     row.totalFunding,
-          avgFunding:       row.avgFunding,
-          vcGraduationRate: row.vcGraduationRate,
-          mortalityRate:    row.mortalityRate,
-        },
-      }));
+      const payload: ClusterUspInput[] = top3.map((row) => {
+        const rep     = pickRepresentative(row.clusterId, companies, colMap);
+        const rawDesc = descCol && rep ? String(rep.originalData[descCol] ?? "") : "";
+        const funding = rep && colMap.total_raised
+          ? fmtMoney(safeNum(rep.originalData[colMap.total_raised]))
+          : "—";
+        return {
+          clusterId:          row.clusterId,
+          clusterName:        row.clusterName,
+          companyName:        rep?.name ?? row.clusterName,
+          companyDescription: rawDesc,
+          companyFunding:     funding,
+        };
+      });
 
       const res = await fetch("/api/generate-cluster-usps", {
         method: "POST",
@@ -362,7 +368,7 @@ export function GenerateSlidesPanel({
     } finally {
       setGeneratingUsps(false);
     }
-  }, [top3, clusters]);
+  }, [top3, companies, colMap, descCol]);
 
   // ── Generate Slides ──────────────────────────────────────────────────────────
   const handleGenerateSlides = useCallback(async () => {

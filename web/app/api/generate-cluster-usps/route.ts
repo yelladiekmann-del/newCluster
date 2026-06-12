@@ -5,22 +5,17 @@ export const maxDuration = 30;
 
 export interface ClusterUspInput {
   clusterId: string;
-  name: string;
-  description: string;
-  metrics: {
-    companyCount?: number | null;
-    hyScore?: number | null;
-    dealMomentum?: number | null;
-    fundingMomentum?: number | null;
-    totalFunding?: number | null;
-    avgFunding?: number | null;
-    vcGraduationRate?: number | null;
-    mortalityRate?: number | null;
-  };
+  clusterName: string;
+  /** Representative company for this cluster column */
+  companyName: string;
+  /** Raw description text from the company CSV (any description-like column), may be empty */
+  companyDescription: string;
+  /** Total funding of the representative company, formatted */
+  companyFunding: string;
 }
 
 export interface ClusterUspOutput {
-  usps: Record<string, string>; // clusterId → USP string
+  usps: Record<string, string>; // clusterId → company USP string
 }
 
 export async function POST(req: NextRequest) {
@@ -38,36 +33,32 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: "Invalid request body" }, { status: 400 });
   }
 
-  const clusterSummaries = clusters.map((c) => {
-    const m = c.metrics;
+  const companySummaries = clusters.map((c) => {
     const lines = [
-      `Cluster: ${c.name}`,
-      `Beschreibung: ${c.description}`,
-      m.companyCount != null   ? `Unternehmen: ${m.companyCount}` : null,
-      m.hyScore != null        ? `hy Score: ${m.hyScore}/100` : null,
-      m.dealMomentum != null   ? `Deal Momentum: ${m.dealMomentum > 0 ? "+" : ""}${m.dealMomentum}% (YoY)` : null,
-      m.fundingMomentum != null? `Funding Momentum: ${m.fundingMomentum > 0 ? "+" : ""}${m.fundingMomentum}%` : null,
-      m.totalFunding != null   ? `Total Funding: $${(m.totalFunding / 1e6).toFixed(0)}M` : null,
-      m.vcGraduationRate != null ? `VC Graduation Rate: ${m.vcGraduationRate}%` : null,
+      `Unternehmen: ${c.companyName}`,
+      `Cluster: ${c.clusterName}`,
+      c.companyFunding !== "—" ? `Total Funding: ${c.companyFunding}` : null,
+      c.companyDescription ? `Beschreibung (Rohdaten): ${c.companyDescription.slice(0, 400)}` : null,
     ].filter(Boolean).join("\n");
     return `[${c.clusterId}]\n${lines}`;
   }).join("\n\n");
 
   const prompt = `Du bist ein erfahrener VC-Analyst bei hy, einer Unternehmensberatung.
-Für jeden der folgenden Cluster schreibst du einen prägnanten USP-Satz (1–2 Sätze, max. 160 Zeichen).
+Für jedes der folgenden Unternehmen schreibst du eine prägnante Unternehmens-Beschreibung (2–3 Sätze, max. 180 Zeichen).
 
 Anforderungen:
-- Erkläre den konkreten Mehrwert / das Alleinstellungsmerkmal des Clusters
-- Nutze die Metriken als Kontext, nenn sie aber nicht direkt
-- Kein Buzzword-Bingo, kein "disruptiv" oder "innovativ"
-- Sprache: Deutsch, aktiv, präzise
-- Format: JSON-Objekt mit clusterId als Key, USP-String als Value
+- Beschreibe WAS das Unternehmen konkret macht und für wen (kein Cluster-Level, nur das Unternehmen)
+- Aktivische Sprache, keine Buzzwords ("disruptiv", "innovativ", "revolutionär")
+- Wenn Rohdaten vorhanden sind: daraus den Kern destillieren, nicht einfach kopieren
+- Wenn keine Rohdaten: aus Unternehmensname und Cluster einen plausiblen Ansatz ableiten
+- Sprache: Deutsch
+- Format: JSON-Objekt mit clusterId als Key, Beschreibungstext als Value
 
-Cluster-Daten:
-${clusterSummaries}
+Unternehmensdaten:
+${companySummaries}
 
 Antworte NUR mit dem JSON-Objekt, ohne Erklärungen.
-Beispiel: {"cluster-abc": "Plattformen, die …", "cluster-xyz": "Hardware-Layer für …"}`;
+Beispiel: {"c1": "Urbantz steuert komplexe Letzte-Meile-Logistik …", "c2": "Nozoli automatisiert …"}`;
 
   try {
     const raw = await callGeminiText({
