@@ -15,8 +15,8 @@ export interface ClusterUspInput {
 }
 
 export interface ClusterUspOutput {
-  usps:   Record<string, string>; // clusterId → company USP (max 120 chars)
-  sowhat: Record<string, string>; // clusterId → strategic So What (max 100 chars)
+  usps:   Record<string, string>; // clusterId → company USP (max ~110 chars)
+  sowhat: Record<string, string>; // clusterId → strategic So What (max ~90 chars)
 }
 
 export async function POST(req: NextRequest) {
@@ -34,14 +34,15 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: "Invalid request body" }, { status: 400 });
   }
 
-  const companySummaries = clusters.map((c) => {
+  // Use simple numeric keys ("1", "2", "3") so Gemini doesn't mangle real cluster IDs.
+  const companySummaries = clusters.map((c, idx) => {
     const lines = [
       `Unternehmen: ${c.companyName}`,
       `Cluster: ${c.clusterName}`,
       c.companyFunding !== "—" ? `Total Funding: ${c.companyFunding}` : null,
       c.companyDescription ? `Beschreibung (Rohdaten): ${c.companyDescription.slice(0, 400)}` : null,
     ].filter(Boolean).join("\n");
-    return `[${c.clusterId}]\n${lines}`;
+    return `[${idx + 1}]\n${lines}`;
   }).join("\n\n");
 
   const prompt = `Du bist ein erfahrener VC-Analyst bei hy, einer Unternehmensberatung.
@@ -51,20 +52,21 @@ Für jedes der folgenden Unternehmen erzeugst du zwei Texte:
    - Was macht das Unternehmen konkret und für wen? (kein Cluster-Level, nur das Unternehmen)
    - Aktive Sprache, keine Buzzwords ("disruptiv", "innovativ", "revolutionär")
    - Wenn Rohdaten vorhanden: Kern destillieren, nicht kopieren
-   - Wenn keine Rohdaten: aus Name + Cluster plausiblen Ansatz ableiten
+   - Wenn keine Rohdaten: aus Unternehmensname + Cluster einen plausiblen Ansatz ableiten
 
-2. So What (Feld "sowhat"): Strategische Implikation für einen Unternehmensberater, max. 90 Zeichen.
-   - Ein kurzer, pointierter Satz: Was bedeutet dieses Unternehmen / dieser Cluster für den Markt?
-   - Beispiel: "Automatisierungsdruck steigt — traditionelle Hersteller müssen reagieren."
+2. So What (Feld "sowhat"): Strategische Implikation, max. 90 Zeichen.
+   - Ein pointierter Satz: Was bedeutet dieser Cluster / dieses Unternehmen für den Markt?
 
 Sprache: Deutsch
-Format: JSON mit zwei Objekten "usps" und "sowhat", jeweils clusterId als Key.
+Format: JSON mit zwei Objekten "usps" und "sowhat".
+Verwende als Key exakt die Zahl aus den eckigen Klammern (z.B. "1", "2", "3").
 
 Unternehmensdaten:
 ${companySummaries}
 
 Antworte NUR mit dem JSON, ohne Erklärungen.
-Beispiel: {"usps":{"c1":"Urbantz steuert Letzte-Meile-Logistik für Retailer.","c2":"Nozoli automatisiert Buchhaltung für KMU."},"sowhat":{"c1":"Last-Mile-Kosten werden zum Wettbewerbsfaktor.","c2":"Buchhalter-Engpass treibt SaaS-Adoption."}}`;
+Beispiel fuer 2 Eintraege:
+{"usps":{"1":"Urbantz steuert Letzte-Meile-Logistik fuer Retailer.","2":"Nozoli automatisiert Buchhaltung fuer KMU."},"sowhat":{"1":"Last-Mile-Kosten werden zum Wettbewerbsfaktor.","2":"Buchhalter-Engpass treibt SaaS-Adoption."}}`;
 
   try {
     const raw = await callGeminiText({
@@ -77,12 +79,14 @@ Beispiel: {"usps":{"c1":"Urbantz steuert Letzte-Meile-Logistik für Retailer.","
     const parsed = parseJsonObject<{ usps?: Record<string, string>; sowhat?: Record<string, string> }>(raw);
     if (!parsed) throw new Error("Could not parse Gemini response as JSON");
 
+    // Map back from numeric key ("1", "2", …) to the original clusterId
     const usps:   Record<string, string> = {};
     const sowhat: Record<string, string> = {};
-    for (const c of clusters) {
-      usps[c.clusterId]   = parsed.usps?.[c.clusterId]   ?? "";
-      sowhat[c.clusterId] = parsed.sowhat?.[c.clusterId] ?? "";
-    }
+    clusters.forEach((c, idx) => {
+      const key = String(idx + 1);
+      usps[c.clusterId]   = parsed.usps?.[key]   ?? "";
+      sowhat[c.clusterId] = parsed.sowhat?.[key] ?? "";
+    });
 
     return Response.json({ usps, sowhat } satisfies ClusterUspOutput);
   } catch (err) {

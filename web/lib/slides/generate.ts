@@ -711,9 +711,9 @@ export async function generateSlides(
   // Step 4 — Embed chart
   await embedChart(token, presentationId, spreadsheetId, chartId);
 
-  // Step 5 — Append UMAP scatter as new slide (optional)
+  // Step 5 — Replace scatter placeholder on slide 4 with UMAP PNG (optional)
   if (data.umapImageUrl) {
-    await appendScatterSlide(token, presentationId, data.umapImageUrl);
+    await embedScatterImage(token, presentationId, data.umapImageUrl);
   }
 
   return `https://docs.google.com/presentation/d/${presentationId}`;
