@@ -308,6 +308,11 @@ export async function replacePlaceholders(
     ...flatRest,
     ...clusterFields,
     date: today,
+    // ── Slide 3 (Representative Clusters / Trendclustering) ──────────────────
+    // chapter_3 reuses the same chapter label as the other slides
+    chapter_3:      flatRest.chapter ?? "UNSER ANSATZ",
+    slide_title3:   "TRENDCLUSTERING DER VC-FINANZIERUNGEN",
+    action_title_3: "Unser proprietäres Clustering-Tool segmentiert den Markt durch semantische Analyse und macht Innovationsfelder schnell vergleichbar",
   };
 
   const requests = Object.entries(allFields).map(([key, value]) => ({
@@ -538,8 +543,8 @@ export async function embedScatterImage(
     if (placeholderObjId) break;
   }
 
-  // Fallback: if no image placeholder found, insert on slide 4 (index 3) at a fixed
-  // position that covers the main content area, avoiding headers/footers.
+  // Fallback: if no image placeholder found, insert on slide 4 (index 3) at the
+  // measured position from the template (X=9.15 cm, Y=8.69 cm, W=46.99 cm, H=26.43 cm).
   if (!targetSlideObjId) {
     targetSlideObjId = pres.slides?.[3]?.objectId ?? pres.slides?.[2]?.objectId ?? null;
     console.warn("[embedScatterImage] No scatter placeholder found — inserting at fixed position on slide 4.");
@@ -558,17 +563,17 @@ export async function embedScatterImage(
     }).then((r) => checkOk(r, "Slides deleteObject (scatter)"));
   }
 
-  // Insert PNG image — use found position/size or a sensible default that fits
-  // within the slide content area (leave ~1.5 cm top for title, 0.8 cm bottom for footer).
-  const MARGIN_X  = Math.round(0.3  * 360_000);  //  0.3 cm from left
-  const TOP_Y     = Math.round(2.8  * 360_000);  //  2.8 cm from top (below title bar)
-  const SLIDE_W   = Math.round(25.4 * 360_000);  // full slide width
-  const CONTENT_H = Math.round(10.5 * 360_000);  // height within content area
+  // Exact position/size measured from the template (in cm → EMU, 1 cm = 360 000 EMU):
+  //   X = 9.15 cm, Y = 8.69 cm, W = 46.99 cm, H = 26.43 cm
+  const DEFAULT_X = Math.round( 9.15 * 360_000);  //  3 294 000 EMU
+  const DEFAULT_Y = Math.round( 8.69 * 360_000);  //  3 128 400 EMU
+  const DEFAULT_W = Math.round(46.99 * 360_000);  // 16 916 400 EMU
+  const DEFAULT_H = Math.round(26.43 * 360_000);  //  9 514 800 EMU
 
-  const translateX = foundPos?.translateX ?? MARGIN_X;
-  const translateY = foundPos?.translateY ?? TOP_Y;
-  const width      = foundSize?.width     ?? (SLIDE_W - MARGIN_X * 2);
-  const height     = foundSize?.height    ?? CONTENT_H;
+  const translateX = foundPos?.translateX ?? DEFAULT_X;
+  const translateY = foundPos?.translateY ?? DEFAULT_Y;
+  const width      = foundSize?.width     ?? DEFAULT_W;
+  const height     = foundSize?.height    ?? DEFAULT_H;
 
   const insertRes = await fetch(`${SLIDES_BASE}/${presentationId}:batchUpdate`, {
     method: "POST",
