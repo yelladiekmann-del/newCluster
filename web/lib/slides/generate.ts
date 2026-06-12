@@ -272,9 +272,9 @@ function expandClusterPlaceholders(
     out[`cluster_name${n}`] = s.name;
     out[`hq_${n}`]          = s.hq;
     out[`funding_${n}`]     = s.funding;
-    // Truncate description to ~160 chars so it fits in the slide text box
-    const desc = s.description.length > 160
-      ? s.description.slice(0, 157).trimEnd() + "…"
+    // Truncate description to ~120 chars so it fits in the slide text box
+    const desc = s.description.length > 120
+      ? s.description.slice(0, 117).trimEnd() + "…"
       : s.description;
     out[`description_${n}`] = desc;
     out[`sowhat_${n}`]      = s.sowhat;
@@ -585,6 +585,61 @@ export async function embedScatterImage(
   console.log("[embedScatterImage] Scatter PNG embedded successfully.");
 }
 
+// ─── 5b. Append scatter as new slide (temporary preview) ─────────────────────
+
+/**
+ * Appends a blank slide at the end and fills it with the scatter PNG,
+ * sized to cover the full slide (16:9, 25.4 cm × 14.29 cm in EMU).
+ * Used for preview until the template has a proper placeholder.
+ */
+export async function appendScatterSlide(
+  token: string,
+  presentationId: string,
+  imageUrl: string
+): Promise<void> {
+  // 1. Create a new blank slide at the end
+  const newSlideId = `scatter_slide_${Date.now()}`;
+  const createRes = await fetch(`${SLIDES_BASE}/${presentationId}:batchUpdate`, {
+    method: "POST",
+    headers: authHeaders(token),
+    body: JSON.stringify({
+      requests: [{
+        createSlide: {
+          objectId: newSlideId,
+          slideLayoutReference: { predefinedLayout: "BLANK" },
+        },
+      }],
+    }),
+  });
+  await checkOk(createRes, "Slides createSlide (scatter)");
+
+  // 2. Full-slide dimensions: 25.4 cm × 14.29 cm in EMU (standard 16:9)
+  const W = Math.round(25.4 * 360_000);  // 9 144 000 EMU
+  const H = Math.round(14.29 * 360_000); // 5 144 400 EMU
+
+  const imgRes = await fetch(`${SLIDES_BASE}/${presentationId}:batchUpdate`, {
+    method: "POST",
+    headers: authHeaders(token),
+    body: JSON.stringify({
+      requests: [{
+        createImage: {
+          url: imageUrl,
+          elementProperties: {
+            pageObjectId: newSlideId,
+            transform: { scaleX: 1, scaleY: 1, translateX: 0, translateY: 0, unit: "EMU" },
+            size: {
+              width:  { magnitude: W, unit: "EMU" },
+              height: { magnitude: H, unit: "EMU" },
+            },
+          },
+        },
+      }],
+    }),
+  });
+  await checkOk(imgRes, "Slides createImage on scatter slide");
+  console.log("[appendScatterSlide] Scatter slide appended.");
+}
+
 // ─── Main entry point ─────────────────────────────────────────────────────────
 
 /**
@@ -622,9 +677,9 @@ export async function generateSlides(
   // Step 4 — Embed chart
   await embedChart(token, presentationId, spreadsheetId, chartId);
 
-  // Step 5 — Embed UMAP scatter PNG (optional)
+  // Step 5 — Append UMAP scatter as new slide (optional)
   if (data.umapImageUrl) {
-    await embedScatterImage(token, presentationId, data.umapImageUrl);
+    await appendScatterSlide(token, presentationId, data.umapImageUrl);
   }
 
   return `https://docs.google.com/presentation/d/${presentationId}`;

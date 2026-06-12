@@ -116,9 +116,15 @@ function computeYearlyMetrics(
 
 // ── Cluster-Slide helpers ─────────────────────────────────────────────────────
 
-/** Auto-detect an HQ / country column from the company CSV header. */
+/** Auto-detect an HQ / country column from the company CSV header.
+ *  Matches common names (exact or compound), e.g. "Country", "HQ Country",
+ *  "country_hq", "headquarters", "Domicile", "Geography". */
 function detectHqCol(cols: string[]): string | undefined {
-  return cols.find((c) => /^(country|hq|headquarters|location|domicile|land|headquarter)$/i.test(c));
+  // Tier 1: prefer columns whose full name is exactly one of the keywords
+  const exact = cols.find((c) => /^(country|hq|headquarters?|location|domicile|land|geography|region)$/i.test(c));
+  if (exact) return exact;
+  // Tier 2: column contains a keyword (handles "HQ Country", "country_name", etc.)
+  return cols.find((c) => /\b(country|hq|headquarter|domicile|geography)\b/i.test(c));
 }
 
 /** Auto-detect a free-text description column from the company CSV header. */
@@ -360,12 +366,15 @@ export function GenerateSlidesPanel({
       const json = await res.json() as ClusterUspOutput & { error?: string };
       if (!res.ok || json.error) throw new Error(json.error ?? "Unknown error");
 
-      const newUsps: [string, string, string] = ["", "", ""];
+      const newUsps:   [string, string, string] = ["", "", ""];
+      const newSowhat: [string, string, string] = ["", "", ""];
       top3.forEach((row, i) => {
-        newUsps[i] = json.usps[row.clusterId] ?? "";
+        newUsps[i]   = json.usps[row.clusterId]   ?? "";
+        newSowhat[i] = json.sowhat?.[row.clusterId] ?? "";
       });
       setUsps(newUsps);
-      toast.success("USPs generiert — bitte prüfen.");
+      setSowhat(newSowhat);
+      toast.success("USPs + So-What generiert — bitte prüfen.");
     } catch (err) {
       toast.error(`Fehler: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
@@ -392,12 +401,15 @@ export function GenerateSlidesPanel({
 
       // ── Scatter PNG export (non-blocking: failure just skips the extra slide) ──
       let umapImageUrl: string | undefined;
-      if (hasUmapData) {
+      if (!hasUmapData) {
+        toast.info("Kein UMAP-Scatter — Clustering muss zuerst ausgeführt werden.", { duration: 4000 });
+      } else {
         setSlidesStep("Scatter-Chart exportieren…");
         try {
           umapImageUrl = (await exportScatterPng(companies, clusters, uid)) ?? undefined;
-        } catch {
-          // ignore — slide will be created without scatter
+          if (!umapImageUrl) toast.warning("Scatter-Export: kein Ergebnis — Folie wird ohne Chart erstellt.");
+        } catch (scatterErr) {
+          toast.warning(`Scatter-Export fehlgeschlagen: ${scatterErr instanceof Error ? scatterErr.message : String(scatterErr)}`);
         }
         setSlidesStep("Präsentation erstellen…");
       }
