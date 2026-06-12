@@ -597,8 +597,42 @@ export async function appendScatterSlide(
   presentationId: string,
   imageUrl: string
 ): Promise<void> {
-  // 1. Create a new blank slide at the end
+  // 0. Fetch presentation to find an available layout objectId from the template master.
+  //    The predefinedLayout "BLANK" is not guaranteed to exist in custom masters.
+  const presRes = await fetch(`${SLIDES_BASE}/${presentationId}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  await checkOk(presRes, "Slides get (appendScatterSlide)");
+  const pres = await presRes.json() as {
+    masters?: Array<{
+      objectId: string;
+      layouts?: Array<{ objectId: string; layoutProperties?: { displayName?: string } }>;
+    }>;
+  };
+
+  // Prefer a layout whose display name contains "blank" or "leer",
+  // otherwise fall back to the first available layout in the first master.
+  let layoutObjectId: string | undefined;
+  outer: for (const master of pres.masters ?? []) {
+    for (const layout of master.layouts ?? []) {
+      const name = (layout.layoutProperties?.displayName ?? "").toLowerCase();
+      if (name.includes("blank") || name.includes("leer") || name.includes("empty")) {
+        layoutObjectId = layout.objectId;
+        break outer;
+      }
+    }
+  }
+  if (!layoutObjectId) {
+    // No blank layout found — use the first layout of the first master
+    layoutObjectId = pres.masters?.[0]?.layouts?.[0]?.objectId;
+  }
+
+  // 1. Create a new slide at the end using the resolved layout
   const newSlideId = `scatter_slide_${Date.now()}`;
+  const slideLayoutReference = layoutObjectId
+    ? { layoutId: layoutObjectId }
+    : { predefinedLayout: "TITLE_AND_BODY" }; // last-resort fallback
+
   const createRes = await fetch(`${SLIDES_BASE}/${presentationId}:batchUpdate`, {
     method: "POST",
     headers: authHeaders(token),
@@ -606,7 +640,7 @@ export async function appendScatterSlide(
       requests: [{
         createSlide: {
           objectId: newSlideId,
-          slideLayoutReference: { predefinedLayout: "BLANK" },
+          slideLayoutReference,
         },
       }],
     }),
