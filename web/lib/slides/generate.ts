@@ -538,23 +538,37 @@ export async function embedScatterImage(
     if (placeholderObjId) break;
   }
 
-  if (!placeholderObjId || !targetSlideObjId) {
-    console.warn("[embedScatterImage] No scatter placeholder found — skipping scatter embed.");
+  // Fallback: if no image placeholder found, insert on slide 4 (index 3) at a fixed
+  // position that covers the main content area, avoiding headers/footers.
+  if (!targetSlideObjId) {
+    targetSlideObjId = pres.slides?.[3]?.objectId ?? pres.slides?.[2]?.objectId ?? null;
+    console.warn("[embedScatterImage] No scatter placeholder found — inserting at fixed position on slide 4.");
+  }
+  if (!targetSlideObjId) {
+    console.warn("[embedScatterImage] Presentation has fewer than 3 slides — skipping scatter embed.");
     return;
   }
 
-  // Delete placeholder
-  await fetch(`${SLIDES_BASE}/${presentationId}:batchUpdate`, {
-    method: "POST",
-    headers: authHeaders(token),
-    body: JSON.stringify({ requests: [{ deleteObject: { objectId: placeholderObjId } }] }),
-  }).then((r) => checkOk(r, "Slides deleteObject (scatter)"));
+  // Delete the placeholder element if we found one
+  if (placeholderObjId) {
+    await fetch(`${SLIDES_BASE}/${presentationId}:batchUpdate`, {
+      method: "POST",
+      headers: authHeaders(token),
+      body: JSON.stringify({ requests: [{ deleteObject: { objectId: placeholderObjId } }] }),
+    }).then((r) => checkOk(r, "Slides deleteObject (scatter)"));
+  }
 
-  // Insert PNG image
-  const translateX = foundPos?.translateX ?? 0;
-  const translateY = foundPos?.translateY ?? 0;
-  const width      = foundSize?.width  ?? envEmu("SLIDES_SCATTER_W_CM", 21.0);
-  const height     = foundSize?.height ?? envEmu("SLIDES_SCATTER_H_CM", 12.0);
+  // Insert PNG image — use found position/size or a sensible default that fits
+  // within the slide content area (leave ~1.5 cm top for title, 0.8 cm bottom for footer).
+  const MARGIN_X  = Math.round(0.3  * 360_000);  //  0.3 cm from left
+  const TOP_Y     = Math.round(2.8  * 360_000);  //  2.8 cm from top (below title bar)
+  const SLIDE_W   = Math.round(25.4 * 360_000);  // full slide width
+  const CONTENT_H = Math.round(10.5 * 360_000);  // height within content area
+
+  const translateX = foundPos?.translateX ?? MARGIN_X;
+  const translateY = foundPos?.translateY ?? TOP_Y;
+  const width      = foundSize?.width     ?? (SLIDE_W - MARGIN_X * 2);
+  const height     = foundSize?.height    ?? CONTENT_H;
 
   const insertRes = await fetch(`${SLIDES_BASE}/${presentationId}:batchUpdate`, {
     method: "POST",

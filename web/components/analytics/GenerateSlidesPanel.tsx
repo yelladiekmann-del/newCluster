@@ -116,15 +116,18 @@ function computeYearlyMetrics(
 
 // ── Cluster-Slide helpers ─────────────────────────────────────────────────────
 
-/** Auto-detect an HQ / country column from the company CSV header.
- *  Matches common names (exact or compound), e.g. "Country", "HQ Country",
- *  "country_hq", "headquarters", "Domicile", "Geography". */
-function detectHqCol(cols: string[]): string | undefined {
-  // Tier 1: prefer columns whose full name is exactly one of the keywords
-  const exact = cols.find((c) => /^(country|hq|headquarters?|location|domicile|land|geography|region)$/i.test(c));
+/** Auto-detect a city / state column — shown as HQ location (preferred over country). */
+function detectCityCol(cols: string[]): string | undefined {
+  const exact = cols.find((c) => /^(city|state|hq.?city|hq.?state|hq.?location|headquarters.?city|location.?city|town|metro|region)$/i.test(c));
   if (exact) return exact;
-  // Tier 2: column contains a keyword (handles "HQ Country", "country_name", etc.)
-  return cols.find((c) => /\b(country|hq|headquarter|domicile|geography)\b/i.test(c));
+  return cols.find((c) => /\b(city|hq.?city|hq.?state|hq.?town)\b/i.test(c));
+}
+
+/** Auto-detect a country column — fallback when no city column is found. */
+function detectCountryCol(cols: string[]): string | undefined {
+  const exact = cols.find((c) => /^(country|hq|headquarters?|domicile|land|geography)$/i.test(c));
+  if (exact) return exact;
+  return cols.find((c) => /\b(country|headquarter|domicile|geography)\b/i.test(c));
 }
 
 /** Auto-detect a free-text description column from the company CSV header. */
@@ -284,7 +287,8 @@ export function GenerateSlidesPanel({
   const companyCols = useMemo(() =>
     companies.length > 0 ? Object.keys(companies[0].originalData ?? {}) : [],
   [companies]);
-  const hqCol  = useMemo(() => detectHqCol(companyCols),          [companyCols]);
+  // Prefer city/state over country for the HQ display
+  const hqCol   = useMemo(() => detectCityCol(companyCols) ?? detectCountryCol(companyCols), [companyCols]);
   const descCol = useMemo(() => detectDescriptionCol(companyCols), [companyCols]);
 
   const clusterSlideData: ClusterSlideData[] = useMemo(() => {
