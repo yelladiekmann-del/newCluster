@@ -49,9 +49,14 @@ export function CompanyDataStep() {
       try {
         const parsed = await parseTabularFile(file);
 
-        if (parsed.searchCriteria) {
-          const summary = summarizeSearchCriteria(parsed.searchCriteria);
-          useSession.getState().setSearchCriteria(summary);
+        // Summarize immediately so the same value ends up in both memory AND Firestore.
+        // Storing raw (3000+ chars) and summarizing only in memory caused onSnapshot
+        // to overwrite memory with the raw string on every session reload.
+        const searchCriteriaSummary = parsed.searchCriteria
+          ? summarizeSearchCriteria(parsed.searchCriteria)
+          : undefined;
+        if (searchCriteriaSummary) {
+          useSession.getState().setSearchCriteria(searchCriteriaSummary);
         }
 
         const rows = parsed.rows;
@@ -115,7 +120,7 @@ export function CompanyDataStep() {
             );
           });
           setUploadPct(null);
-          await persistSession(uid, { companyCol: nameCol, descCol: dCol, pipelineStep: 0, companyCount: rows.length, ...(parsed.searchCriteria ? { searchCriteria: parsed.searchCriteria } : {}) });
+          await persistSession(uid, { companyCol: nameCol, descCol: dCol, pipelineStep: 0, companyCount: rows.length, ...(searchCriteriaSummary ? { searchCriteria: searchCriteriaSummary } : {}) });
 
           // Save companies with originalData to Firestore so resume after re-login
           // uses the fast Firestore path instead of the slow Storage CSV fallback.
