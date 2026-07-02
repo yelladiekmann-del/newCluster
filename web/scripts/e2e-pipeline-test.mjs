@@ -128,22 +128,11 @@ ok(`Sheet: ${wb.SheetNames[0]}`);
 stageResult("parse", true, { total: companies.length });
 
 // ── 1. Firebase upload ────────────────────────────────────────────────────────
-head("STAGE 1 — Firebase Upload (Firestore batch write)");
+// Real app behaviour: CompanyDataStep writes CSV to Firebase Storage only.
+// Firestore company docs are NOT pre-created — extraction creates them.
+head("STAGE 1 — Session setup (mirrors real app: Storage CSV only, no Firestore company docs)");
 t = Date.now();
 
-info(`Writing session doc to sessions/${TEST_SESSION}…`);
-await db.collection("sessions").doc(TEST_SESSION).set({
-  userId:      "e2e-test",
-  createdAt:   Date.now(),
-  updatedAt:   Date.now(),
-  pipelineStep: 0,
-  companyCol:  "Companies",
-  descCol:     "Description",
-  name:        `E2E Test — ${new Date().toISOString()}`,
-});
-ok("Session doc written");
-
-// Batch-write all companies — mirrors saveCompaniesToFirestore logic
 const BATCH_SIZE      = 100;
 const PARALLEL_GROUPS = 5;
 function chunk(arr, size) {
@@ -152,54 +141,34 @@ function chunk(arr, size) {
   return out;
 }
 
-const batches = chunk(companies.map((c, i) => ({ key: `r${i}`, doc: c })), BATCH_SIZE);
-info(`Writing ${companies.length.toLocaleString()} docs in ${batches.length} batches of ${BATCH_SIZE} (${PARALLEL_GROUPS} parallel)…`);
-
-let batchesDone = 0;
-let writeErrors = 0;
 const collRef = db.collection("sessions").doc(TEST_SESSION).collection("companies");
 
-for (let g = 0; g < batches.length; g += PARALLEL_GROUPS) {
-  const group = batches.slice(g, g + PARALLEL_GROUPS);
-  try {
-    await Promise.all(group.map(async (batch) => {
-      const fb = db.batch();
-      batch.forEach(({ key, doc: c }) => fb.set(collRef.doc(key), c));
-      await fb.commit();
-      batchesDone++;
-      tick(`batches ${batchesDone}/${batches.length} (${(batchesDone/batches.length*100).toFixed(0)}%)…`);
-    }));
-  } catch (err) {
-    writeErrors++;
-    process.stdout.write("\r");
-    fail(`Batch write error (group ${g}–${g+PARALLEL_GROUPS}): ${err.message}`);
-  }
-}
-process.stdout.write("\r");
-
-const writeElapsed = Date.now() - t;
-if (writeErrors === 0) {
-  ok(`All ${companies.length.toLocaleString()} docs written — ${ms(writeElapsed)}`);
-  ok(`Rate: ${Math.round(companies.length / (writeElapsed/1000))}/sec`);
-} else {
-  fail(`${writeErrors} batch groups failed`);
-}
-
-// Verify spot-check: read back 3 random docs
-const spotKeys = ["r0", `r${Math.floor(companies.length/2)}`, `r${companies.length-1}`];
-let spotOk = 0;
-for (const key of spotKeys) {
-  const snap = await collRef.doc(key).get();
-  if (snap.exists) spotOk++;
-}
-ok(`Spot-check: ${spotOk}/${spotKeys.length} docs readable from Firestore`);
-stageResult("upload", writeErrors === 0 && spotOk === spotKeys.length, {
-  docs: companies.length,
-  batches: batches.length,
-  errors: writeErrors,
-  elapsed: ms(writeElapsed),
-  rate_per_sec: Math.round(companies.length / (writeElapsed/1000)),
+info(`Writing session doc to sessions/${TEST_SESSION}…`);
+await db.collection("sessions").doc(TEST_SESSION).set({
+  userId:               "e2e-test",
+  createdAt:            Date.now(),
+  updatedAt:            Date.now(),
+  pipelineStep:         0,
+  companyCol:           "Companies",
+  descCol:              "Description",
+  name:                 `E2E Test — ${new Date().toISOString()}`,
+  chatAnalysisContext:  "E2E test — automated portfolio review of aerticket longlist companies",
+  chatMarketContextRaw: "",
+  chatOnboarded:        true,
+  clustersConfirmed:    false,
 });
+ok("Session doc written");
+
+// Verify no company docs exist yet — confirms we mirror the real upload-only flow
+const preCheckSnap = await collRef.limit(1).get();
+if (preCheckSnap.empty) {
+  ok("Firestore companies subcollection empty ✓ — extraction will create docs (real app flow)");
+} else {
+  warn("Companies already exist in Firestore before extraction — test may not catch missing-doc bugs");
+}
+
+const uploadElapsed = Date.now() - t;
+stageResult("upload", true, { session_doc: "written", company_docs_in_firestore: "none (correct)", elapsed: ms(uploadElapsed) });
 
 // ── 2. Extract dimensions ─────────────────────────────────────────────────────
 head("STAGE 2 — Extract Dimensions (Gemini · all companies)");
@@ -217,6 +186,8 @@ if (needsExtraction.length === 0) {
       name:        c.name,
       description: String(c.originalData["Description"] || "").slice(0, 800),
     })),
+    uid:             TEST_SESSION,
+    originalIndices: needsExtraction.map(c => c.rowIndex),
   };
 
   // Regression test: verify that extract-dimensions handles missing Firestore docs (set+merge, not update).
@@ -242,6 +213,8 @@ if (needsExtraction.length === 0) {
   } catch (e) {
     fail(`REGRESSION: extract-dimensions threw for missing doc: ${e.message}`);
   }
+  // Delete phantom doc created by regression check (prevent contaminating Stage 5 naming)
+  try { await collRef.doc("r99999").delete(); } catch {}
 
   info(`Sending ${needsExtraction.length.toLocaleString()} rows to /api/extract-dimensions…`);
   info(`Body size: ~${(JSON.stringify(extractPayload).length / 1024 / 1024).toFixed(1)} MB`);
@@ -372,53 +345,43 @@ if (needsExtraction.length === 0) {
         });
         extractOk = withSomeDims > 0;
 
-        // ── Measure Firestore save (mirrors component's saveChangedCompaniesToFirestore) ──
-        // The component writes only the changed docs (those that got new dims).
-        // Here we simulate that by writing all companies that received dims.
-        head("STAGE 2b — Save dims to Firestore (component: saveChangedCompaniesToFirestore)");
-        const tSave = Date.now();
-        const SAVE_BATCH = 100;
-        const SAVE_PARALLEL = 5;
-        const changedDocs = needsExtraction.filter(c => Object.keys(c.dimensions).length > 0);
-        info(`Writing ${changedDocs.length.toLocaleString()} company docs with dimensions…`);
-        info(`Batch size: ${SAVE_BATCH} · parallel commits: ${SAVE_PARALLEL}`);
+        // ── Verify that extract-dimensions wrote complete Firestore docs server-side ──
+        // The API route now saves docs via Admin SDK (set+merge).
+        // Each doc must have: name, rowIndex, dimensions — so loadCompanies works
+        // correctly after a page reload without needing a Storage CSV merge.
+        head("STAGE 2b — Verify Firestore docs from extraction (spot-check)");
+        const tVerify = Date.now();
+        const extracted = needsExtraction.filter(c => Object.keys(c.dimensions).length > 0);
+        const sampleSize = Math.min(5, extracted.length);
+        const sampled = extracted.slice(0, sampleSize);
+        info(`Spot-checking ${sampleSize} Firestore docs written by /api/extract-dimensions…`);
+        let verifyPassed = true;
 
         try {
-          // Chunk into batches of 100, commit 5 in parallel — same as companies-storage.ts
-          const saveChunks = chunk(changedDocs, SAVE_BATCH);
-          let committed = 0;
-          for (let g = 0; g < saveChunks.length; g += SAVE_PARALLEL) {
-            await Promise.all(
-              saveChunks.slice(g, g + SAVE_PARALLEL).map(async (batch) => {
-                const b = db.batch();
-                batch.forEach(c => {
-                  b.set(
-                    db.collection("sessions").doc(TEST_SESSION).collection("companies").doc(c.id),
-                    { ...c, dimensions: c.dimensions }
-                  );
-                });
-                await b.commit();
-                committed += batch.length;
-              })
-            );
-            tick(`saved ${committed.toLocaleString()}/${changedDocs.length.toLocaleString()} (${Math.round(committed/changedDocs.length*100)}%)…`);
+          for (const c of sampled) {
+            const docSnap = await collRef.doc(`r${c.rowIndex}`).get();
+            if (!docSnap.exists) {
+              fail(`REGRESSION: doc r${c.rowIndex} was NOT created by extract-dimensions — server-side save broken`);
+              verifyPassed = false;
+              continue;
+            }
+            const d = docSnap.data();
+            const hasName     = typeof d.name === "string" && d.name.length > 0;
+            const hasRowIndex = typeof d.rowIndex === "number";
+            const hasDims     = d.dimensions && Object.keys(d.dimensions).length > 0;
+            if (!hasName)     { fail(`REGRESSION: r${c.rowIndex} missing 'name' — loadCompanies reload would show blank rows`);      verifyPassed = false; }
+            if (!hasRowIndex) { fail(`REGRESSION: r${c.rowIndex} missing 'rowIndex' — loadCompanies reload sort would break`);        verifyPassed = false; }
+            if (!hasDims)     { fail(`REGRESSION: r${c.rowIndex} missing 'dimensions' — embedding step would receive empty dims`);    verifyPassed = false; }
+            if (hasName && hasRowIndex && hasDims) {
+              ok(`r${c.rowIndex}: name="${d.name.slice(0,30)}"  rowIndex=${d.rowIndex}  dims=${Object.keys(d.dimensions).length} ✓`);
+            }
           }
-          process.stdout.write("\r");
-          const saveElapsed = Date.now() - tSave;
-          ok(`Firestore save complete in ${ms(saveElapsed)}`);
-          ok(`Docs written: ${changedDocs.length.toLocaleString()}  ·  Rate: ${Math.round(changedDocs.length / (saveElapsed / 1000)).toLocaleString()} docs/sec`);
-          ok(`Batches: ${saveChunks.length}  ·  Avg ${ms(Math.round(saveElapsed / saveChunks.length))} per batch`);
-          stageResult("save_dims", true, {
-            docs:          changedDocs.length,
-            batches:       saveChunks.length,
-            elapsed:       ms(saveElapsed),
-            rate_per_sec:  Math.round(changedDocs.length / (saveElapsed / 1000)),
-            ms_per_batch:  Math.round(saveElapsed / saveChunks.length),
-          });
+          const verifyElapsed = Date.now() - tVerify;
+          if (verifyPassed) ok(`All ${sampleSize} docs verified in ${ms(verifyElapsed)}`);
+          stageResult("verify_extract_docs", verifyPassed, { checked: sampleSize, elapsed: ms(verifyElapsed) });
         } catch (err) {
-          process.stdout.write("\r");
-          fail(`Firestore save failed: ${err.message}`);
-          stageResult("save_dims", false, { error: err.message });
+          fail(`Verify failed: ${err.message}`);
+          stageResult("verify_extract_docs", false, { error: err.message });
         }
       } else {
         fail("No extraction results received (timeout or empty response)");
@@ -654,6 +617,8 @@ if (!clusterStageResultForSave?.passed || !clusterResult) {
   } catch (e) {
     fail(`REGRESSION: confirm-clusters threw for missing doc: ${e.message}`);
   }
+  // Delete phantom doc immediately — prevent it contaminating Stage 5 name-clusters
+  try { await collRef.doc("r_PHANTOM_NONEXISTENT").delete(); } catch {}
 
   info(`Calling /api/confirm-clusters with ${updates.length.toLocaleString()} company updates…`);
 
@@ -751,10 +716,162 @@ if (!clusterStageResult?.passed || !results["cluster"]) {
         generic_names:  genericCount,
         elapsed:        ms(elapsed),
       });
+
+      // Save cluster docs to Firestore — mirrors what the frontend does after naming.
+      // Required for Stage 6 (/api/test-chat) which loads clusters from Firestore.
+      const tSaveCluster = Date.now();
+      info(`Saving ${namings.length} cluster docs to Firestore…`);
+      try {
+        const CLUSTER_COLORS = ["#6366f1","#f59e0b","#10b981","#ef4444","#3b82f6","#8b5cf6","#ec4899","#14b8a6","#f97316","#84cc16","#06b6d4","#e11d48","#7c3aed"];
+        const clustersRef = db.collection("sessions").doc(TEST_SESSION).collection("clusters");
+        const cb = db.batch();
+        namings.forEach((n, i) => {
+          const clusterId = n.clusterIndex ?? String(i);
+          const memberCount = embeddable.filter(c => c.clusterId === clusterId).length;
+          cb.set(clustersRef.doc(clusterId), {
+            id:           clusterId,
+            name:         n.name,
+            description:  n.description,
+            color:        CLUSTER_COLORS[i % CLUSTER_COLORS.length],
+            isOutliers:   false,
+            companyCount: memberCount,
+          });
+        });
+        // outliers pseudo-cluster
+        const outlierCount = embeddable.filter(c => c.clusterId === "outliers").length;
+        cb.set(clustersRef.doc("outliers"), { id: "outliers", name: "Outliers", description: "", color: "#6b7280", isOutliers: true, companyCount: outlierCount });
+        await cb.commit();
+        ok(`Cluster docs saved in ${ms(Date.now() - tSaveCluster)} (${namings.length + 1} docs incl. outliers)`);
+      } catch (saveErr) {
+        warn(`Cluster doc save failed (non-fatal for naming, fatal for chat): ${saveErr.message}`);
+      }
     }
   } catch (err) {
     fail(`Naming request failed: ${err.message}`);
     stageResult("naming", false, { error: err.message });
+  }
+}
+
+// ── 6. Chat review prompt quality ────────────────────────────────────────────
+// Uses /api/test-chat to verify the system context is well-formed and that
+// the cluster review response is substantive (content-based, not metric-based).
+head("STAGE 6 — Chat review prompt quality (/api/test-chat)");
+t = Date.now();
+
+const clusterResultForChat = results["confirm_clusters"];
+if (!clusterResultForChat?.passed) {
+  warn("Skipping chat test — confirm-clusters stage did not succeed");
+  stageResult("chat_review", false, { error: "confirm-clusters failed" });
+} else {
+  try {
+    // ── 6a: dry run — check context is built correctly ─────────────────────
+    const dryRes = await fetch(`${BASE}/api/test-chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ uid: TEST_SESSION, dryRun: true }),
+    });
+    if (!dryRes.ok) {
+      const txt = await dryRes.text().catch(() => dryRes.statusText);
+      fail(`test-chat dryRun returned ${dryRes.status}: ${txt.slice(0, 200)}`);
+      stageResult("chat_review", false, { error: `dryRun ${dryRes.status}` });
+    } else {
+      const { context, systemPrompt, elapsed: dryElapsed } = await dryRes.json();
+      ok(`Context built in ${ms(dryElapsed)} — ${context.clusterCount} clusters · ${context.companyCount} companies`);
+
+      // Verify context completeness
+      if (context.clusterCount === 0) fail("REGRESSION: no clusters in chat context");
+      else ok(`Cluster names: ${context.clusterNames.slice(0, 5).join(", ")}…`);
+      if (context.overlapCandidates.length > 0)
+        ok(`Overlap candidates: ${context.overlapCandidates.map(c => `${c.a} <> ${c.b}`).join(" | ")}`);
+      if (context.gapHints.length > 0)
+        info(`Gap hints: ${context.gapHints.slice(0, 3).join(" | ")}`);
+
+      // Verify cohesion scores are NOT exposed as raw numbers in system prompt
+      const rawScorePattern = /cohesion score:\s*\d+\.\d+/i;
+      if (rawScorePattern.test(systemPrompt)) {
+        fail("REGRESSION: raw cohesion score found in system prompt — model will cite numbers");
+      } else {
+        ok("No raw cohesion scores in system prompt ✓");
+      }
+      // Verify qualitative label is present instead
+      if (systemPrompt.includes("Internal focus:")) {
+        ok("Qualitative cohesion labels present ✓");
+      } else {
+        fail("REGRESSION: 'Internal focus' label missing from system prompt");
+      }
+      // Verify overlap candidates use substantive reason (not percentages)
+      const percentReason = /\d+% overlap/i;
+      if (context.overlapCandidates.some(c => percentReason.test(c.reason))) {
+        fail("REGRESSION: overlap candidate reason still uses raw percentage");
+      } else if (context.overlapCandidates.length > 0) {
+        ok(`Overlap reasons are substantive: "${context.overlapCandidates[0].reason}" ✓`);
+      }
+      // Verify anti-metrics instruction in system prompt
+      if (systemPrompt.includes("Do NOT cite raw metric numbers")) {
+        ok("Anti-metrics instruction present in system prompt ✓");
+      } else {
+        fail("REGRESSION: anti-metrics instruction missing from system prompt");
+      }
+
+      // ── 6b: live run — check response quality ─────────────────────────────
+      info("Calling Gemini with cluster review prompt (live)…");
+      const liveRes = await fetch(`${BASE}/api/test-chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uid: TEST_SESSION, mode: "review" }),
+      });
+      if (!liveRes.ok) {
+        const txt = await liveRes.text().catch(() => liveRes.statusText);
+        fail(`test-chat live returned ${liveRes.status}: ${txt.slice(0, 200)}`);
+        stageResult("chat_review", false, { error: `live ${liveRes.status}` });
+      } else {
+        const { response, actions, actionsRaw, actionsParseError, qualityFlags, elapsed: liveElapsed } = await liveRes.json();
+        ok(`Gemini responded in ${ms(liveElapsed)}`);
+        ok(`Response length: ${response?.length ?? 0} chars · ${(response?.split(" ") ?? []).length} words`);
+        if (actions && actions.length > 0) ok(`Actions parsed: ${actions.length} (${actions.map(a => a.type).join(", ")})`);
+        else if (actionsRaw) {
+          warn(`<actions> block found but produced 0 valid actions`);
+          if (actionsParseError) info(`  parse error: ${actionsParseError}`);
+          info(`  raw (first 600 chars): ${actionsRaw.slice(0, 600)}`);
+        } else {
+          warn("No <actions> block in response");
+        }
+
+        // Quality flags from the route itself
+        if (qualityFlags?.length > 0) {
+          for (const flag of qualityFlags) {
+            if (flag.startsWith("WARN:")) fail(flag);
+            else info(flag);
+          }
+        }
+
+        // Content check: does the response name specific clusters?
+        const namedClusters = context.clusterNames.filter(name => response?.includes(name)).length;
+        if (namedClusters >= 3) ok(`Response mentions ${namedClusters} cluster names by name ✓`);
+        else warn(`Response only mentions ${namedClusters} cluster names — may be too generic`);
+
+        // Metric leakage check: raw decimal numbers near "cohes" or "score"
+        const metricLeak = /\b0\.\d{2}\b.*?(cohes|score|metric|percent)|(cohes|score|metric|percent).*?\b0\.\d{2}\b/i;
+        if (metricLeak.test(response ?? "")) {
+          fail("REGRESSION: response cites raw decimal metrics despite anti-metrics instruction");
+        } else {
+          ok("No raw metric citations in response ✓");
+        }
+
+        const elapsed = Date.now() - t;
+        stageResult("chat_review", true, {
+          context_clusters: context.clusterCount,
+          response_words:   (response?.split(" ") ?? []).length,
+          actions_count:    actions?.length ?? 0,
+          cluster_mentions: namedClusters,
+          quality_flags:    qualityFlags?.filter(f => f.startsWith("WARN:")).length ?? 0,
+          elapsed:          ms(elapsed),
+        });
+      }
+    }
+  } catch (err) {
+    fail(`Chat review test failed: ${err.message}`);
+    stageResult("chat_review", false, { error: err.message });
   }
 }
 
@@ -781,7 +898,7 @@ try {
 
 // ── Summary ───────────────────────────────────────────────────────────────────
 head("SUMMARY");
-const order = ["parse","upload","extract","save_dims","embed","cluster","confirm_clusters","naming"];
+const order = ["parse","upload","extract","verify_extract_docs","embed","cluster","confirm_clusters","naming","chat_review"];
 let allPassed = true;
 for (const s of order) {
   const r = results[s];

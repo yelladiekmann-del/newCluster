@@ -3,7 +3,7 @@ import type { ChatMessage } from "@/types";
 
 import { normalizeAndValidateActions } from "@/lib/server/action-validation";
 import { buildChatSystemPrompt, buildStructuredReviewUserMessage } from "@/lib/server/chat-prompts";
-import { callGeminiText } from "@/lib/server/gemini";
+import { callGeminiText, parseJsonObject } from "@/lib/server/gemini";
 import { getGeminiKey } from "@/lib/server/gemini-key";
 import { buildReviewContext } from "@/lib/server/review-context";
 import { loadSessionSnapshot } from "@/lib/server/session-data";
@@ -11,6 +11,7 @@ import { loadSessionSnapshot } from "@/lib/server/session-data";
 export const maxDuration = 120;
 
 export async function POST(req: NextRequest) {
+  const t0 = Date.now();
   const apiKey = getGeminiKey();
 
   const {
@@ -24,6 +25,8 @@ export async function POST(req: NextRequest) {
     message: string;
     mode?: "chat" | "review";
   };
+
+  console.log(`[chat] uid=${uid} mode=${mode ?? "chat"} historyLen=${(history ?? []).length}`);
 
   if (!uid || !message) {
     return Response.json({ error: "uid and message are required" }, { status: 400 });
@@ -55,14 +58,13 @@ export async function POST(req: NextRequest) {
     const text = rawText.replace(/<actions>[\s\S]*?<\/actions>/, "").trim();
     let actions = null;
     if (actionsMatch) {
-      try {
+      const rawActions = parseJsonObject<unknown[]>(actionsMatch[1].trim());
+      if (rawActions) {
         actions = normalizeAndValidateActions(
-          JSON.parse(actionsMatch[1].trim()),
+          rawActions,
           clusters.filter((cluster) => !cluster.isOutliers).map((cluster) => cluster.name),
           companies.map((company) => company.name)
         );
-      } catch {
-        actions = null;
       }
     }
 

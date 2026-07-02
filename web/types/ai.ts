@@ -11,6 +11,8 @@ export interface ClusterSummary {
   cohesionScore: number | null;
   nearestClusterIds: string[];
   nearestClusterNames: string[];
+  /** All companies in the cluster — name + description snippet (≤200 chars). Used for chat context. */
+  allCompanies: { name: string; description: string }[];
 }
 
 export interface OverlapCandidate {
@@ -29,7 +31,10 @@ export interface PortfolioReviewContext {
   companyCount: number;
   clusterCount: number;
   outlierCount: number;
+  /** @deprecated use outlierCompanies */
   outlierExamples: string[];
+  /** All outlier companies with description snippets — for chat context. */
+  outlierCompanies: { name: string; description: string }[];
   clusterSummaries: ClusterSummary[];
   overlapCandidates: OverlapCandidate[];
   gapHints: string[];

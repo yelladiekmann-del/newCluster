@@ -41,6 +41,7 @@ interface GenerateSlidesPanelProps {
   companyCount: number;
   companies: CompanyDoc[];
   clusters: ClusterDoc[];
+  searchCriteria?: string;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -254,6 +255,7 @@ export function GenerateSlidesPanel({
   companyCount,
   companies,
   clusters,
+  searchCriteria,
 }: GenerateSlidesPanelProps) {
   const kpis = computeKpis(analyticsRows, companyCount);
 
@@ -436,6 +438,7 @@ export function GenerateSlidesPanel({
         ...ableitungenFields,
         clusterSlides:  clusterSlideData.length > 0 ? clusterSlideData : undefined,
         umapImageUrl,
+        footnote_3: searchCriteria ?? "",
       };
 
       const res = await fetch("/api/generate-slides", {

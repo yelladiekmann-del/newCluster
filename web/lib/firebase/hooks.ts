@@ -112,6 +112,7 @@ export function attachSessionListener(sessionId: string): () => void {
     setDealsStoragePath,
     setAnalyticsColMap,
     setScoringConfig,
+    setSearchCriteria,
     setSessionName,
   } = useSession.getState();
 
@@ -134,6 +135,7 @@ export function attachSessionListener(sessionId: string): () => void {
     setDealsStoragePath(d.dealsStoragePath ?? null);
     setAnalyticsColMap(d.analyticsColMap ?? {});
     setScoringConfig((d.scoringConfig as Parameters<typeof setScoringConfig>[0]) ?? null);
+    setSearchCriteria(d.searchCriteria ?? null);
     setSessionName(d.name ?? null);
   });
 
@@ -251,6 +253,7 @@ export async function resumeSessionFast(sessionId: string): Promise<number> {
   store.setDealsStoragePath(d.dealsStoragePath ?? null);
   store.setAnalyticsColMap(d.analyticsColMap ?? {});
   store.setScoringConfig((d.scoringConfig as Parameters<typeof store.setScoringConfig>[0]) ?? null);
+  store.setSearchCriteria(d.searchCriteria ?? null);
   store.setSpreadsheetId(d.spreadsheetId ?? null);
   store.setSpreadsheetUrl(d.spreadsheetUrl ?? null);
   store.setSessionName(d.name ?? null);

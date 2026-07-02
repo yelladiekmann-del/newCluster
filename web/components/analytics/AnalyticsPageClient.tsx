@@ -83,6 +83,7 @@ function StatTile({
 export function AnalyticsPageClient() {
   const router = useRouter();
   const { uid, companies, clusters, setCompanies, setClusters, dealsStoragePath, setDealsStoragePath, companyCol, setPipelineStep, googleAccessToken, scoringConfig } = useSession();
+  const searchCriteria = useSession((s) => s.searchCriteria);
 
   const [dealsData, setDealsData] = useState<Record<string, unknown>[] | null>(null);
   const [dealsColumns, setDealsColumns] = useState<string[]>([]);
@@ -425,6 +426,7 @@ export function AnalyticsPageClient() {
         companyCount={companies.length}
         companies={companies}
         clusters={clusters}
+        searchCriteria={searchCriteria ?? undefined}
       />
 
       {/* Sticky bottom bar */}

@@ -94,7 +94,7 @@ export function buildClusterSummaries(
   clusters: ClusterDoc[],
   companies: CompanyDoc[],
   descCol: string | null
-): { summaries: ClusterSummary[]; outlierExamples: string[]; overlapCandidates: OverlapCandidate[] } {
+): { summaries: ClusterSummary[]; outlierExamples: string[]; outlierCompanies: { name: string; description: string }[]; overlapCandidates: OverlapCandidate[] } {
   const nonOutlierClusters = clusters.filter((cluster) => !cluster.isOutliers);
   const summaries: ClusterSummary[] = nonOutlierClusters.map((cluster) => {
     const members = companies.filter((company) => company.clusterId === cluster.id);
@@ -124,8 +124,8 @@ export function buildClusterSummaries(
       representativeSnippets: unique(
         repMembers
           .map((company) => getCompanySnippet(company, descCol))
-          .filter((s) => s.length > 20) // skip trivially short snippets
-      ).slice(0, 5), // 5 snippets give Gemini enough variety to generalise
+          .filter((s) => s.length > 20)
+      ).slice(0, 5),
       cohesionScore:
         cohesionSignals.length > 0
           ? Number(
@@ -134,6 +134,25 @@ export function buildClusterSummaries(
           : null,
       nearestClusterIds: [],
       nearestClusterNames: [],
+      // All members with a short description — this is what the chat model uses.
+      // Sorted by representativeness (same ranking as repMembers) so the most
+      // signal-rich companies appear first in long clusters.
+      allCompanies: [...members]
+        .sort((a, b) => {
+          const scoreA =
+            HIGH_SIGNAL_DIMS.filter((d) => a.dimensions[d]).length * 2 +
+            Object.keys(a.dimensions).length +
+            (getCompanySnippet(a, descCol).length > 30 ? 1 : 0);
+          const scoreB =
+            HIGH_SIGNAL_DIMS.filter((d) => b.dimensions[d]).length * 2 +
+            Object.keys(b.dimensions).length +
+            (getCompanySnippet(b, descCol).length > 30 ? 1 : 0);
+          return scoreB - scoreA || a.name.localeCompare(b.name);
+        })
+        .map((company) => ({
+          name: company.name,
+          description: getCompanySnippet(company, descCol).slice(0, 200),
+        })),
     };
   });
 
@@ -165,27 +184,38 @@ export function buildClusterSummaries(
         similarityTokens.get(b.clusterId) ?? new Set<string>()
       );
       if (score < 0.2) continue;
+      const tokensA = similarityTokens.get(a.clusterId) ?? new Set<string>();
+      const tokensB = similarityTokens.get(b.clusterId) ?? new Set<string>();
+      const sharedTokens = [...tokensA].filter((t) => tokensB.has(t)).slice(0, 4);
+      const reason = sharedTokens.length > 0
+        ? `Both focus on: ${sharedTokens.join(", ")}`
+        : "Similar dimensional profile";
       overlapCandidates.push({
         clusterAId: a.clusterId,
         clusterAName: a.clusterName,
         clusterBId: b.clusterId,
         clusterBName: b.clusterName,
         score,
-        reason: `Shared dimension themes (${Math.round(score * 100)}% overlap)`,
+        reason,
       });
     }
   }
 
-  const outlierExamples = companies
-    .filter((company) => company.clusterId === "outliers")
-    .slice(0, 8)
-    .map((company) => company.name);
+  const outliers = companies.filter((company) => company.clusterId === "outliers");
+
+  const outlierExamples = outliers.slice(0, 8).map((company) => company.name);
+
+  const outlierCompanies = outliers.map((company) => ({
+    name: company.name,
+    description: getCompanySnippet(company, descCol).slice(0, 200),
+  }));
 
   overlapCandidates.sort((a, b) => b.score - a.score);
 
   return {
     summaries,
     outlierExamples,
+    outlierCompanies,
     overlapCandidates: overlapCandidates.slice(0, 6),
   };
 }

@@ -313,6 +313,7 @@ export async function replacePlaceholders(
     chapter_3:      flatRest.chapter ?? "UNSER ANSATZ",
     slide_title3:   "TRENDCLUSTERING DER VC-FINANZIERUNGEN",
     action_title_3: "Unser proprietäres Clustering-Tool segmentiert den Markt durch semantische Analyse und macht Innovationsfelder schnell vergleichbar",
+    "3_footnote":   data.footnote_3 ?? "",
   };
 
   const requests = Object.entries(allFields).map(([key, value]) => ({

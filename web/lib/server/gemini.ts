@@ -89,11 +89,20 @@ export async function callGeminiText({
 }
 
 export function repairJson(raw: string): string {
-  return raw
+  let text = raw
     .replace(/```json\s*/gi, "")
     .replace(/```\s*/gi, "")
     .trim()
     .replace(/,\s*([}\]])/g, "$1");
+
+  // Gemini sometimes outputs NDJSON (one JSON object per line) instead of a JSON array.
+  // Only wrap when there are clearly multiple top-level objects (}...newline...{).
+  // A plain single JSON object must NOT be wrapped.
+  if (text.startsWith("{") && /\}\s*\n\s*\{/.test(text)) {
+    text = "[" + text.replace(/\}\s*\n\s*\{/g, "},\n{") + "]";
+  }
+
+  return text;
 }
 
 export function parseJsonObject<T>(raw: string): T | null {

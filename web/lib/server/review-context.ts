@@ -10,7 +10,7 @@ export function buildReviewContext(params: {
   marketContext: string;
 }): PortfolioReviewContext {
   const { session, clusters, companies, marketContext } = params;
-  const { summaries, outlierExamples, overlapCandidates } = buildClusterSummaries(
+  const { summaries, outlierExamples, outlierCompanies, overlapCandidates } = buildClusterSummaries(
     clusters,
     companies,
     session.descCol ?? null
@@ -38,6 +38,7 @@ export function buildReviewContext(params: {
     clusterCount: summaries.length,
     outlierCount: companies.filter((company) => company.clusterId === "outliers").length,
     outlierExamples,
+    outlierCompanies,
     clusterSummaries: summaries,
     overlapCandidates,
     gapHints: gapHints.slice(0, 8),

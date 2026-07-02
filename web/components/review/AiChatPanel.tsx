@@ -29,19 +29,19 @@ const SUGGESTED_PROMPTS = [
   "Compare cluster sizes and gaps",
 ];
 
-const CLUSTER_REVIEW_PROMPT = `Please review all clusters in this analysis and provide structured recommendations:
+const CLUSTER_REVIEW_PROMPT = `Review all clusters and give me a substantive market analysis of this segmentation. Focus on what the companies actually do — their problem domains, customer types, and delivery mechanisms — not statistical properties.
 
-**1. KEEP** — List clusters that are well-defined and should remain exactly as they are. Briefly explain why each is cohesive.
+**1. KEEP** — Clusters that represent a genuinely distinct, well-populated market segment. For each: explain in 1–2 sentences what unites these companies substantively (same problem, same buyer, same model), and why they deserve their own segment.
 
-**2. DELETE** — List clusters that are too small, too vague, overlap heavily with another, or add no analytical value. Explain why each should be removed.
+**2. DELETE** — Clusters that lack a coherent business narrative: too thin, redundant with another segment, or just a catch-all. For each: name 1–2 example companies and explain why they don't form a real segment.
 
-**3. MERGE** — Identify pairs or groups of clusters that are too similar and should be combined. For each merge, specify which clusters to combine, suggest a name for the result, and write a concise 2-sentence description for the merged cluster. The description should start with "Companies providing..." or "Platforms enabling..." and briefly distinguish it from nearby clusters.
+**3. MERGE** — Pairs or groups where companies are solving the same core problem for the same customers from slightly different angles. For each: name which clusters, explain the shared substance, suggest a result name, and write a 2-sentence description starting with "Companies providing..." or "Platforms enabling...".
 
-**4. ADD** — Identify important market segments that are absent from the current clustering. For each new cluster to add, provide: a proposed name, a concise 2-sentence description, and 3–5 example companies from the dataset that would belong there. The description should start with a category-style phrase like "Companies providing..." or "Platforms enabling..." and should not begin with "This cluster consists of" or similar phrasing.
+**4. ADD** — Market segments clearly visible in the data that no current cluster captures. For each: name the segment, write a 2-sentence description, and list 3–5 specific company names from the dataset.
 
-Ground all recommendations in the specific companies and cluster compositions you know.
+Be specific: name companies, describe what they do, and tie each recommendation to that evidence. Do not reference scores or percentages.
 
-After your prose recommendations, append a machine-readable action list using EXACTLY this format (no explanation, no extra text around the tags):
+After your analysis, append a machine-readable action list using EXACTLY this format:
 
 <actions>
 [
@@ -51,7 +51,7 @@ After your prose recommendations, append a machine-readable action list using EX
 ]
 </actions>
 
-Only include delete, merge, and add actions — omit KEEP entries entirely. Use exact cluster and company names as they appear in the data.`;
+Omit KEEP entries from the action list. Use exact cluster and company names as they appear in the data.`;
 
 function expandPrompt(p: string): string {
   if (p === "✦ Request cluster review") return CLUSTER_REVIEW_PROMPT;

@@ -15,7 +15,7 @@ import type { CompanyDoc } from "@/types";
 import { DIMENSIONS } from "@/types";
 import { ref, uploadBytesResumable } from "firebase/storage";
 import { getFirebaseStorage } from "@/lib/firebase/client";
-import { parseTabularFile, rowsToCsv } from "@/lib/tabular-upload";
+import { parseTabularFile, rowsToCsv, summarizeSearchCriteria } from "@/lib/tabular-upload";
 
 export function CompanyDataStep() {
   const {
@@ -48,6 +48,12 @@ export function CompanyDataStep() {
       });
       try {
         const parsed = await parseTabularFile(file);
+
+        if (parsed.searchCriteria) {
+          const summary = summarizeSearchCriteria(parsed.searchCriteria);
+          useSession.getState().setSearchCriteria(summary);
+        }
+
         const rows = parsed.rows;
         console.info("[CompanyDataStep] parse_completed", {
           uid,
@@ -109,7 +115,7 @@ export function CompanyDataStep() {
             );
           });
           setUploadPct(null);
-          await persistSession(uid, { companyCol: nameCol, descCol: dCol, pipelineStep: 0, companyCount: rows.length });
+          await persistSession(uid, { companyCol: nameCol, descCol: dCol, pipelineStep: 0, companyCount: rows.length, ...(parsed.searchCriteria ? { searchCriteria: parsed.searchCriteria } : {}) });
 
           // Save companies with originalData to Firestore so resume after re-login
           // uses the fast Firestore path instead of the slow Storage CSV fallback.

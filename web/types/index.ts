@@ -64,6 +64,7 @@ export interface SessionDoc {
 
   // Display
   name?: string;
+  searchCriteria?: string;
 
   // Metadata (optional — persisted for home page display)
   companyCount?: number;

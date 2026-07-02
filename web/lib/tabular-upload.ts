@@ -8,6 +8,47 @@ export interface ParsedTabularFile {
   source: "csv" | "excel";
   sheetName?: string;
   headerRow?: number;
+  searchCriteria?: string; // raw search string extracted from PitchBook metadata rows
+}
+
+export function summarizeSearchCriteria(raw: string): string {
+  // Strip leading label like "Industry Query: "
+  const cleaned = raw.replace(/^[^:]+:\s*/i, "").trim().replace(/;$/, "");
+
+  // Split into AND groups (handles ") AND (" and ") AND NOT (")
+  const parts = cleaned.split(/\)\s+AND\s+(?:NOT\s+)?\(/i);
+
+  const positiveTerms: string[] = [];
+  const excludeTerms: string[] = [];
+  let negativeStarted = false;
+
+  const originalRaw = cleaned.toUpperCase();
+
+  for (let i = 0; i < parts.length; i++) {
+    const group = parts[i].replace(/^\(+|\)+;?$/g, "").trim();
+    // Detect if this group was preceded by NOT — check the original string
+    const groupStartIndex = originalRaw.indexOf(group.toUpperCase().slice(0, 30));
+    const before = originalRaw.slice(0, groupStartIndex);
+    const isNot = /AND\s+NOT\s*\(?\s*$/.test(before);
+
+    const quoted = (group.match(/"([^"]+)"/g) ?? []).map(t => t.slice(1, -1));
+    if (isNot || negativeStarted) {
+      excludeTerms.push(...quoted.slice(0, 3));
+      negativeStarted = true;
+    } else {
+      positiveTerms.push(...quoted.slice(0, 2)); // 2 terms per positive group
+    }
+  }
+
+  const displayTerms = positiveTerms.slice(0, 5).map(t => `"${t}"`).join(", ");
+  const hasMore = positiveTerms.length > 5 || parts.filter(p => !p.toUpperCase().includes("NOT")).length > 1;
+
+  const kwPart = `Search based on keywords: ${displayTerms}${hasMore ? " and others" : ""}`;
+  const exPart = excludeTerms.length > 0
+    ? `Excludes: ${excludeTerms.slice(0, 3).map(t => `"${t}"`).join(", ")}.`
+    : "No exclusions applied.";
+
+  return `${kwPart} — ${exPart}`;
 }
 
 function isExcelFile(file: File): boolean {
@@ -87,6 +128,18 @@ async function parseExcelFile(file: File): Promise<ParsedTabularFile> {
     blankrows: false,
   });
 
+  // Scan the first 20 rows for PitchBook search criteria metadata
+  let rawSearchCriteria: string | undefined;
+  for (let i = 0; i < Math.min(grid.length, 20); i++) {
+    const row = grid[i];
+    const colA = String(row?.[0] ?? "").trim();
+    if (/^search criteria/i.test(colA)) {
+      const colB = String(row?.[1] ?? "").trim();
+      if (colB) rawSearchCriteria = colB;
+      break;
+    }
+  }
+
   const headerIndex = detectHeaderRow(grid);
   const headerRow = grid[headerIndex] ?? [];
   const seen = new Map<string, number>();
@@ -105,6 +158,7 @@ async function parseExcelFile(file: File): Promise<ParsedTabularFile> {
     source: "excel",
     sheetName: preferredSheet,
     headerRow: headerIndex + 1,
+    searchCriteria: rawSearchCriteria,
   };
 }
 

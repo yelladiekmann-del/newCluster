@@ -24,22 +24,34 @@ export function normalizeAndValidateActions(
 ): ClusterAction[] | null {
   if (!Array.isArray(rawActions)) return null;
 
-  const clusterSet = new Set(validClusterNames);
-  const companySet = new Set(validCompanyNames.map((name) => name.toLowerCase()));
+  // Case-insensitive lookup maps — model output often differs in casing/punctuation
+  const clusterMap = new Map(validClusterNames.map((n) => [n.toLowerCase().trim(), n]));
+  const companyMap = new Map(validCompanyNames.map((n) => [n.toLowerCase().trim(), n]));
+
+  function resolveCluster(raw: string): string | null {
+    return clusterMap.get(raw.toLowerCase().trim()) ?? null;
+  }
+  function resolveCompany(raw: string): string | null {
+    return companyMap.get(raw.toLowerCase().trim()) ?? null;
+  }
+
   const normalized: ClusterAction[] = [];
 
   for (const raw of rawActions as RawAction[]) {
     const type = String(raw?.type ?? "");
+
     if (type === "delete") {
-      const clusterName = String(raw.clusterName ?? raw.cluster ?? "").trim();
-      if (clusterSet.has(clusterName)) {
+      const clusterName = resolveCluster(String(raw.clusterName ?? raw.cluster ?? "").trim());
+      if (clusterName) {
         normalized.push({ type: "delete", clusterName });
       }
       continue;
     }
 
     if (type === "merge") {
-      const sources = toStringArray(raw.sources).filter((name) => clusterSet.has(name));
+      const sources = toStringArray(raw.sources)
+        .map((n) => resolveCluster(n))
+        .filter((n): n is string => n !== null);
       const newName = String(raw.newName ?? raw.new_name ?? "").trim();
       const description = String(raw.description ?? "").trim() || undefined;
       if (sources.length >= 2 && newName) {
@@ -51,7 +63,11 @@ export function normalizeAndValidateActions(
     if (type === "add") {
       const name = String(raw.name ?? "").trim();
       const description = String(raw.description ?? "").trim();
-      const companies = toStringArray(raw.companies).filter((company) => companySet.has(company.toLowerCase()));
+      // Resolve company names case-insensitively; fall back to the raw name if not found
+      // so the action is not silently dropped due to minor spelling differences.
+      const companies = toStringArray(raw.companies).map(
+        (n) => resolveCompany(n) ?? n.trim()
+      ).filter(Boolean);
       if (name && description && companies.length > 0) {
         normalized.push({ type: "add", name, description, companies });
       }

@@ -57,6 +57,10 @@ export interface SlidesData {
   /** Up to 3 cluster columns for the companies slide. */
   clusterSlides?: ClusterSlideData[];
 
+  // ── Folie 3 footnote ───────────────────────────────────────────────────────
+  /** Auto-generated footnote from PitchBook search criteria. Fills {{3_footnote}}. */
+  footnote_3?: string;
+
   // ── Folie 4: Clustering Visualization ──────────────────────────────────────
   /** Publicly accessible URL of the UMAP scatter PNG (Firebase Storage download URL). */
   umapImageUrl?: string;

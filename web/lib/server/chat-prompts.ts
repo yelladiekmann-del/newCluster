@@ -1,20 +1,28 @@
 import type { PortfolioReviewContext } from "@/types/ai";
 
+/** Translate a raw cohesion score into a plain-language signal for the model.
+ *  The score is hidden — we give the model a qualitative cue so it can reason
+ *  about focus without citing raw numbers in its prose. */
+function cohesionLabel(score: number | null): string {
+  if (score == null) return "unknown";
+  if (score >= 0.65) return "very tight — strong shared focus across members";
+  if (score >= 0.50) return "cohesive — members mostly aligned on core dimensions";
+  if (score >= 0.35) return "mixed — notable variation in what members do";
+  return "broad — members vary significantly in problem and mechanism";
+}
+
 function formatCluster(summary: PortfolioReviewContext["clusterSummaries"][number]): string {
-  const dimensions = Object.entries(summary.topDimensions)
-    .filter(([, values]) => values.length > 0)
-    .map(([dimension, values]) => `  ${dimension}: ${values.join(" / ")}`)
+  const companyLines = summary.allCompanies
+    .map((c) => `  - ${c.name}${c.description ? `: ${c.description}` : ""}`)
     .join("\n");
 
   return `## ${summary.clusterName} (${summary.companyCount} companies)
 Description: ${summary.description || "—"}
-Cohesion score: ${summary.cohesionScore ?? "n/a"}
-Representative companies: ${summary.representativeCompanies.join(", ") || "—"}
-Representative snippets:
-${summary.representativeSnippets.map((snippet) => `  - ${snippet}`).join("\n") || "  - —"}
-Top dimensions:
-${dimensions || "  —"}
-Nearest neighboring clusters: ${summary.nearestClusterNames.join(", ") || "—"}`;
+Internal focus: ${cohesionLabel(summary.cohesionScore)}
+Nearest neighboring clusters: ${summary.nearestClusterNames.join(", ") || "—"}
+
+Companies:
+${companyLines || "  —"}`;
 }
 
 function actionFormatBlock(): string {
@@ -39,6 +47,11 @@ For any merged or newly added cluster, include a "description" field in the same
 - second sentence should briefly distinguish the new cluster from nearby clusters
 - do NOT begin with phrases like "This cluster consists of", "This cluster includes", or "This segment contains"
 
+IMPORTANT — reasoning style:
+- Do NOT cite raw metric numbers (cohesion scores, overlap percentages, similarity scores) in your responses. These are internal signals only.
+- Ground every observation in specific companies and what they actually do: their problem domain, customer segment, core mechanism, or business model.
+- A recommendation is only useful if it names companies and explains what they have in common, not why an algorithm flagged them.
+
 Analysis context: ${context.analysisContext || "General portfolio review"}
 
 Market context:
@@ -49,13 +62,16 @@ Dataset summary:
 - ${context.clusterCount} named clusters
 - ${context.outlierCount} outliers
 
-Top overlap candidates:
-${context.overlapCandidates.map((candidate) => `- ${candidate.clusterAName} <> ${candidate.clusterBName}: ${candidate.reason}`).join("\n") || "- None flagged"}
+Clusters to look at more closely (possible overlaps or gaps):
+${context.overlapCandidates.map((candidate) => `- ${candidate.clusterAName} and ${candidate.clusterBName}: ${candidate.reason}`).join("\n") || "- None flagged"}
 
 Gap hints:
 ${context.gapHints.map((hint) => `- ${hint}`).join("\n") || "- None flagged"}
 
-Outlier examples: ${context.outlierExamples.join(", ") || "None"}
+Unassigned companies (outliers):
+${context.outlierCompanies.length > 0
+  ? context.outlierCompanies.map((c) => `  - ${c.name}${c.description ? `: ${c.description}` : ""}`).join("\n")
+  : "  None"}
 
 Cluster profiles:
 ${context.clusterSummaries.map(formatCluster).join("\n\n")}`;
@@ -64,5 +80,6 @@ ${context.clusterSummaries.map(formatCluster).join("\n\n")}`;
 export function buildStructuredReviewUserMessage(userMessage: string): string {
   return `${userMessage}
 
-Make your recommendations specific and evidence-based. After your prose, include a valid ${actionFormatBlock()} block if you recommend deletes, merges, or additions.`;
+Ground every recommendation in specific company names and what those companies actually do — their problem domain, customers, or mechanism. Avoid citing statistical or algorithmic signals.
+After your prose, include a valid ${actionFormatBlock()} block if you recommend deletes, merges, or additions.`;
 }

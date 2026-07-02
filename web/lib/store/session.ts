@@ -65,6 +65,9 @@ export interface SessionState {
   analyticsColMap: AnalyticsColMap;
   scoringConfig: ScoringConfig | null;
 
+  // Search criteria (from PitchBook export metadata)
+  searchCriteria: string | null;
+
   // Display
   sessionName: string | null;
 
@@ -98,6 +101,7 @@ export interface SessionState {
   setDealsStoragePath: (path: string | null) => void;
   setAnalyticsColMap: (map: AnalyticsColMap) => void;
   setScoringConfig: (config: ScoringConfig | null) => void;
+  setSearchCriteria: (v: string | null) => void;
   setSessionName: (name: string | null) => void;
   /** Full reset — called when starting a new session */
   reset: () => void;
@@ -136,6 +140,7 @@ export const useSession = create<SessionState>((set) => ({
   dealsStoragePath: null,
   analyticsColMap: {},
   scoringConfig: null,
+  searchCriteria: null,
   sessionName: null,
 
   setAuthResolved: (authResolved) => set({ authResolved }),
@@ -177,6 +182,7 @@ export const useSession = create<SessionState>((set) => ({
   setDealsStoragePath: (dealsStoragePath) => set({ dealsStoragePath }),
   setAnalyticsColMap: (analyticsColMap) => set({ analyticsColMap }),
   setScoringConfig: (scoringConfig) => set({ scoringConfig }),
+  setSearchCriteria: (searchCriteria) => set({ searchCriteria }),
   setSessionName: (sessionName) => set({ sessionName }),
   reset: () =>
     set({
@@ -201,6 +207,7 @@ export const useSession = create<SessionState>((set) => ({
       dealsStoragePath: null,
       analyticsColMap: {},
       scoringConfig: null,
+      searchCriteria: null,
       sessionName: null,
     }),
 }));

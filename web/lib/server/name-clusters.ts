@@ -3,35 +3,20 @@ import type { ClusterNamingResult, ClusterSummary } from "@/types/ai";
 import { callGeminiText, extractFirstJsonObject, parseJsonObject } from "./gemini";
 
 function formatSummary(summary: ClusterSummary): string {
-  // Signal priority: Problem Solved + Customer Segment carry the most discriminative weight;
-  // Tech Category / Business Model are too generic (fixed vocab like "AI/ML", "B2B SaaS")
-  // and should only appear as secondary context, not as the lead signal.
-  const HIGH_SIGNAL_DIMS = ["Problem Solved", "Customer Segment", "Core Mechanism", "Value Shift"];
-  const LOW_SIGNAL_DIMS  = ["Tech Category", "Business Model", "Ecosystem Role", "Scalability Lever"];
-
-  const highLines = HIGH_SIGNAL_DIMS
-    .map((d) => summary.topDimensions[d]?.filter(Boolean) ?? [])
-    .filter((vals) => vals.length > 0)
-    .map((vals, i) => `  ${HIGH_SIGNAL_DIMS[i]}: ${vals.join(" / ")}`)
+  // Show representative companies with their descriptions — same source of truth
+  // the review assistant uses. Dimensions are derived FROM descriptions anyway,
+  // so descriptions are the stronger naming signal.
+  // Cap at 12 companies to keep the naming prompt focused (all clusters in one call).
+  const companyLines = summary.allCompanies
+    .slice(0, 12)
+    .map((c) => `  - ${c.name}${c.description ? `: ${c.description}` : ""}`)
     .join("\n");
-
-  const lowLines = LOW_SIGNAL_DIMS
-    .map((d) => summary.topDimensions[d]?.filter(Boolean) ?? [])
-    .filter((vals) => vals.length > 0)
-    .map((vals, i) => `  ${LOW_SIGNAL_DIMS[i]}: ${vals.join(" / ")}`)
-    .join("\n");
-
-  const snippets = summary.representativeSnippets.map((s) => `  - ${s}`).join("\n");
 
   return `CLUSTER ${summary.clusterId} (${summary.companyCount} companies)
-Companies: ${summary.representativeCompanies.join(", ") || "—"}
 Nearest clusters (context, avoid similar names): ${summary.nearestClusterNames.join(", ") || "—"}
-Key signals (use these to name):
-${highLines || "  —"}
-Secondary context (do NOT let these drive the name):
-${lowLines || "  —"}
-Sample descriptions:
-${snippets || "  - —"}`;
+
+Companies:
+${companyLines || "  —"}`;
 }
 
 function hasDuplicateNames(names: Record<string, string>): boolean {
