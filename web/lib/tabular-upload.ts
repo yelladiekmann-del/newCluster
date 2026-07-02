@@ -15,38 +15,34 @@ export function summarizeSearchCriteria(raw: string): string {
   // Strip leading label like "Industry Query: "
   const cleaned = raw.replace(/^[^:]+:\s*/i, "").trim().replace(/;$/, "");
 
-  // Split into AND groups (handles ") AND (" and ") AND NOT (")
+  // Split by AND groups; keep track of NOT groups separately
+  const upperRaw = cleaned.toUpperCase();
   const parts = cleaned.split(/\)\s+AND\s+(?:NOT\s+)?\(/i);
 
   const positiveTerms: string[] = [];
   const excludeTerms: string[] = [];
-  let negativeStarted = false;
 
-  const originalRaw = cleaned.toUpperCase();
-
-  for (let i = 0; i < parts.length; i++) {
-    const group = parts[i].replace(/^\(+|\)+;?$/g, "").trim();
-    // Detect if this group was preceded by NOT — check the original string
-    const groupStartIndex = originalRaw.indexOf(group.toUpperCase().slice(0, 30));
-    const before = originalRaw.slice(0, groupStartIndex);
+  for (const part of parts) {
+    const group = part.replace(/^\(+|\)+;?$/g, "").trim();
+    const snippet = group.toUpperCase().slice(0, 30);
+    const idx = upperRaw.indexOf(snippet);
+    const before = upperRaw.slice(0, Math.max(0, idx));
     const isNot = /AND\s+NOT\s*\(?\s*$/.test(before);
-
     const quoted = (group.match(/"([^"]+)"/g) ?? []).map(t => t.slice(1, -1));
-    if (isNot || negativeStarted) {
-      excludeTerms.push(...quoted.slice(0, 3));
-      negativeStarted = true;
+    if (isNot) {
+      excludeTerms.push(...quoted.slice(0, 4));
     } else {
-      positiveTerms.push(...quoted.slice(0, 2)); // 2 terms per positive group
+      positiveTerms.push(...quoted.slice(0, 3)); // 3 per positive group
     }
   }
 
-  const displayTerms = positiveTerms.slice(0, 5).map(t => `"${t}"`).join(", ");
-  const hasMore = positiveTerms.length > 5 || parts.filter(p => !p.toUpperCase().includes("NOT")).length > 1;
+  const displayTerms = positiveTerms.slice(0, 8).map(t => `„${t}"`).join(", ");
+  const hasMore = positiveTerms.length > 8;
 
-  const kwPart = `Search based on keywords: ${displayTerms}${hasMore ? " and others" : ""}`;
+  const kwPart = `Suche basiert auf Keywords: ${displayTerms}${hasMore ? " u.a." : ""}`;
   const exPart = excludeTerms.length > 0
-    ? `Excludes: ${excludeTerms.slice(0, 3).map(t => `"${t}"`).join(", ")}.`
-    : "No exclusions applied.";
+    ? `Ausgeschlossen: ${excludeTerms.slice(0, 4).map(t => `„${t}"`).join(", ")}.`
+    : "Keine Ausschlüsse angewendet.";
 
   return `${kwPart} — ${exPart}`;
 }
