@@ -82,7 +82,7 @@ function StatTile({
 
 export function AnalyticsPageClient() {
   const router = useRouter();
-  const { uid, companies, clusters, setCompanies, setClusters, dealsStoragePath, setDealsStoragePath, companyCol, setPipelineStep, googleAccessToken, scoringConfig } = useSession();
+  const { uid, companies, clusters, setCompanies, setClusters, dealsStoragePath, setDealsStoragePath, companyCol, pipelineStep, setPipelineStep, googleAccessToken, scoringConfig } = useSession();
   const searchCriteria = useSession((s) => s.searchCriteria);
 
   const [dealsData, setDealsData] = useState<Record<string, unknown>[] | null>(null);
@@ -302,7 +302,14 @@ export function AnalyticsPageClient() {
                     <Download className="h-4 w-4" />
                     Export CSV
                   </Button>
-                  <Button variant="outline" size="sm" onClick={() => setShowSlidesPanel(true)} className="gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShowSlidesPanel(true)}
+                    className="gap-2"
+                    disabled={pipelineStep < 3}
+                    title={pipelineStep < 3 ? "Complete clustering first to generate slides" : undefined}
+                  >
                     <Presentation className="h-4 w-4" />
                     Slides generieren
                   </Button>

@@ -98,6 +98,9 @@ export function ReviewPageClient() {
       <div className="px-6 py-5 border-b border-border flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold">Review & Edit</h1>
+          <p className="text-sm text-muted-foreground mt-0.5">
+            Review the generated clusters, rename them, and remove companies that don&apos;t fit before moving to analytics.
+          </p>
           <p className="text-xs text-muted-foreground mt-0.5">
             {companies.length} companies · {clusters.filter((c) => !c.isOutliers).length} clusters
           </p>

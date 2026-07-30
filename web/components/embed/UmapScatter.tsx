@@ -97,6 +97,31 @@ export function UmapScatter() {
 
   if (traces.length === 0) return null;
 
+  // Compute centroid per cluster for name annotations
+  const annotations = orderedClusters
+    .filter((c) => !c.isOutliers)
+    .map((cluster) => {
+      const members = companies.filter(
+        (co) => co.clusterId === cluster.id && co.umapX != null && co.umapY != null
+      );
+      if (members.length === 0) return null;
+      const cx = members.reduce((s, co) => s + co.umapX!, 0) / members.length;
+      const cy = members.reduce((s, co) => s + co.umapY!, 0) / members.length;
+      return {
+        x: cx,
+        y: cy,
+        text: cluster.name,
+        showarrow: false,
+        font: { size: 11, color: "#ffffff" },
+        bgcolor: cluster.color ? `${cluster.color}cc` : "rgba(0,0,0,0.55)",
+        borderpad: 4,
+        borderradius: 4,
+        xanchor: "center" as const,
+        yanchor: "middle" as const,
+      };
+    })
+    .filter((a): a is NonNullable<typeof a> => a !== null);
+
   return (
     <div className="rounded-xl border border-border overflow-hidden bg-card">
       <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
@@ -130,6 +155,7 @@ export function UmapScatter() {
           margin: { t: 16, b: 32, l: 32, r: 16 },
           xaxis: { showgrid: false, zeroline: false, showticklabels: false },
           yaxis: { showgrid: false, zeroline: false, showticklabels: false },
+          annotations,
           legend: {
             bgcolor: "rgba(255,255,255,0.8)",
             bordercolor: "rgba(0,0,0,0.06)",

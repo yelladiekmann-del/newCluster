@@ -7,9 +7,11 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
+import { InfoTooltip } from "@/components/ui/tooltip";
 import { useSession } from "@/lib/store/session";
 import { persistSession } from "@/lib/firebase/hooks";
 import { DIMENSIONS } from "@/types";
+import { DIM_DESCRIPTIONS } from "@/lib/dimension-descriptions";
 import { toast } from "sonner";
 import { saveAs } from "file-saver";
 import Papa from "papaparse";
@@ -176,14 +178,20 @@ export function DimensionExtractionStep() {
           )}
         </div>
 
+        {/* Context */}
+        <p className="text-xs text-muted-foreground -mt-1">
+          Each company is scored on 8 structural dimensions using AI — these become the axes for clustering.
+        </p>
+
         {/* Dimension pills */}
         <div className="flex flex-wrap gap-1.5">
           {DIM_PILLS.map((d) => (
             <span
               key={d}
-              className="px-2 py-0.5 rounded-full text-[11px] bg-muted text-muted-foreground border border-border"
+              className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full text-[11px] bg-muted text-muted-foreground border border-border"
             >
               {d}
+              <InfoTooltip content={DIM_DESCRIPTIONS[d] ?? d} />
             </span>
           ))}
         </div>
@@ -248,6 +256,7 @@ export function DimensionExtractionStep() {
         )}
 
         {/* Main actions */}
+        <div className="flex flex-col gap-2">
         <div className="flex gap-2 flex-wrap">
           <Button
             size="sm"
@@ -274,6 +283,10 @@ export function DimensionExtractionStep() {
               Download enriched CSV
             </Button>
           )}
+        </div>
+        {companies.length === 0 && (
+          <p className="text-xs text-muted-foreground">Upload company data first to enable extraction.</p>
+        )}
         </div>
       </CardContent>
     </Card>

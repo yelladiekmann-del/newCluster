@@ -438,7 +438,7 @@ export function EmbedPageClient() {
       <div>
         <h1 className="text-2xl font-bold">Embed & Cluster</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Generate vector embeddings per dimension, then run HDBSCAN clustering.
+          Companies are converted to numerical vectors based on their dimension scores, then grouped by semantic similarity.
         </p>
       </div>
 

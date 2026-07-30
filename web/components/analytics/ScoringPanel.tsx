@@ -147,6 +147,17 @@ export function ScoringPanel({ rows, hasDeals }: Props) {
 
   const scores = useMemo(() => computeScores(rows, config), [rows, config]);
 
+  const [rankingFlash, setRankingFlash] = useState(false);
+  const prevScoresRef = useRef(scores);
+  useEffect(() => {
+    if (prevScoresRef.current !== scores) {
+      prevScoresRef.current = scores;
+      setRankingFlash(true);
+      const t = setTimeout(() => setRankingFlash(false), 600);
+      return () => clearTimeout(t);
+    }
+  }, [scores]);
+
   const metricMap = useMemo(() => {
     const map: Record<string, MetricConfig> = {};
     for (const metric of config.metrics) map[metric.key as string] = metric;
@@ -223,7 +234,10 @@ export function ScoringPanel({ rows, hasDeals }: Props) {
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
-                      <ConfigBadge>Group weight</ConfigBadge>
+                      <span className="inline-flex items-center gap-1">
+                        <ConfigBadge>Group weight</ConfigBadge>
+                        <InfoTooltip content="Multiplies the score of every metric in this group. Raise it to prioritize an entire category above others." />
+                      </span>
                       <Select
                         value={String(groupConfig.weight)}
                         onValueChange={(value) => !groupDisabled && updateGroup(group, { weight: Number(value) })}
@@ -319,12 +333,12 @@ export function ScoringPanel({ rows, hasDeals }: Props) {
         </CardContent>
       </Card>
 
-      <Card className="border-border/70 bg-background/80 shadow-sm">
+      <Card className={`border-border/70 bg-background/80 shadow-sm transition-all duration-300 ${rankingFlash ? "ring-2 ring-primary/30" : ""}`}>
         <CardHeader className="border-b border-border/60 pb-3">
           <div>
             <CardTitle>Cluster ranking</CardTitle>
             <CardDescription>
-              Live score output from the current thesis configuration.
+              Live score output from the current thesis configuration. Scores 0–100 via weighted Min-Max normalization across active metrics.
             </CardDescription>
           </div>
           <CardAction>

@@ -28,7 +28,8 @@ export function ClusterOverviewGrid() {
               <span className="text-sm font-semibold text-foreground leading-tight">
                 {cluster.name}
               </span>
-              <Badge variant="secondary" className="text-xs shrink-0">
+              <Badge variant="secondary" className="text-xs shrink-0 gap-1">
+                <Users className="h-3 w-3" />
                 {cluster.companyCount}
               </Badge>
             </div>

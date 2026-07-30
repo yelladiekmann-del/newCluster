@@ -7,7 +7,42 @@ import { CompanyDataStep } from "./CompanyDataStep";
 import { DimensionExtractionStep } from "./DimensionExtractionStep";
 import { EmbeddingsUploadStep } from "./EmbeddingsUploadStep";
 import { Button } from "@/components/ui/button";
-import { ArrowRight, ChevronDown, ChevronUp } from "lucide-react";
+import { ArrowRight, Check, ChevronDown, ChevronUp } from "lucide-react";
+
+const PIPELINE_STEPS = [
+  { label: "Upload & Extract" },
+  { label: "Embed" },
+  { label: "Cluster & Review" },
+  { label: "Analytics" },
+];
+
+function PipelineStepIndicator({ currentIndex, completedUpTo }: { currentIndex: number; completedUpTo: number }) {
+  return (
+    <div className="flex items-center gap-0">
+      {PIPELINE_STEPS.map((step, i) => {
+        const isDone = i < completedUpTo;
+        const isActive = i === currentIndex;
+        return (
+          <div key={step.label} className="flex items-center gap-0">
+            <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
+              isDone
+                ? "bg-primary/10 text-primary"
+                : isActive
+                ? "bg-primary text-primary-foreground"
+                : "text-muted-foreground"
+            }`}>
+              {isDone && <Check className="h-3 w-3" />}
+              <span>{step.label}</span>
+            </div>
+            {i < PIPELINE_STEPS.length - 1 && (
+              <div className={`h-px w-4 mx-0.5 ${i < completedUpTo ? "bg-primary/40" : "bg-border"}`} />
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 import { useRouter } from "next/navigation";
 import { persistSession } from "@/lib/firebase/hooks";
 import { syncSetupToSheet } from "@/lib/sheets/sync";
@@ -81,11 +116,12 @@ export function SetupPageClient() {
   return (
     <div className="max-w-2xl mx-auto px-6 py-8 pb-24 flex flex-col gap-6">
       {/* Header */}
-      <div>
+      <div className="flex flex-col gap-2">
         <h1 className="text-2xl font-bold text-foreground">Setup</h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          Upload company data and extract AI dimensions.
+        <p className="text-sm text-muted-foreground">
+          Upload your company list and let AI score each company on 8 structural dimensions — these become the axes for clustering.
         </p>
+        <PipelineStepIndicator currentIndex={0} completedUpTo={hasDimensions || npzPreloaded ? 1 : 0} />
       </div>
 
       {/* Company Data */}
@@ -117,7 +153,12 @@ export function SetupPageClient() {
       </div>
 
       {/* Sticky bottom action bar */}
-      <div className="fixed bottom-0 left-0 right-0 z-10 bg-background/95 backdrop-blur-sm border-t border-border px-6 py-3 flex items-center justify-end">
+      <div className="fixed bottom-0 left-0 right-0 z-10 bg-background/95 backdrop-blur-sm border-t border-border px-6 py-3 flex items-center justify-end gap-3">
+        {!canContinue && (
+          <span className="text-xs text-muted-foreground">
+            {!uid ? "Create a session first" : !companies.length ? "Upload data first" : "Extract dimensions first"}
+          </span>
+        )}
         <Button
           onClick={handleContinue}
           disabled={!canContinue}

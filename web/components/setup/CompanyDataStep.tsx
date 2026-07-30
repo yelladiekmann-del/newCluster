@@ -23,6 +23,8 @@ export function CompanyDataStep() {
     uid,
     companies,
     setCompanies,
+    companyCol,
+    descCol,
     setCompanyCol,
     setDescCol,
   } = useSession();
@@ -198,6 +200,15 @@ export function CompanyDataStep() {
                 : undefined
             }
           />
+
+          {companies.length > 0 && companyCol && (
+            <p className="text-xs text-muted-foreground">
+              Name column: <span className="font-medium text-foreground">{companyCol}</span>
+              {descCol && (
+                <> · Description: <span className="font-medium text-foreground">{descCol}</span></>
+              )}
+            </p>
+          )}
 
           {uploadPct !== null && (
             <div className="flex flex-col gap-1">
